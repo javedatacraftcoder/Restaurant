@@ -1,4 +1,6 @@
 // src/app/(public)/page.tsx
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 export default function HomePage() {
   return (
     <main className="container py-5">

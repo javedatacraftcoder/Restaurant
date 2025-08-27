@@ -45,6 +45,7 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   // 👇 Workaround para bug de clientReferenceManifest en Vercel
   output: "standalone",
+
   experimental: {
     ppr: false, // 🚨 Desactiva Partial Prerendering
     serverActions: {
@@ -52,12 +53,19 @@ const nextConfig: NextConfig = {
       bodySizeLimit: '2mb',
     },
   },
+
+  // 👇 Workaround para evitar que Vercel intente prerender con CSS chunks
+  generateEtags: false,
+  trailingSlash: false,
+  compress: true,
+
   eslint: {
     ignoreDuringBuilds: true, // Ignora ESLint en Vercel
   },
   typescript: {
     ignoreBuildErrors: true, // Ignora errores TS en Vercel
   },
+
   async headers() {
     return [
       {
