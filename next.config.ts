@@ -53,6 +53,7 @@ const nextConfig: NextConfig = {
       bodySizeLimit: '2mb',
     },
   },
+  dynamicIO: true,
 
   // 👇 Workaround para evitar que Vercel intente prerender con CSS chunks
   generateEtags: false,
