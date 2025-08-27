@@ -43,6 +43,9 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // 👇 Workaround para evitar el bug de clientReferenceManifest en Vercel
+  output: "standalone",
+
   experimental: {
     serverActions: {
       allowedOrigins: ['localhost:3000'],
@@ -50,11 +53,11 @@ const nextConfig: NextConfig = {
     },
   },
   eslint: {
-    // 🚨 Ignora errores de lint durante el build (Vercel no falla por ESLint)
+    // 🚨 Ignora errores de lint durante el build
     ignoreDuringBuilds: true,
   },
   typescript: {
-    // 🚨 Ignora errores TS durante el build (Vercel no falla por tipos)
+    // 🚨 Ignora errores TS durante el build
     ignoreBuildErrors: true,
   },
   async headers() {
