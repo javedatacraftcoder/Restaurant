@@ -3,11 +3,12 @@ import type { NextConfig } from 'next';
 
 const isProd = process.env.NODE_ENV === 'production';
 
-// --- CSP para PRODUCCIÓN (estricta; sin unsafe-eval) ---
+// --- CSP para PRODUCCIÓN (más permisiva con inline scripts) ---
 const prodCsp = [
   "default-src 'self'",
   "base-uri 'self'",
-  "script-src 'self' https://www.gstatic.com https://www.googletagmanager.com https://apis.google.com https://accounts.google.com",
+  // 👇 aquí agregamos 'unsafe-inline'
+  "script-src 'self' 'unsafe-inline' https://www.gstatic.com https://www.googletagmanager.com https://apis.google.com https://accounts.google.com",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' https: data: https://*.gstatic.com https://*.googleapis.com",
   "font-src 'self' data: https://fonts.gstatic.com",
