@@ -1,4 +1,6 @@
 // src/app/(public)/page.tsx
+"use client";
+
 export default function HomePage() {
   return (
     <main className="container py-5">
