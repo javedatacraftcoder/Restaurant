@@ -6,23 +6,34 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "health": "curl -s http://localhost:3000/api/health | jq .",
+    "status:firestore": "curl -s http://localhost:3000/api/_status/firestore | jq .",
+    "set-admin": "tsx scripts/setAdminRole.ts"
   },
   "dependencies": {
+    "@upstash/ratelimit": "^2.0.6",
+    "@upstash/redis": "^1.35.3",
     "bootstrap": "^5.3.7",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "firebase": "^12.1.0",
+    "firebase-admin": "^13.4.0",
     "next": "15.4.7",
     "react": "19.1.0",
-    "react-dom": "19.1.0"
+    "react-dom": "19.1.0",
+    "zod": "^4.0.17"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
+    "@eslint/eslintrc": "^3.0.0",
+    "@types/node": "^20.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "dotenv": "^16.6.1",
+    "eslint": "^9.0.0",
     "eslint-config-next": "15.4.7",
-    "typescript": "^5"
+    "tsx": "^4.20.4",
+    "typescript": "^5.0.0"
   }
 }

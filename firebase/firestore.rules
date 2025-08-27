@@ -1,0 +1,36 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() { return request.auth != null; }
+    function isAdmin() { return isSignedIn() && request.auth.token.role == 'admin'; }
+
+    // Menú público: solo lectura de activos
+    match /categories/{id} {
+      allow read: if resource.data.isActive == true;
+      allow write: if isAdmin();
+    }
+    match /subcategories/{id} {
+      allow read: if resource.data.isActive == true;
+      allow write: if isAdmin();
+    }
+    match /menuItems/{id} {
+      allow read: if resource.data.isActive == true;
+      allow write: if isAdmin();
+    }
+    match /addons/{id} {
+      allow read: if resource.data.isActive == true;
+      allow write: if isAdmin();
+    }
+
+    // Órdenes (afinaremos en etapas siguientes)
+    match /orders/{orderId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin(); // por ahora solo admin server-side
+      match /items/{itemId} {
+        allow read: if isSignedIn();
+        allow write: if isAdmin();
+      }
+    }
+  }
+}
