@@ -24,6 +24,7 @@ type Claims = {
   kitchen?: boolean;
   waiter?: boolean;
   delivery?: boolean;
+  cashier?: boolean;
   role?: string;
   [k: string]: any;
 };
@@ -33,6 +34,8 @@ type RoleFlags = {
   isKitchen: boolean;
   isWaiter: boolean;
   isDelivery: boolean;
+  isCashier: boolean;
+  isCustomer: boolean;
 };
 
 type Ctx = {
@@ -50,6 +53,8 @@ const defaultFlags: RoleFlags = {
   isKitchen: false,
   isWaiter: false,
   isDelivery: false,
+  isCashier: false,
+  isCustomer: true,
 };
 
 const AuthContext = createContext<Ctx>({
@@ -61,6 +66,26 @@ const AuthContext = createContext<Ctx>({
   refreshRoles: async () => {},
 });
 
+// --- Helpers para cookie de rol leída por el middleware ---
+async function syncRoleCookie(idToken: string) {
+  try {
+    await fetch("/api/auth/refresh-role", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+  } catch {
+    // Silencioso: si falla, el middleware tratará al usuario como customer.
+  }
+}
+
+function clearRoleCookies() {
+  try {
+    // Las cookies no son httpOnly para que middleware pueda leerlas y el cliente pueda limpiarlas
+    document.cookie = "appRole=; Max-Age=0; Path=/";
+    document.cookie = "isOp=; Max-Age=0; Path=/";
+  } catch {}
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [idToken, setIdToken] = useState<string | null>(null);
@@ -70,11 +95,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const computeFlags = useCallback((c: Claims | null): RoleFlags => {
     const isAdmin = !!c?.admin || c?.role === "admin";
+    const isKitchen = !!c?.kitchen || isAdmin;
+    const isWaiter = !!c?.waiter || isAdmin;
+    const isDelivery = !!c?.delivery || isAdmin;
+    const isCashier = !!c?.cashier || c?.role === "cashier" || isAdmin;
+
+    const isCustomer = !isAdmin && !isKitchen && !isWaiter && !isDelivery && !isCashier;
+
     return {
       isAdmin,
-      isKitchen: !!c?.kitchen || isAdmin,
-      isWaiter: !!c?.waiter || isAdmin,
-      isDelivery: !!c?.delivery || isAdmin,
+      isKitchen,
+      isWaiter,
+      isDelivery,
+      isCashier,
+      isCustomer,
     };
   }, []);
 
@@ -85,6 +119,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIdToken(null);
         setClaims(null);
         setFlags(defaultFlags);
+        clearRoleCookies(); // Evita que quede una cookie operativa tras logout
         setLoading(false);
         return;
       }
@@ -96,6 +131,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIdToken(token);
         setClaims(c);
         setFlags(computeFlags(c));
+        // Mantener cookie de rol sincronizada para el middleware
+        await syncRoleCookie(token);
       } catch {
         setIdToken(null);
         setClaims(null);
@@ -110,7 +147,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // onIdTokenChanged cubre sign-in, sign-out y refresh de token/claims
     const unsub = onIdTokenChanged(auth, (u) => {
-      // no forzamos aquí; si cambian claims por server, se recomienda refreshRoles()
+      // no forzamos aquí; si cambian claims por server, usa refreshRoles()
       hydrate(u, false);
     });
     return () => unsub();

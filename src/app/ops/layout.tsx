@@ -1,11 +1,11 @@
-// src/app/admin/layout.tsx
+// src/app/ops/layout.tsx
 'use client';
 
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+export default function OpsLayout({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const isActive = (href: string) => pathname?.startsWith(href);
