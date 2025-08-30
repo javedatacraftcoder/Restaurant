@@ -1,5 +1,7 @@
 "use client";
 
+import { RoleGate } from "@/components/RoleGate";
+
 import React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -625,7 +627,7 @@ function OrderCard({
 /* --------------------------------------------
    Página
 --------------------------------------------- */
-export default function OpsBoardsPage() {
+function OpsBoardsPage_Inner() {
   const { authReady, user, ...claims } = useAuthClaims();
 
   const [soundOn, setSoundOn] = useState(true);
@@ -774,5 +776,14 @@ export default function OpsBoardsPage() {
         </section>
       )}
     </div>
+  );
+}
+
+
+export default function OpsBoardsPage() {
+  return (
+    <RoleGate allow={["kitchen","waiter","delivery","cashier","admin"]}>
+      <OpsBoardsPage_Inner />
+    </RoleGate>
   );
 }

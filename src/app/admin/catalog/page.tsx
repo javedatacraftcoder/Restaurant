@@ -1,5 +1,8 @@
-// src/app/admin/catalog/catalog.tsx
+
 "use client";
+import { OnlyAdmin } from "@/components/Only";
+// src/app/admin/catalog/catalog.tsx
+
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/app/providers";
@@ -25,7 +28,7 @@ async function apiFetchAuth(path: string, init: RequestInit = {}, idToken?: stri
   return data;
 }
 
-export default function CatalogAdminPage() {
+function CatalogAdminPage_Inner() {
   const { user, idToken, claims, flags, refreshRoles: refresh } = useAuth();
   const isAdmin = !!flags.isAdmin || !!claims?.admin || claims?.role === "admin";
 
@@ -264,5 +267,14 @@ export default function CatalogAdminPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+
+export default function CatalogAdminPage() {
+  return (
+    <OnlyAdmin>
+      <CatalogAdminPage_Inner />
+    </OnlyAdmin>
   );
 }

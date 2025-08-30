@@ -1,5 +1,7 @@
 'use client';
 
+import { OnlyAdmin } from "@/components/Only";
+
 import React, { useEffect, useMemo, useState } from 'react';
 
 /* =========================================================================
@@ -200,7 +202,7 @@ async function deleteImageByPath(path: string) {
 /* =========================================================================
    Página Unificada: /admin/menu (con suscripciones en tiempo real)
    ========================================================================= */
-export default function AdminMenuPage() {
+function AdminMenuPage_Inner() {
   const { authReady, user, isAdmin } = useAuthClaims();
 
   const [categories, setCategories] = useState<Category[]>([]);
@@ -890,5 +892,14 @@ function ImagePicker({
         </div>
       )}
     </>
+  );
+}
+
+
+export default function AdminMenuPage() {
+  return (
+    <OnlyAdmin>
+      <AdminMenuPage_Inner />
+    </OnlyAdmin>
   );
 }

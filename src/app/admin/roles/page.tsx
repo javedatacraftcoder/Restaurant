@@ -1,5 +1,7 @@
 'use client';
 
+import { OnlyAdmin } from "@/components/Only";
+
 import React, { useEffect, useMemo, useState } from 'react';
 
 /* ---- Firebase Auth (cliente) ---- */
@@ -100,7 +102,7 @@ const ROLES: Array<{ key: 'admin' | 'kitchen' | 'waiter' | 'delivery' | 'cashier
   { key: 'cashier', label: 'Cashier' }, // ← NUEVO
 ];
 
-export default function RolesPage() {
+function RolesPage_Inner() {
   const { authReady, user, isAdmin } = useAuthClaims();
 
   const [rows, setRows] = useState<UserRow[]>([]);
@@ -210,5 +212,14 @@ export default function RolesPage() {
         * El usuario debe cerrar sesión y volver a iniciarla (o refrescar su ID token) para recibir los nuevos permisos.
       </div>
     </div>
+  );
+}
+
+
+export default function RolesPage() {
+  return (
+    <OnlyAdmin>
+      <RolesPage_Inner />
+    </OnlyAdmin>
   );
 }

@@ -1,5 +1,7 @@
 'use client';
 
+import { OnlyCashier } from "@/components/Only";
+
 import React, { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 
@@ -226,7 +228,7 @@ async function fetchOrder(id: string): Promise<OrderDoc | null> {
 }
 
 /* ============ Página (sin <html>/<body>) ============ */
-export default function ReceiptPage() {
+function ReceiptPage_Inner() {
   const { id } = useParams<{ id: string }>();
   const [order, setOrder] = useState<OrderDoc | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -353,5 +355,14 @@ export default function ReceiptPage() {
         )}
       </div>
     </>
+  );
+}
+
+
+export default function ReceiptPage() {
+  return (
+    <OnlyCashier>
+      <ReceiptPage_Inner />
+    </OnlyCashier>
   );
 }

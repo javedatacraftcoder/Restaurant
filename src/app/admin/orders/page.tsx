@@ -1,6 +1,7 @@
 // src/app/admin/orders/page.tsx
 "use client";
 
+import { OnlyAdmin } from "@/components/Only";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/app/providers";
 import OrderStatusActions from "@/components/orders/OrderStatusActions";
@@ -48,7 +49,7 @@ const STATUSES: OrderRow["status"][] = [
 
 const q = (cents: number) => `Q ${(cents / 100).toFixed(2)}`;
 
-export default function AdminOrdersPage() {
+function AdminOrdersPage_Inner() {
   const { user, idToken, claims, flags, refreshRoles: refresh } = useAuth();
   const isAdmin = !!flags.isAdmin || !!claims?.admin || claims?.role === "admin";
 
@@ -226,5 +227,13 @@ export default function AdminOrdersPage() {
         </button>
       </div>
     </div>
+  );
+}
+
+export default function AdminOrdersPage() {
+  return (
+    <OnlyAdmin>
+      <AdminOrdersPage_Inner />
+    </OnlyAdmin>
   );
 }

@@ -1,5 +1,7 @@
 'use client';
 
+import { OnlyKitchen } from "@/components/Only";
+
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 /* --------------------------------------------
@@ -593,7 +595,7 @@ function OrderCard({
 /* --------------------------------------------
    Página /admin/kitchen
 --------------------------------------------- */
-export default function KitchenBoardPage() {
+function KitchenBoardPage_Inner() {
   const { authReady, user, isKitchen, isAdmin } = useAuthClaims();
 
   const [soundOn, setSoundOn] = useState(true);
@@ -755,5 +757,14 @@ export default function KitchenBoardPage() {
         </section>
       )}
     </div>
+  );
+}
+
+
+export default function KitchenBoardPage() {
+  return (
+    <OnlyKitchen>
+      <KitchenBoardPage_Inner />
+    </OnlyKitchen>
   );
 }

@@ -1,5 +1,7 @@
 'use client';
 
+import { OnlyCashier } from "@/components/Only";
+
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 /* ===================================================
@@ -533,7 +535,7 @@ function OrderCard({
 /* ===================================================
    Página /admin/cashier
 =================================================== */
-export default function CashierPage() {
+function CashierPage_Inner() {
   const { authReady, user } = useAuthClaims();
   const { orders, loading, error, refresh } = useCashierOrders(!!user, 4000);
 
@@ -618,5 +620,14 @@ export default function CashierPage() {
         </>
       )}
     </div>
+  );
+}
+
+
+export default function CashierPage() {
+  return (
+    <OnlyCashier>
+      <CashierPage_Inner />
+    </OnlyCashier>
   );
 }
