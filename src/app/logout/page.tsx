@@ -1,3 +1,4 @@
+// src/app/logout/page.tsx
 "use client";
 import { useEffect } from "react";
 import { signOut } from "firebase/auth";
@@ -8,7 +9,7 @@ export default function LogoutPage() {
   const router = useRouter();
   useEffect(() => {
     (async () => {
-      await signOut(auth);
+      await signOut(auth); // <Providers> limpiará cookies al detectar user=null
       router.replace("/login");
     })();
   }, [router]);

@@ -1,3 +1,4 @@
+// src/app/providers.tsx
 "use client";
 
 import {
@@ -80,7 +81,7 @@ async function syncRoleCookie(idToken: string) {
 
 function clearRoleCookies() {
   try {
-    // Las cookies no son httpOnly para que middleware pueda leerlas y el cliente pueda limpiarlas
+    // Las cookies NO son httpOnly para que middleware pueda leerlas y también poder limpiarlas aquí
     document.cookie = "appRole=; Max-Age=0; Path=/";
     document.cookie = "isOp=; Max-Age=0; Path=/";
   } catch {}
@@ -90,8 +91,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [idToken, setIdToken] = useState<string | null>(null);
   const [claims, setClaims] = useState<Claims | null>(null);
-  const [loading, setLoading] = useState(true);
   const [flags, setFlags] = useState<RoleFlags>(defaultFlags);
+  const [loading, setLoading] = useState(true);
 
   const computeFlags = useCallback((c: Claims | null): RoleFlags => {
     const isAdmin = !!c?.admin || c?.role === "admin";
@@ -99,7 +100,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const isWaiter = !!c?.waiter || isAdmin;
     const isDelivery = !!c?.delivery || isAdmin;
     const isCashier = !!c?.cashier || c?.role === "cashier" || isAdmin;
-
     const isCustomer = !isAdmin && !isKitchen && !isWaiter && !isDelivery && !isCashier;
 
     return {
@@ -127,10 +127,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const token = await u.getIdToken(force);
         const res = await getIdTokenResult(u, force);
         const c = (res.claims || {}) as Claims;
+
         setUser(u);
         setIdToken(token);
         setClaims(c);
         setFlags(computeFlags(c));
+
         // Mantener cookie de rol sincronizada para el middleware
         await syncRoleCookie(token);
       } catch {
@@ -154,9 +156,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [hydrate]);
 
   const refreshRoles = useCallback(async () => {
-    if (!auth.currentUser) return;
-    setLoading(true);
-    await hydrate(auth.currentUser, true); // fuerza refresh para traer nuevos claims
+    const u = auth.currentUser;
+    await hydrate(u, true);
   }, [hydrate]);
 
   const value = useMemo<Ctx>(
