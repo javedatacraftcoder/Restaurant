@@ -18,6 +18,16 @@ type LineInput = {
   totalCents: number;
 };
 
+type OpsItem = {
+  menuItemId: string;
+  menuItemName?: string;
+  quantity: number;
+  options?: Array<{
+    groupName: string;
+    selected: Array<{ name: string; priceDelta: number }>;
+  }>;
+};
+
 type CreateOrderBody = {
   type: OrderType;
   // formato OPS
@@ -32,45 +42,71 @@ type CreateOrderBody = {
   notes?: string;
   currency?: string;
   meta?: Record<string, any>;
-  deliveryAddress?: string;
+  deliveryAddress?: any;
   contactPhone?: string;
-
-  // compat legacy
-  lines?: any;
-  cart?: any;
-  orderLines?: any;
+  // compat
+  lines?: any[];
+  cart?: any[];
+  orderLines?: any[];
 };
 
-function isOrderType(v: any): v is OrderType {
-  return v === "dine_in" || v === "takeaway" || v === "delivery";
+function normalizeOpsItems(items: OpsItem[]) {
+  return items.map((it) => {
+    const options =
+      Array.isArray(it.options) ? it.options.map((g) => ({
+        groupName: String(g.groupName ?? ""),
+        selected: Array.isArray(g.selected)
+          ? g.selected.map((s) => ({ name: String(s.name ?? ""), priceDelta: Number(s.priceDelta ?? 0) }))
+          : []
+      })) : [];
+
+    return {
+      menuItemId: String(it.menuItemId),
+      menuItemName: String(it.menuItemName ?? ""),
+      quantity: Number.isFinite(it.quantity) ? it.quantity : 1,
+      options,
+    };
+  });
+}
+
+function centsFromAmount(qty: number, priceDelta: number | undefined) {
+  const n = Number(priceDelta ?? 0);
+  return Math.round((qty * n) * 100);
+}
+
+/* -------------------- GET: listar con compat -------------------- */
+export async function GET(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const limit = Math.min(Number(searchParams.get("limit") || 20), 100);
+    const status = searchParams.get("status");
+    const qRef = db.collection("orders").orderBy("createdAt", "desc");
+    let query: FirebaseFirestore.Query = qRef;
+
+    if (status) query = query.where("status", "==", status);
+
+    const snap = await query.limit(limit).get();
+    const orders = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    return json({ ok: true, orders });
+  } catch (e: any) {
+    console.error("[GET /api/orders]", e);
+    return json({ error: e?.message ?? "Server error" }, 500);
+  }
 }
 
 /* -------------------- POST: crear orden -------------------- */
 export async function POST(req: NextRequest) {
   try {
-    if (!((req.headers.get("content-type") || "").includes("application/json"))) {
-      return json({ error: "Content-Type must be application/json" }, 415);
-    }
+    const user = await getUserFromRequest(req as unknown as Request);
+    const body = (await req.json()) as CreateOrderBody;
 
-    const body = (await req.json().catch(() => ({}))) as CreateOrderBody;
-    const type = body?.type;
-    if (!isOrderType(type)) {
-      return json({ error: "Invalid or missing 'type'" }, 400);
-    }
-
-    const user = await getUserFromRequest(req).catch(() => null);
+    const type: OrderType = (["dine_in", "takeaway", "delivery"].includes(String(body.type)) ? body.type : "dine_in") as OrderType;
 
     // ──────────────────────────────────────────────────────────────────────
-    // 1) Formato NUEVO (OPS): items + amounts + (tableNumber, notes, currency)
+    // 1) Formato NUEVO (OPS): items + amounts
     // ──────────────────────────────────────────────────────────────────────
     if (Array.isArray(body.items) && body.items.length > 0 && body.amounts) {
-      const items = body.items.map((it) => ({
-        menuItemId: String(it.menuItemId),
-        menuItemName: String(it.menuItemName ?? ""),
-        quantity: Number(it.quantity || 1),
-        options: Array.isArray(it.options) ? it.options : [],
-      }));
-
+      const items = normalizeOpsItems(body.items);
       const amounts = {
         subtotal: Number(body.amounts.subtotal || 0),
         tax: Number(body.amounts.tax || 0),
@@ -105,7 +141,8 @@ export async function POST(req: NextRequest) {
         contactPhone: body.contactPhone || null,
         createdAt: now,
         updatedAt: now,
-        createdBy: user?.uid ? { uid: user.uid } : null,
+        createdBy: user?.uid ? { uid: user.uid, email: (user as any).email ?? null } : null,
+        userEmail: (user as any)?.email ?? null,
         channel: type === "delivery" ? "delivery" : "onsite",
         origin: "web",
       };
@@ -138,13 +175,17 @@ export async function POST(req: NextRequest) {
       return json({ error: "Auth required for delivery orders" }, 401);
     }
 
-    // normaliza líneas mínimas
     const safeLines = linesRaw.map((l: any) => {
       const qty = Number(l?.qty ?? l?.quantity ?? 1);
-      const unit = Number(l?.unitPriceCents ?? l?.unit_cents ?? 0);
-      const tot = Number(
-        l?.totalCents ?? l?.total_cents ?? (Number.isFinite(unit) ? unit * qty : 0)
-      );
+      const unit =
+        Number.isFinite(l?.unitPriceCents) ? l?.unitPriceCents :
+        Number.isFinite(l?.unitPrice) ? Math.round(Number(l?.unitPrice) * 100) :
+        0;
+      const tot =
+        Number.isFinite(l?.totalCents) ? l?.totalCents :
+        Number.isFinite(l?.total) ? Math.round(Number(l?.total) * 100) :
+        qty * unit;
+
       return {
         itemId: String(l?.itemId ?? l?.menuItemId ?? l?.id),
         name: String(l?.name ?? l?.menuItemName ?? ""),
@@ -164,7 +205,8 @@ export async function POST(req: NextRequest) {
       totals: { totalCents },
       createdAt: now,
       updatedAt: now,
-      createdBy: user?.uid ? { uid: user.uid } : null,
+      createdBy: user?.uid ? { uid: user.uid, email: (user as any).email ?? null } : null,
+      userEmail: (user as any)?.email ?? null,
       origin: "web",
     };
 
@@ -173,75 +215,6 @@ export async function POST(req: NextRequest) {
     return json({ ok: true, order: { id: ref.id, ...snap.data() } }, 201);
   } catch (e: any) {
     console.error("[POST /api/orders]", e);
-    return json({ error: e?.message ?? "Server error" }, 500);
-  }
-}
-
-/* -------------------- GET: listar con filtros -------------------- */
-export async function GET(req: NextRequest) {
-  try {
-    const { searchParams } = new URL(req.url);
-    const limitParam = parseInt(searchParams.get("limit") || "50", 10);
-    const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 200) : 50;
-
-    const statusInParam = (searchParams.get("statusIn") || "")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-    const typeInParam = (searchParams.get("typeIn") || "")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean) as OrderType[];
-
-    const defaultTypes: OrderType[] = ["dine_in", "takeaway", "delivery"];
-    const typesToUse: OrderType[] =
-      typeInParam.length > 0
-        ? (typeInParam.filter(isOrderType) as OrderType[])
-        : defaultTypes;
-
-    let q: FirebaseFirestore.Query<FirebaseFirestore.DocumentData> = db.collection("orders");
-
-    let hasFilter = false;
-
-    if (statusInParam.length === 1) {
-      q = q.where("status", "==", statusInParam[0]);
-      hasFilter = true;
-    } else if (statusInParam.length > 1 && statusInParam.length <= 10) {
-      q = q.where("status", "in", statusInParam);
-      hasFilter = true;
-    }
-
-    if (typesToUse.length === 1) {
-      q = q.where("type", "==", typesToUse[0]);
-      hasFilter = true;
-    } else if (typesToUse.length > 1 && typesToUse.length <= 10) {
-      q = q.where("type", "in", typesToUse);
-      hasFilter = true;
-    }
-
-    // ⚠️ Si hay filtros, no usar orderBy para evitar índice compuesto
-    if (!hasFilter) {
-      q = q.orderBy("createdAt", "desc");
-    }
-
-    q = q.limit(limit);
-
-    const snap = await q.get();
-    let orders = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-    // Ordenar en servidor por createdAt desc cuando hubo filtros (sin usar index)
-    if (hasFilter) {
-      orders.sort((a: any, b: any) => {
-        const ta = (a.createdAt instanceof Timestamp) ? a.createdAt.toMillis() : (a.createdAt?._seconds ? a.createdAt._seconds * 1000 : 0);
-        const tb = (b.createdAt instanceof Timestamp) ? b.createdAt.toMillis() : (b.createdAt?._seconds ? b.createdAt._seconds * 1000 : 0);
-        return tb - ta;
-      });
-    }
-
-    return json({ ok: true, orders }, 200);
-  } catch (e: any) {
-    console.error("[GET /api/orders]", e);
     return json({ error: e?.message ?? "Server error" }, 500);
   }
 }

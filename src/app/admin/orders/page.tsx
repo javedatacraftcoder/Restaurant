@@ -1,239 +1,231 @@
 // src/app/admin/orders/page.tsx
 "use client";
 
-import { OnlyAdmin } from "@/components/Only";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useAuth } from "@/app/providers";
-import OrderStatusActions from "@/components/orders/OrderStatusActions";
+import { useEffect, useMemo, useState } from "react";
+// Si ya tienes este guard y deseas aplicarlo, descomenta la línea de abajo:
+// import { OnlyAdmin } from "@/components/Only";
 
-type OrderRow = {
+type FirestoreTimestamp =
+  | { seconds: number; nanoseconds: number } // cuando viene serializado
+  | Date                                     // por si ya está convertido
+  | null
+  | undefined;
+
+type OrderDoc = {
   id: string;
-  type: 'dine_in' | 'delivery' | 'pickup' | 'assigned_to_courier' | 'on_the_way';
-  status:
-    | 'cart'
-    | 'placed'
-    | 'kitchen_in_progress'
-    | 'kitchen_done'
-    | 'ready_to_close'
-    | 'assigned_to_courier'
-    | 'on_the_way'
-    | 'delivered'
-    | 'closed'
-    | 'cancelled';
-  totalCents: number;
-  createdAt: string;
-  updatedAt?: string;
-  createdBy: string;
-  customerName?: string;
+  type?: "dine_in" | "takeaway" | "delivery";
+  status?: string;
+  currency?: string;
+  tableNumber?: string | null;
+  notes?: string | null;
+  createdAt?: FirestoreTimestamp;
+  updatedAt?: FirestoreTimestamp;
+  createdBy?: { uid?: string; email?: string | null } | null;
+  userEmail?: string | null;
+  items?: any[]; // formato OPS
+  amounts?: { subtotal: number; tax?: number; serviceFee?: number; discount?: number; tip?: number; total: number } | null;
+  lines?: Array<{ totalCents?: number }>; // legacy
+  totals?: { totalCents?: number } | null; // legacy
+  channel?: string;
+  origin?: string;
 };
 
-type StatusLog = {
-  id: string;
-  at: string;   // ISO
-  by: string;   // uid
-  from: string; // status
-  to: string;   // status
-};
+type ApiListResponse = { ok?: boolean; orders?: OrderDoc[]; error?: string };
 
-const STATUSES: OrderRow["status"][] = [
-  "placed",
-  "kitchen_in_progress",
-  "kitchen_done",
-  "ready_to_close",
-  "assigned_to_courier",
-  "on_the_way",
-  "delivered",
-  "closed",
-  "cancelled",
-];
-
-const q = (cents: number) => `Q ${(cents / 100).toFixed(2)}`;
-
-function AdminOrdersPage_Inner() {
-  const { user, idToken, claims, flags, refreshRoles: refresh } = useAuth();
-  const isAdmin = !!flags.isAdmin || !!claims?.admin || claims?.role === "admin";
-
-  const [orders, setOrders] = useState<OrderRow[]>([]);
-  const [statusFilter, setStatusFilter] = useState<string>("");
-  const [loading, setLoading] = useState(false);
-  const [cursor, setCursor] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-
-  const [lastLogs, setLastLogs] = useState<Record<string, StatusLog | null>>({});
-  const pollRef = useRef<NodeJS.Timeout | null>(null);
-
-  const filtered = useMemo(() => orders, [orders]);
-
-  async function fetchOrders(reset = false) {
-    if (!idToken) return;
-    setLoading(true);
-    setErr(null);
-
-    try {
-      const params = new URLSearchParams();
-      if (statusFilter) params.set("status", statusFilter);
-      params.set("limit", "20");
-      if (!reset && cursor) params.set("cursor", cursor);
-
-      const res = await fetch(`/api/orders?${params.toString()}`, {
-        headers: { authorization: `Bearer ${idToken}` },
-        cache: "no-store",
-      });
-      if (!res.ok) {
-        const e = await res.json().catch(() => ({}));
-        throw new Error(e.error ?? `HTTP ${res.status}`);
-      }
-      const data = await res.json();
-      const next = (data.items ?? []) as OrderRow[];
-      setOrders(prev => (reset ? next : [...prev, ...next]));
-      setCursor(data.nextCursor ?? null);
-
-      const all = (reset ? next : [...orders, ...next]);
-      const logEntries: Record<string, StatusLog | null> = {};
-      await Promise.all(
-        all.map(async (o) => {
-          try {
-            const r = await fetch(`/api/orders/${o.id}/status/logs?limit=1`, {
-              headers: { authorization: `Bearer ${idToken}` },
-              cache: "no-store",
-            });
-            if (!r.ok) { logEntries[o.id] = null; return; }
-            const j = await r.json();
-            logEntries[o.id] = (j.items?.[0] as StatusLog) ?? null;
-          } catch {
-            logEntries[o.id] = null;
-          }
-        })
-      );
-      setLastLogs(logEntries);
-    } catch (e: any) {
-      setErr(e?.message ?? "Error al cargar órdenes");
-    } finally {
-      setLoading(false);
-    }
+function tsToDate(ts: FirestoreTimestamp): Date | null {
+  if (!ts) return null;
+  if (ts instanceof Date) return ts;
+  if (typeof (ts as any)?.toDate === "function") return (ts as any).toDate();
+  if (typeof (ts as any)?.seconds === "number") {
+    return new Date((ts as any).seconds * 1000);
   }
+  return null;
+}
 
-  useEffect(() => {
-    fetchOrders(true);
-    if (pollRef.current) clearInterval(pollRef.current);
-    pollRef.current = setInterval(() => fetchOrders(true), 15000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idToken, statusFilter]);
+function formatDate(ts: FirestoreTimestamp): string {
+  const d = tsToDate(ts);
+  if (!d) return "-";
+  // Fecha y hora locales
+  return `${d.toLocaleDateString()} ${d.toLocaleTimeString()}`;
+}
 
-  if (!user) {
-    return (
-      <div className="container py-4">
-        <h1>Órdenes (Admin)</h1>
-        <p>Debes iniciar sesión.</p>
-      </div>
-    );
+function isClosed(status?: string): boolean {
+  const s = (status || "").toLowerCase();
+  return s === "closed" || s === "cancelled";
+}
+
+function formatMoney(order: OrderDoc): string {
+  // OPS
+  if (order.amounts && typeof order.amounts.total === "number") {
+    const cur = (order.currency || "GTQ").toUpperCase();
+    const symbol = cur === "GTQ" ? "Q" : cur === "USD" ? "$" : `${cur} `;
+    return `${symbol}${order.amounts.total.toFixed(2)}`;
   }
-  if (!isAdmin) {
-    return (
-      <div className="container py-4">
-        <h1>Órdenes (Admin)</h1>
-        <p>No tienes permisos para ver esta página.</p>
-        <button className="btn btn-outline-secondary btn-sm" onClick={refresh}>
-          Refrescar roles
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="container py-4">
-      <h1 className="mb-3">Órdenes (Admin)</h1>
-
-      <div className="d-flex gap-2 align-items-center mb-3">
-        <label className="form-label m-0">Filtrar por estado:</label>
-        <select
-          className="form-select"
-          style={{ maxWidth: 260 }}
-          value={statusFilter}
-          onChange={(e) => {
-            setCursor(null);
-            setStatusFilter(e.target.value);
-          }}
-        >
-          <option value="">Todos</option>
-          {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <button className="btn btn-outline-secondary" onClick={() => fetchOrders(true)} disabled={loading}>
-          {loading ? "Actualizando…" : "Refrescar"}
-        </button>
-      </div>
-
-      {err && <p style={{ color: "crimson" }}>{err}</p>}
-
-      <div className="table-responsive">
-        <table className="table table-sm table-striped align-middle">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Cliente</th>
-              <th>Tipo</th>
-              <th>Estado</th>
-              <th>Último cambio</th>
-              <th>Total</th>
-              <th>Creado</th>
-              <th>Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map(o => {
-              const last = lastLogs[o.id] ?? null;
-              const lastText = last
-                ? `${new Date(last.at).toLocaleString()} • ${last.from} → ${last.to} • by ${last.by}`
-                : "—";
-              return (
-                <tr key={o.id}>
-                  <td className="text-truncate" style={{ maxWidth: 200 }}>{o.id}</td>
-                  <td>{o.customerName || "—"}</td>
-                  <td>{o.type}</td>
-                  <td><span className="badge text-bg-primary">{o.status}</span></td>
-                  <td>
-                    <span className="badge text-bg-secondary" title={lastText}>
-                      {last ? `${new Date(last.at).toLocaleTimeString()} · ${last.to}` : "—"}
-                    </span>
-                  </td>
-                  <td>{q(o.totalCents)}</td>
-                  <td>{new Date(o.createdAt).toLocaleString()}</td>
-                  <td className="d-flex flex-wrap gap-1">
-                    <OrderStatusActions
-                      orderId={o.id}
-                      currentStatus={o.status}
-                      role="admin"
-                      compact
-                      onTransition={() => {
-                        // Tras cambiar de estado, recargamos la lista
-                        fetchOrders(true);
-                      }}
-                    />
-                  </td>
-                </tr>
-              );
-            })}
-            {filtered.length === 0 && !loading && (
-              <tr><td colSpan={8} className="text-center py-4">No hay órdenes</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="d-flex justify-content-center">
-        <button className="btn btn-outline-primary" onClick={() => fetchOrders(false)} disabled={loading || !cursor}>
-          {cursor ? "Cargar más" : "No hay más"}
-        </button>
-      </div>
-    </div>
-  );
+  // LEGACY
+  const cents =
+    (order.totals?.totalCents ?? null) != null
+      ? order.totals!.totalCents!
+      : Array.isArray(order.lines)
+      ? order.lines.reduce((acc, l) => acc + (l.totalCents || 0), 0)
+      : 0;
+  const cur = (order.currency || "GTQ").toUpperCase();
+  const symbol = cur === "GTQ" ? "Q" : cur === "USD" ? "$" : `${cur} `;
+  return `${symbol}${(cents / 100).toFixed(2)}`;
 }
 
 export default function AdminOrdersPage() {
+  const [orders, setOrders] = useState<OrderDoc[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+  const [emailFilter, setEmailFilter] = useState("");
+
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        setLoading(true);
+        const res = await fetch(`/api/orders?limit=100`, { cache: "no-store" });
+        const data: ApiListResponse = await res.json();
+        if (!res.ok || !data.ok) {
+          throw new Error(data?.error || `HTTP ${res.status}`);
+        }
+        if (isMounted) setOrders(data.orders || []);
+      } catch (e: any) {
+        if (isMounted) setErr(e?.message || "Error cargando órdenes");
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const filtered = useMemo(() => {
+    const q = emailFilter.trim().toLowerCase();
+    if (!q) return orders;
+    return orders.filter((o) => {
+      const a = (o.userEmail || "").toLowerCase();
+      const b = (o.createdBy?.email || "").toLowerCase();
+      return a.includes(q) || b.includes(q);
+    });
+  }, [orders, emailFilter]);
+
+  const sorted = useMemo(() => {
+    return [...filtered].sort((a, b) => {
+      const da = tsToDate(a.createdAt)?.getTime() ?? 0;
+      const db = tsToDate(b.createdAt)?.getTime() ?? 0;
+      return db - da; // descendente
+    });
+  }, [filtered]);
+
   return (
-    <OnlyAdmin>
-      <AdminOrdersPage_Inner />
-    </OnlyAdmin>
+    // Si usas guard de admin, coloca <OnlyAdmin> aquí:
+    // <OnlyAdmin>
+    <div className="container py-4">
+      <div className="d-flex align-items-center justify-content-between mb-3">
+        <h1 className="h4 m-0">Orders (Admin)</h1>
+        <span className="text-muted">Total: {sorted.length}</span>
+      </div>
+
+      <div className="card mb-4 shadow-sm">
+        <div className="card-body">
+          <div className="row g-2 align-items-end">
+            <div className="col-12 col-md-6">
+              <label htmlFor="emailFilter" className="form-label mb-1">
+                Filtrar por correo de usuario
+              </label>
+              <div className="input-group">
+                <span className="input-group-text">@</span>
+                <input
+                  id="emailFilter"
+                  type="text"
+                  className="form-control"
+                  placeholder="usuario@correo.com"
+                  value={emailFilter}
+                  onChange={(e) => setEmailFilter(e.target.value)}
+                />
+                {emailFilter && (
+                  <button
+                    className="btn btn-outline-secondary"
+                    type="button"
+                    onClick={() => setEmailFilter("")}
+                    title="Limpiar"
+                  >
+                    Limpiar
+                  </button>
+                )}
+              </div>
+              <div className="form-text">
+                Busca en <code>userEmail</code> o <code>createdBy.email</code>.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {loading && (
+        <div className="alert alert-info">Cargando órdenes…</div>
+      )}
+      {err && (
+        <div className="alert alert-danger">Error: {err}</div>
+      )}
+
+      {!loading && !err && (
+        <ul className="list-group">
+          {sorted.map((o) => {
+            const closed = isClosed(o.status);
+            const pillClass = closed ? "bg-danger" : "bg-primary";
+            const statusLabel = (o.status || "-").toUpperCase();
+            const email = o.userEmail || o.createdBy?.email || "-";
+            const typeLabel =
+              o.type === "dine_in"
+                ? "Dine-In"
+                : o.type === "takeaway"
+                ? "Takeaway"
+                : o.type === "delivery"
+                ? "Delivery"
+                : "-";
+
+            return (
+              <li
+                key={o.id}
+                className="list-group-item d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between"
+              >
+                <div className="me-3">
+                  <div className="fw-semibold">
+                    <span className="me-2">#{o.id.slice(0, 6)}</span>
+                    <span className={`badge rounded-pill ${pillClass} me-2`}>{statusLabel}</span>
+                    <span className="badge text-bg-light">{typeLabel}</span>
+                  </div>
+                  <div className="small text-muted mt-1">
+                    Creada: {formatDate(o.createdAt)} • Mesa: {o.tableNumber || "-"}
+                  </div>
+                  <div className="small mt-1">
+                    <span className="text-muted">Usuario: </span>
+                    <span>{email}</span>
+                  </div>
+                </div>
+
+                <div className="text-md-end mt-2 mt-md-0">
+                  <div className="fw-bold">{formatMoney(o)}</div>
+                  {o.notes ? (
+                    <div className="small text-muted text-wrap" style={{ maxWidth: 420 }}>
+                      Nota: {o.notes}
+                    </div>
+                  ) : null}
+                </div>
+              </li>
+            );
+          })}
+          {sorted.length === 0 && (
+            <li className="list-group-item text-center text-muted">
+              No hay órdenes que coincidan con el filtro.
+            </li>
+          )}
+        </ul>
+      )}
+    </div>
+    // </OnlyAdmin>
   );
 }

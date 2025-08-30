@@ -7,7 +7,11 @@ export async function getUserFromRequest(req: Request) {
 
   try {
     const decoded = await adminAuth.verifyIdToken(token);
-    return { uid: decoded.uid, role: (decoded as any).role as "admin" | "client" | undefined };
+    return { 
+      uid: decoded.uid, 
+      email: (decoded as any).email ?? null, 
+      role: (decoded as any).role as "admin" | "client" | undefined 
+    };
   } catch {
     return null;
   }
