@@ -46,6 +46,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <li className="nav-item">
                 <Link className={`nav-link ${isActive('/ops') ? 'active' : ''}`} href="/ops">Ops</Link>
               </li>
+               <li className="nav-item">
+                <Link className={`nav-link ${isActive('/admin/edit-orders') ? 'active' : ''}`} href="/admin/edit-orders">Edit Orders</Link>
+              </li>
             </ul>
 
             <div className="d-flex align-items-center gap-2">
