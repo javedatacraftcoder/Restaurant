@@ -1,121 +1,179 @@
 // src/app/login/page.tsx
 "use client";
 
-import { auth, googleProvider } from "@/lib/firebase/client";
-import {
-  signInWithEmailAndPassword,
-  signInWithPopup,
-  getIdTokenResult,
-} from "firebase/auth";
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { useAuth } from "../providers";
+import { Suspense } from "react";
 
-function computeTargetFromClaims(c: any): string {
-  const op =
-    c?.admin ||
-    c?.kitchen ||
-    c?.waiter ||
-    c?.delivery ||
-    c?.cashier ||
-    c?.role === "admin" ||
-    c?.role === "kitchen" ||
-    c?.role === "waiter" ||
-    c?.role === "delivery" ||
-    c?.role === "cashier";
+export const dynamic = "force-dynamic";
 
-  if (c?.admin || c?.role === "admin") return "/admin";
-  if (op) return "/ops";
-  return "/app";
+function Fallback() {
+  return (
+    <main className="container py-4" style={{ maxWidth: 480 }}>
+      <h1 className="h4 text-center">Cargando…</h1>
+    </main>
+  );
 }
 
 export default function LoginPage() {
+  // Envolvemos el componente que usa useSearchParams en Suspense
+  return (
+    <Suspense fallback={<Fallback />}>
+      <LoginInner />
+    </Suspense>
+  );
+}
+
+// --------- componente real que usa useSearchParams ----------
+import { FormEvent, useEffect, useRef, useState, useMemo } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import {
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signInWithRedirect,
+} from "firebase/auth";
+import { auth, googleProvider } from "@/lib/firebase/client";
+import { useAuth } from "@/app/providers";
+
+function LoginInner() {
   const router = useRouter();
+  const params = useSearchParams();
   const { user, loading } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [redirecting, setRedirecting] = useState(false);
 
-  // Si ya está logueado, redirigir según rol
+  // Evita dobles llamadas (popups duplicados)
+  const inFlightRef = useRef(false);
+
+  // Switch opcional: forzar redirect (útil si popup falla en tu navegador)
+  const forceRedirect = useMemo(
+    () => process.env.NEXT_PUBLIC_AUTH_USE_REDIRECT === "true",
+    []
+  );
+
+  // Si ya hay sesión, nos vamos (desde "/" tu AutoRedirect manda por rol)
   useEffect(() => {
-    (async () => {
-      if (loading || !user || redirecting) return;
-      try {
-        const { claims } = await getIdTokenResult(user);
-        const to = computeTargetFromClaims(claims || {});
-        setRedirecting(true);
-        router.replace(to);
-      } catch {
-        // Si algo falla, caer a /app
-        setRedirecting(true);
-        router.replace("/app");
-      }
-    })();
-  }, [loading, user, router, redirecting]);
+    if (!loading && user) {
+      const next = params.get("next") || "/";
+      router.replace(next);
+    }
+  }, [loading, user, params, router]);
 
-  async function loginEmail(e: React.FormEvent) {
+  async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if (busy || inFlightRef.current) return;
     setErr(null);
+    setBusy(true);
+    inFlightRef.current = true;
     try {
       await signInWithEmailAndPassword(auth, email.trim(), password);
-      // onIdTokenChanged en <Providers> hará el resto (sync cookie + redirect effect)
+      const next = params.get("next") || "/";
+      router.replace(next);
     } catch (e: any) {
-      setErr(e?.message || "Error al iniciar sesión");
+      setErr(e?.message || "No se pudo iniciar sesión.");
+    } finally {
+      inFlightRef.current = false;
+      setBusy(false);
     }
   }
 
   async function loginGoogle() {
+    if (busy || inFlightRef.current) return;
     setErr(null);
+    setBusy(true);
+    inFlightRef.current = true;
+
     try {
+      if (forceRedirect) {
+        await signInWithRedirect(auth, googleProvider);
+        return; // continúa al volver del redirect
+      }
+
+      // Camino rápido: popup
       await signInWithPopup(auth, googleProvider);
+      const next = params.get("next") || "/";
+      router.replace(next);
     } catch (e: any) {
-      setErr(e?.message || "No se pudo iniciar sesión con Google");
+      const code = e?.code || "";
+      const shouldFallback =
+        code === "auth/popup-closed-by-user" ||
+        code === "auth/cancelled-popup-request" ||
+        code === "auth/popup-blocked";
+
+      if (shouldFallback) {
+        try {
+          await signInWithRedirect(auth, googleProvider);
+          return;
+        } catch (er: any) {
+          setErr(er?.message || "No se pudo iniciar con Google (redirect).");
+        }
+      } else {
+        setErr(e?.message || "No se pudo iniciar con Google.");
+      }
+    } finally {
+      inFlightRef.current = false;
+      setBusy(false);
     }
   }
 
-  if (!loading && user && redirecting) {
-    return <main style={{ padding: 24 }}>Entrando…</main>;
-  }
-
   return (
-    <main style={{ padding: 24, maxWidth: 420, margin: "0 auto" }}>
-      <h1 className="h4 mb-3">Iniciar sesión</h1>
+    <main className="container py-4" style={{ maxWidth: 480 }}>
+      <h1 className="h3 mb-3 text-center">Iniciar sesión</h1>
 
-      <form onSubmit={loginEmail} className="d-grid gap-2">
-        <label className="form-label">Correo</label>
-        <input
-          className="form-control"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          autoComplete="username"
-          required
-        />
+      <form onSubmit={onSubmit} className="card p-3 border-0 shadow-sm">
+        <div className="mb-3">
+          <label className="form-label">Correo</label>
+          <input
+            className="form-control"
+            type="email"
+            autoComplete="email"
+            placeholder="tu@correo.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            disabled={busy}
+          />
+        </div>
 
-        <label className="form-label mt-2">Contraseña</label>
-        <input
-          className="form-control"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          autoComplete="current-password"
-          required
-        />
+        <div className="mb-3">
+          <label className="form-label">Contraseña</label>
+          <input
+            className="form-control"
+            type="password"
+            autoComplete="current-password"
+            placeholder="********"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            disabled={busy}
+          />
+        </div>
 
-        <button type="submit" className="btn btn-primary mt-3" disabled={loading}>
-          Entrar
+        <button className="btn btn-primary w-100" disabled={busy}>
+          {busy ? "Entrando..." : "Entrar"}
         </button>
+
+        {err && <p className="text-danger mt-3 mb-0">{err}</p>}
       </form>
 
-      <hr className="my-3" />
+      <div className="text-center my-3">— o —</div>
 
-      <button onClick={loginGoogle} className="btn btn-outline-secondary w-100" disabled={loading}>
-        Entrar con Google
+      <button
+        type="button"
+        onClick={loginGoogle}
+        className="btn btn-outline-secondary w-100"
+        disabled={busy}
+      >
+        {busy
+          ? (forceRedirect ? "Redirigiendo a Google..." : "Abriendo Google...")
+          : (forceRedirect ? "Entrar con Google (redirect)" : "Entrar con Google")}
       </button>
 
-      {err && <p className="text-danger mt-3">{err}</p>}
+      <p className="text-center mt-3 mb-0">
+        ¿No tienes cuenta?{" "}
+        <a href="/accounts" className="link-primary">Regístrate</a>
+      </p>
     </main>
   );
 }
