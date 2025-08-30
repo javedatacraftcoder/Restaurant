@@ -1,113 +1,77 @@
-// ./middleware.ts
-import { NextRequest, NextResponse } from 'next/server';
+// middleware.ts
+import { NextResponse, type NextRequest } from "next/server";
 
 /**
- * CSP dev-friendly: durante desarrollo permitimos 'unsafe-inline'/'unsafe-eval'
- * para evitar errores con scripts/estilos embebidos de Next/Firebase.
- * En producción puedes endurecer (quitar 'unsafe-*' y agregar nonces/hashes).
+ * Rutas que deben requerir sesión.
+ * Puedes agregar/quitar prefijos según tu estructura.
  */
-const buildCSP = () => {
-  const isProd = process.env.NODE_ENV === 'production';
+const PROTECTED_PREFIXES = [
+  "/app",       // portal del cliente
+  "/menu",      // menú del cliente
+  "/checkout",  // checkout
+  "/cart",      // carrito
+  "/admin",     // admin
+  "/ops",       // tableros operativos si aplica
+];
 
-  // Conexiones necesarias (Firebase / Google Identity / APIs)
-  const connectSrc = [
-    "'self'",
-    'https://*.firebaseio.com',
-    'https://firestore.googleapis.com',
-    'https://securetoken.googleapis.com',
-    'https://identitytoolkit.googleapis.com',
-    'https://www.googleapis.com',
-  ];
+/**
+ * Intenta detectar una cookie de sesión.
+ * Ajusta los nombres si ya usas otro cookie name en tu login.
+ */
+function hasSessionCookie(req: NextRequest) {
+  const cookies = req.cookies;
+  return Boolean(
+    cookies.get("session")?.value ||   // cookie típica de sesión (Firebase/Auth server)
+    cookies.get("idToken")?.value ||   // si guardas el idToken como cookie
+    cookies.get("auth")?.value         // fallback genérico
+  );
+}
 
-  const imgSrc = ["'self'", 'data:', 'blob:', 'https:'];
-
-  const scriptSrc = isProd ? ["'self'"] : ["'self'", "'unsafe-inline'", "'unsafe-eval'"];
-  const styleSrc  = isProd ? ["'self'"] : ["'self'", "'unsafe-inline'"];
-  const fontSrc   = ["'self'", 'data:'];
-  const frameSrc  = ["'self'"]; // agrega dominios si incrustas iframes de terceros
-
-  const directives = [
-    `default-src 'self';`,
-    `base-uri 'self';`,
-    `form-action 'self';`,
-    `connect-src ${connectSrc.join(' ')};`,
-    `img-src ${imgSrc.join(' ')};`,
-    `script-src ${scriptSrc.join(' ')};`,
-    `style-src ${styleSrc.join(' ')};`,
-    `font-src ${fontSrc.join(' ')};`,
-    `frame-src ${frameSrc.join(' ')};`,
-    `frame-ancestors 'self';`,
-    // `upgrade-insecure-requests;`, // opcional en prod
-  ];
-
-  return directives.join(' ');
-};
+function isProtectedPath(pathname: string) {
+  return PROTECTED_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"));
+}
 
 export function middleware(req: NextRequest) {
-  /**
-   * --- Control de acceso por rol (cliente vs. operativo) ---
-   * Leemos la cookie 'appRole' que fija /api/auth/refresh-role.
-   * Si un usuario SIN rol operativo entra a /admin|/kitchen|... -> /app (área cliente).
-   * Si un operador entra a /app -> /admin (ajusta si tu home operativo difiere).
-   */
-  const OP_PATHS = ['/admin', '/kitchen', '/waiter', '/delivery', '/cashier', '/ops']; // ← added /ops
-  const isOpPath = OP_PATHS.some((p) => req.nextUrl.pathname.startsWith(p));
-  const isClientPath = req.nextUrl.pathname.startsWith('/app');
+  const { pathname, search } = req.nextUrl;
 
-  const opRoles = new Set(['admin', 'kitchen', 'waiter', 'delivery', 'cashier']);
-  const role = req.cookies.get('appRole')?.value ?? 'customer';
-  const isOp = opRoles.has(role);
-
-  const to = (path: string) => {
-    const url = req.nextUrl.clone();
-    url.pathname = path;
-    url.search = '';
-    return url;
-  };
-
-  // No operador intentando entrar a áreas operativas → /app
-  if (isOpPath && !isOp) {
-    return NextResponse.redirect(to('/app'));
+  // Rutas públicas explícitas (no deben redirigir):
+  const PUBLIC_PATHS = ["/login", "/signup", "/reset-password"];
+  if (PUBLIC_PATHS.includes(pathname)) {
+    return NextResponse.next();
   }
 
-  // Operador intentando entrar al área de cliente → /admin (o tu home operativo)
-  if (isClientPath && isOp) {
-    return NextResponse.redirect(to('/admin'));
+  // No proteger archivos estáticos, API ni assets; eso se controla con config.matcher
+  // Aquí solo queda la protección de páginas.
+  const needsAuth = isProtectedPath(pathname);
+  if (!needsAuth) {
+    return NextResponse.next();
   }
 
-  // Continuar request normal y añadir cabeceras de seguridad
-  const res = NextResponse.next();
+  // Verificamos cookie de sesión
+  if (!hasSessionCookie(req)) {
+    const url = new URL("/login", req.url);
+    // Conserva hacia dónde quería ir el usuario
+    const nextParam = pathname + (search || "");
+    url.searchParams.set("next", nextParam);
+    return NextResponse.redirect(url);
+  }
 
-  // --- CSP (Content-Security-Policy) ---
-  res.headers.set('Content-Security-Policy', buildCSP());
+  // (Opcional) Si quisieras forzar 2FA/otros checks, aquí es el lugar.
 
-  // Cabeceras de seguridad complementarias
-  res.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.headers.set('X-Content-Type-Options', 'nosniff');
-  res.headers.set('X-Frame-Options', 'SAMEORIGIN');
-  res.headers.set('X-XSS-Protection', '0'); // deprecado, confiamos en CSP
-
-  // Permissions-Policy minimal (ajusta si tu app usa sensores/medios)
-  res.headers.set(
-    'Permissions-Policy',
-    [
-      'accelerometer=()',
-      'camera=()',
-      'geolocation=()',
-      'gyroscope=()',
-      'magnetometer=()',
-      'microphone=()',
-      'payment=()',
-      'usb=()',
-    ].join(', ')
-  );
-
-  return res;
+  return NextResponse.next();
 }
 
 /**
- * Matcher: excluye assets estáticos de Next para no sobrecargar la cadena de peticiones.
+ * Matcher:
+ *  - Aplica a TODO excepto:
+ *    - /_next/* (assets internos)
+ *    - /static/*, /images/* y archivos con extensión (.*\..*)
+ *    - /api/* (si quieres proteger APIs por cookie, elimina "api" del negativo)
+ *    - robots.txt, sitemap.xml, favicon.ico
  */
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)'],
+  matcher: [
+    // Cubre todo menos _next, api y archivos estáticos o con extensión
+    "/((?!_next|api|static|images|favicon.ico|robots.txt|sitemap.xml|.*\\..*).*)",
+  ],
 };
