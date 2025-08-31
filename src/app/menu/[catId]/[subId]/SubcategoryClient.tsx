@@ -26,6 +26,8 @@ type MenuItem = {
   // compat con tus posibles banderas:
   isAvailable?: boolean;
   active?: boolean;
+  /** 👇 NUEVO: descripción opcional */
+  description?: string | null;
 };
 
 function fmtQ(n?: number) {
@@ -80,7 +82,7 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
     return () => unsubList.forEach((u) => u());
   }, [db, catId, subId]);
 
-  // 👉 Agregar al carrito usando tu API real (NO imagen, solo lo que el checkout necesita)
+  // 👉 Agregar al carrito usando tu API real
   const handleAdd = (it: MenuItem) => {
     setAddingId(it.id);
     try {
@@ -88,9 +90,6 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
         menuItemId: it.id,
         menuItemName: it.name,
         quantity: 1,
-        // selections se puede omitir; checkout hace ensureRequiredSelections() antes de cotizar
-        // note opcional:
-        // note: "",
       });
     } finally {
       setAddingId(null);
@@ -137,6 +136,12 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
                   <div className="fw-semibold">{it.name}</div>
                   <div className="fw-semibold">{fmtQ(it.price)}</div>
                 </div>
+
+                {/* 👇 NUEVO: mostrar descripción si existe */}
+                {it.description && (
+                  <p className="text-muted small mb-2">{it.description}</p>
+                )}
+
                 {isDisabled(it) && (
                   <div className="badge text-bg-warning mb-2 align-self-start">No disponible</div>
                 )}

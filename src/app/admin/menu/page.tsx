@@ -121,6 +121,8 @@ type MenuItem = {
   addons?: Addon[];
   optionGroupIds?: string[]; // relación a option-groups
   active?: boolean;
+  /** NUEVO: descripción breve para mostrar en el Menú público */
+  description?: string | null;
 };
 
 type OptionGroup = {
@@ -245,6 +247,8 @@ function AdminMenuPage_Inner() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageMeta, setImageMeta] = useState<{ url?: string | null; path?: string | null }>({});
+  /** NUEVO: estado local para la descripción */
+  const [itemDescription, setItemDescription] = useState<string>('');
 
   const resetItemForm = () => {
     setItemEditingId(null);
@@ -258,6 +262,8 @@ function AdminMenuPage_Inner() {
     setImageFile(null);
     setImagePreview(null);
     setImageMeta({});
+    /** NUEVO */
+    setItemDescription('');
   };
 
   /* =============================
@@ -540,6 +546,8 @@ function AdminMenuPage_Inner() {
     setImageMeta({ url: mi.imageUrl || null, path: mi.imagePath || null });
     setImageFile(null);
     setImagePreview(null);
+    /** NUEVO: precargar descripción si existe */
+    setItemDescription((mi as any).description || '');
   };
 
   const onDeleteItem = async (id: string, imgPath?: string | null) => {
@@ -569,6 +577,8 @@ function AdminMenuPage_Inner() {
         optionGroupIds: itemOptionGroupIds,
         addons: addons.map(a => ({ name: a.name.trim(), price: Number(a.price || 0) })).filter(a => a.name),
         active: !!itemActive,
+        /** NUEVO: guardar descripción (string o null) */
+        description: itemDescription.trim() ? itemDescription.trim() : null,
       } as Partial<MenuItem>;
 
       let id = itemEditingId || '';
@@ -826,6 +836,18 @@ function AdminMenuPage_Inner() {
                       );
                     })}
                   </div>
+                </div>
+
+                {/* NUEVO: campo de descripción para el plato */}
+                <div className="col-12">
+                  <label className="form-label">Descripción (visible solo en el Menú)</label>
+                  <textarea
+                    className="form-control"
+                    rows={3}
+                    placeholder="Describe brevemente el plato (opcional)"
+                    value={itemDescription}
+                    onChange={(e) => setItemDescription(e.target.value)}
+                  />
                 </div>
 
                 <div className="col-12">
