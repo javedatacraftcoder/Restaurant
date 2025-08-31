@@ -89,7 +89,6 @@ type Category = {
   description?: string;
   isActive?: boolean;
   sortOrder?: number;
-  // [IMAGENES-CAT] campos opcionales para imagen
   imageUrl?: string | null;
   imagePath?: string | null;
 };
@@ -100,7 +99,6 @@ type Subcategory = {
   categoryId: string;
   isActive?: boolean;
   sortOrder?: number;
-  // [IMAGENES-SUB] campos opcionales para imagen
   imageUrl?: string | null;
   imagePath?: string | null;
 };
@@ -121,7 +119,7 @@ type MenuItem = {
   addons?: Addon[];
   optionGroupIds?: string[]; // relación a option-groups
   active?: boolean;
-  /** NUEVO: descripción breve para mostrar en el Menú público */
+  /** Descripción visible en el Menú público */
   description?: string | null;
 };
 
@@ -133,6 +131,17 @@ type OptionGroup = {
   min?: number;
   max?: number;
   active?: boolean;
+  sortOrder?: number;
+};
+
+type OptionItem = {
+  id?: string;
+  groupId: string;
+  name: string;
+  priceDelta?: number;
+  isDefault?: boolean;
+  active?: boolean;
+  sortOrder?: number;
 };
 
 /* =========================================================================
@@ -230,9 +239,9 @@ function AdminMenuPage_Inner() {
   const [catName, setCatName] = useState('');
   const [editingCatId, setEditingCatId] = useState<string | null>(null);
 
-  // ---- estados de subcategorías (ÚNICA declaración) ----
+  // ---- estados de subcategorías ----
   const [subName, setSubName] = useState('');
-  const [subCatId, setSubCatId] = useState(''); // categoría de la subcategoría
+  const [subCatId, setSubCatId] = useState('');
   const [editingSubId, setEditingSubId] = useState<string | null>(null);
 
   // ---- estados del formulario de plato ----
@@ -247,8 +256,28 @@ function AdminMenuPage_Inner() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageMeta, setImageMeta] = useState<{ url?: string | null; path?: string | null }>({});
-  /** NUEVO: estado local para la descripción */
   const [itemDescription, setItemDescription] = useState<string>('');
+
+  // ---- NUEVO: estado UI para crear grupos de opciones inline ----
+  const [showOGCreator, setShowOGCreator] = useState(false);
+
+  // ---- NUEVO: estado del formulario de grupo ----
+  const [ogName, setOgName] = useState('');
+  const [ogType, setOgType] = useState<'single' | 'multi'>('single');
+  const [ogRequired, setOgRequired] = useState(false);
+  const [ogMin, setOgMin] = useState<number | ''>('');
+  const [ogMax, setOgMax] = useState<number | ''>('');
+  const [ogActive, setOgActive] = useState(true);
+  const [ogSortOrder, setOgSortOrder] = useState<number | ''>('');
+
+  // ---- NUEVO: estado del listado de option-items a crear con el grupo ----
+  const [oiRows, setOiRows] = useState<Array<{
+    name: string;
+    priceDelta: string;
+    isDefault: boolean;
+    active: boolean;
+    sortOrder: string;
+  }>>([]);
 
   const resetItemForm = () => {
     setItemEditingId(null);
@@ -262,8 +291,18 @@ function AdminMenuPage_Inner() {
     setImageFile(null);
     setImagePreview(null);
     setImageMeta({});
-    /** NUEVO */
     setItemDescription('');
+  };
+
+  const resetOGForm = () => {
+    setOgName('');
+    setOgType('single');
+    setOgRequired(false);
+    setOgMin('');
+    setOgMax('');
+    setOgActive(true);
+    setOgSortOrder('');
+    setOiRows([]);
   };
 
   /* =============================
@@ -286,7 +325,7 @@ function AdminMenuPage_Inner() {
         } = await getFirestoreMod();
         const db = getFirestore();
 
-        // Categorías (orden por sortOrder si existe; fallback por name)
+        // Categorías
         try {
           unsubCats = onSnapshot(
             query(collection(db, 'categories'), orderBy('sortOrder', 'asc')),
@@ -331,7 +370,7 @@ function AdminMenuPage_Inner() {
           collection(db, 'option-groups'),
           (snap) => {
             const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() } as any));
-            rows.sort((a: any, b: any) => String(a?.name||'').localeCompare(String(b?.name||'')));
+            rows.sort((a: any, b: any) => (Number(a?.sortOrder||0) - Number(b?.sortOrder||0)) || String(a?.name||'').localeCompare(String(b?.name||'')));
             setGroups(rows);
           }
         );
@@ -410,7 +449,7 @@ function AdminMenuPage_Inner() {
     }
   };
 
-  // [IMAGENES-CAT] subir imagen de categoría
+  // Subir imagen categoría
   const onUploadCategoryImage = async (catId: string, file: File | null) => {
     if (!file) return;
     try {
@@ -482,7 +521,7 @@ function AdminMenuPage_Inner() {
     }
   };
 
-  // [IMAGENES-SUB] subir imagen de subcategoría
+  // Subir imagen subcategoría
   const onUploadSubcategoryImage = async (subId: string, file: File | null) => {
     if (!file) return;
     try {
@@ -546,7 +585,6 @@ function AdminMenuPage_Inner() {
     setImageMeta({ url: mi.imageUrl || null, path: mi.imagePath || null });
     setImageFile(null);
     setImagePreview(null);
-    /** NUEVO: precargar descripción si existe */
     setItemDescription((mi as any).description || '');
   };
 
@@ -577,7 +615,6 @@ function AdminMenuPage_Inner() {
         optionGroupIds: itemOptionGroupIds,
         addons: addons.map(a => ({ name: a.name.trim(), price: Number(a.price || 0) })).filter(a => a.name),
         active: !!itemActive,
-        /** NUEVO: guardar descripción (string o null) */
         description: itemDescription.trim() ? itemDescription.trim() : null,
       } as Partial<MenuItem>;
 
@@ -613,6 +650,83 @@ function AdminMenuPage_Inner() {
       return true;
     });
   }, [items, filterCat, filterSub]);
+
+  /* =============================
+     NUEVO: Crear Option Group + Option Items
+     ============================= */
+  const addOiRow = () => {
+    setOiRows((rows) => [
+      ...rows,
+      { name: '', priceDelta: '', isDefault: false, active: true, sortOrder: '' },
+    ]);
+  };
+  const changeOiRow = (idx: number, field: keyof (typeof oiRows)[number], value: string | boolean) => {
+    setOiRows((rows) => {
+      const copy = rows.slice();
+      const r = { ...copy[idx] } as any;
+      r[field] = value;
+      copy[idx] = r;
+      return copy;
+    });
+  };
+  const removeOiRow = (idx: number) => {
+    setOiRows((rows) => rows.filter((_, i) => i !== idx));
+  };
+
+  const createOptionGroupWithItems = async () => {
+    try {
+      const name = ogName.trim();
+      if (!name) { alert('Nombre de grupo requerido'); return; }
+
+      // Normalizar min/max según type/required
+      let min = (ogMin === '' ? undefined : Number(ogMin));
+      let max = (ogMax === '' ? undefined : Number(ogMax));
+      if (ogType === 'single') {
+        max = 1;
+        if (ogRequired) min = 1; else min = (min ?? 0);
+      } else {
+        if (typeof min === 'number' && min < 0) min = 0;
+        if (typeof max === 'number' && max < 1) max = 1;
+        if (typeof min === 'number' && typeof max === 'number' && min > max) {
+          alert('min no puede ser mayor que max');
+          return;
+        }
+      }
+
+      const groupPayload: Partial<OptionGroup> = {
+        name,
+        type: ogType,
+        required: ogRequired,
+        min,
+        max,
+        active: ogActive,
+        sortOrder: (ogSortOrder === '' ? undefined : Number(ogSortOrder)),
+      };
+
+      const groupId = await createDoc('option-groups', groupPayload);
+
+      // Crear cada option-item
+      const rowsValid = oiRows.filter(r => r.name.trim());
+      for (const r of rowsValid) {
+        const itemPayload: Partial<OptionItem> = {
+          groupId,
+          name: r.name.trim(),
+          priceDelta: r.priceDelta === '' ? 0 : Number(r.priceDelta),
+          isDefault: !!r.isDefault,
+          active: !!r.active,
+          sortOrder: r.sortOrder === '' ? undefined : Number(r.sortOrder),
+        };
+        await createDoc('option-items', itemPayload);
+      }
+
+      // Mostrar feedback y limpiar
+      resetOGForm();
+      setShowOGCreator(false);
+      alert('Grupo y opciones creados. Ya puedes marcar el grupo en el plato.');
+    } catch (e: any) {
+      alert(e?.message || 'No se pudo crear el grupo/opciones');
+    }
+  };
 
   /* =========================================================================
      Render
@@ -654,7 +768,6 @@ function AdminMenuPage_Inner() {
                 {categories.map((c) => (
                   <div key={c.id} className="list-group-item d-flex justify-content-between align-items-center">
                     <div className="d-flex align-items-center gap-2">
-                      {/* [IMAGENES-CAT] miniatura */}
                       <div style={{ width: 48, height: 48, background: '#f8f9fa', borderRadius: 6, overflow: 'hidden' }}>
                         {c.imageUrl ? (
                           <img src={c.imageUrl} alt={c.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -670,7 +783,6 @@ function AdminMenuPage_Inner() {
                       </div>
                     </div>
                     <div className="btn-group btn-group-sm">
-                      {/* [IMAGENES-CAT] botón subir */}
                       <label className="btn btn-outline-primary">
                         Imagen
                         <input
@@ -731,7 +843,6 @@ function AdminMenuPage_Inner() {
                     <div key={s.id} className="list-group-item">
                       <div className="d-flex justify-content-between align-items-center">
                         <div className="d-flex align-items-center gap-2">
-                          {/* [IMAGENES-SUB] miniatura */}
                           <div style={{ width: 44, height: 44, background: '#f8f9fa', borderRadius: 6, overflow: 'hidden' }}>
                             {s.imageUrl ? (
                               <img src={s.imageUrl} alt={s.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -745,7 +856,6 @@ function AdminMenuPage_Inner() {
                           </div>
                         </div>
                         <div className="btn-group btn-group-sm">
-                          {/* [IMAGENES-SUB] botón subir */}
                           <label className="btn btn-outline-primary">
                             Imagen
                             <input
@@ -812,6 +922,17 @@ function AdminMenuPage_Inner() {
 
                 <div className="col-12">
                   <label className="form-label">Grupos de opciones (option-groups)</label>
+                  <div className="d-flex align-items-center justify-content-between mb-2">
+                    <small className="text-muted">Marca los grupos aplicables a este plato.</small>
+                    {/* NUEVO botón para mostrar creador inline */}
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-primary"
+                      onClick={() => setShowOGCreator(s => !s)}
+                    >
+                      {showOGCreator ? 'Ocultar' : 'Nuevo grupo + opciones'}
+                    </button>
+                  </div>
                   <div className="border rounded p-2" style={{ maxHeight: 160, overflow: 'auto' }}>
                     {groups.length === 0 && <div className="text-muted small">No hay grupos de opciones.</div>}
                     {groups.map((g) => {
@@ -829,7 +950,8 @@ function AdminMenuPage_Inner() {
                             }}
                           />
                           <label className="form-check-label" htmlFor={`g_${g.id}`}>
-                            {g.name} {g.required ? <span className="badge text-bg-light ms-1">obligatorio</span> : null}
+                            {g.name}
+                            {g.required ? <span className="badge text-bg-light ms-1">obligatorio</span> : null}
                             {g.type ? <span className="badge text-bg-secondary ms-1">{g.type}</span> : null}
                           </label>
                         </div>
@@ -838,7 +960,130 @@ function AdminMenuPage_Inner() {
                   </div>
                 </div>
 
-                {/* NUEVO: campo de descripción para el plato */}
+                {/* ===================== NUEVO: Creador inline de Option-Group + Option-Items ===================== */}
+                {showOGCreator && (
+                  <div className="col-12">
+                    <div className="border rounded p-3">
+                      <div className="d-flex align-items-center justify-content-between mb-2">
+                        <strong>Nuevo grupo de opciones</strong>
+                        <button className="btn btn-sm btn-outline-secondary" onClick={() => setShowOGCreator(false)}>Cerrar</button>
+                      </div>
+
+                      <div className="row g-2">
+                        <div className="col-12 col-md-6">
+                          <label className="form-label">Nombre del grupo</label>
+                          <input className="form-control" value={ogName} onChange={(e) => setOgName(e.target.value)} />
+                        </div>
+                        <div className="col-6 col-md-2">
+                          <label className="form-label">Tipo</label>
+                          <select className="form-select" value={ogType} onChange={(e) => setOgType(e.target.value as any)}>
+                            <option value="single">single</option>
+                            <option value="multi">multi</option>
+                          </select>
+                        </div>
+                        <div className="col-6 col-md-2">
+                          <label className="form-label">Orden</label>
+                          <input
+                            type="number"
+                            className="form-control"
+                            value={ogSortOrder}
+                            onChange={(e) => setOgSortOrder(e.target.value === '' ? '' : Number(e.target.value))}
+                          />
+                        </div>
+                        <div className="col-12 col-md-2 d-flex align-items-end">
+                          <div className="form-check">
+                            <input className="form-check-input" type="checkbox" id="ogActive" checked={ogActive} onChange={(e) => setOgActive(e.target.checked)} />
+                            <label className="form-check-label" htmlFor="ogActive">Activo</label>
+                          </div>
+                        </div>
+
+                        <div className="col-6 col-md-2">
+                          <label className="form-label">Min</label>
+                          <input
+                            type="number"
+                            className="form-control"
+                            value={ogMin}
+                            onChange={(e) => setOgMin(e.target.value === '' ? '' : Number(e.target.value))}
+                          />
+                        </div>
+                        <div className="col-6 col-md-2">
+                          <label className="form-label">Max</label>
+                          <input
+                            type="number"
+                            className="form-control"
+                            value={ogMax}
+                            onChange={(e) => setOgMax(e.target.value === '' ? '' : Number(e.target.value))}
+                          />
+                        </div>
+                        <div className="col-12 col-md-2 d-flex align-items-end">
+                          <div className="form-check">
+                            <input className="form-check-input" type="checkbox" id="ogReq" checked={ogRequired} onChange={(e) => setOgRequired(e.target.checked)} />
+                            <label className="form-check-label" htmlFor="ogReq">Requerido</label>
+                          </div>
+                        </div>
+                      </div>
+
+                      <hr className="my-3" />
+                      <div className="d-flex align-items-center justify-content-between mb-2">
+                        <strong>Opciones de este grupo</strong>
+                        <button className="btn btn-sm btn-outline-primary" onClick={addOiRow}>+ Agregar opción</button>
+                      </div>
+
+                      {oiRows.length === 0 && <div className="text-muted small">Aún no has agregado opciones.</div>}
+
+                      {oiRows.map((r, idx) => (
+                        <div key={idx} className="row g-2 align-items-end mb-2">
+                          <div className="col-12 col-md-4">
+                            <label className="form-label">Nombre</label>
+                            <input className="form-control form-control-sm" value={r.name} onChange={(e) => changeOiRow(idx, 'name', e.target.value)} />
+                          </div>
+                          <div className="col-6 col-md-2">
+                            <label className="form-label">Δ Precio</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              className="form-control form-control-sm"
+                              value={r.priceDelta}
+                              onChange={(e) => changeOiRow(idx, 'priceDelta', e.target.value)}
+                            />
+                          </div>
+                          <div className="col-6 col-md-2">
+                            <label className="form-label">Orden</label>
+                            <input
+                              type="number"
+                              className="form-control form-control-sm"
+                              value={r.sortOrder}
+                              onChange={(e) => changeOiRow(idx, 'sortOrder', e.target.value)}
+                            />
+                          </div>
+                          <div className="col-6 col-md-2">
+                            <div className="form-check">
+                              <input className="form-check-input" type="checkbox" id={`oiDef_${idx}`} checked={r.isDefault} onChange={(e) => changeOiRow(idx, 'isDefault', e.target.checked)} />
+                              <label className="form-check-label" htmlFor={`oiDef_${idx}`}>Default</label>
+                            </div>
+                          </div>
+                          <div className="col-6 col-md-2">
+                            <div className="form-check">
+                              <input className="form-check-input" type="checkbox" id={`oiAct_${idx}`} checked={r.active} onChange={(e) => changeOiRow(idx, 'active', e.target.checked)} />
+                              <label className="form-check-label" htmlFor={`oiAct_${idx}`}>Activo</label>
+                            </div>
+                          </div>
+                          <div className="col-12 text-end">
+                            <button className="btn btn-outline-danger btn-sm" onClick={() => removeOiRow(idx)}>Eliminar</button>
+                          </div>
+                        </div>
+                      ))}
+
+                      <div className="text-end mt-3">
+                        <button className="btn btn-primary" onClick={createOptionGroupWithItems}>
+                          Crear grupo + opciones
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Descripción del plato */}
                 <div className="col-12">
                   <label className="form-label">Descripción (visible solo en el Menú)</label>
                   <textarea
@@ -850,6 +1095,7 @@ function AdminMenuPage_Inner() {
                   />
                 </div>
 
+                {/* Addons */}
                 <div className="col-12">
                   <label className="form-label d-flex align-items-center justify-content-between">
                     <span>Addons (extras por precio)</span>
@@ -871,6 +1117,7 @@ function AdminMenuPage_Inner() {
                   ))}
                 </div>
 
+                {/* Imagen */}
                 <div className="col-12 col-md-8">
                   <ImagePicker
                     imagePreview={imagePreview}
