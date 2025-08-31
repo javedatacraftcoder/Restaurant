@@ -55,7 +55,14 @@ const nextConfig: NextConfig = {
     },
   },
   //dynamicIO: true,
-
+  images: {
+    remotePatterns: [
+      { protocol: "https", hostname: "firebasestorage.googleapis.com" },
+      { protocol: "https", hostname: "lh3.googleusercontent.com" },
+    ],
+    // Alternativa:
+    // domains: ["firebasestorage.googleapis.com", "lh3.googleusercontent.com"],
+  },
   // 👇 Workaround para evitar que Vercel intente prerender con CSS chunks
   generateEtags: false,
   trailingSlash: false,

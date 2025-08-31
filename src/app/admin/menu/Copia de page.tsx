@@ -1,4 +1,3 @@
-// src/app/admin/menu/page.tsx
 'use client';
 
 import { OnlyAdmin } from "@/components/Only";
@@ -89,9 +88,6 @@ type Category = {
   description?: string;
   isActive?: boolean;
   sortOrder?: number;
-  // [IMAGENES-CAT] campos opcionales para imagen
-  imageUrl?: string | null;
-  imagePath?: string | null;
 };
 
 type Subcategory = {
@@ -100,9 +96,6 @@ type Subcategory = {
   categoryId: string;
   isActive?: boolean;
   sortOrder?: number;
-  // [IMAGENES-SUB] campos opcionales para imagen
-  imageUrl?: string | null;
-  imagePath?: string | null;
 };
 
 type Addon = {
@@ -404,23 +397,6 @@ function AdminMenuPage_Inner() {
     }
   };
 
-  // [IMAGENES-CAT] subir imagen de categoría
-  const onUploadCategoryImage = async (catId: string, file: File | null) => {
-    if (!file) return;
-    try {
-      const current = categories.find((c) => c.id === catId);
-      if (current?.imagePath) {
-        try { await deleteImageByPath(current.imagePath); } catch {}
-      }
-      const cleanName = file.name.replace(/\s+/g, '_');
-      const keyPath = `categories/${catId}/${Date.now()}_${cleanName}`;
-      const up = await uploadMenuImage(file, keyPath);
-      await updateDocById('categories', catId, { imageUrl: up.url, imagePath: up.path });
-    } catch (e: any) {
-      alert(e?.message || 'No se pudo subir la imagen de la categoría');
-    }
-  };
-
   /* =============================
      CRUD Subcategorías
      ============================= */
@@ -473,23 +449,6 @@ function AdminMenuPage_Inner() {
       await deleteDocById('subcategories', id);
     } catch (e: any) {
       alert(e?.message || 'No se pudo eliminar');
-    }
-  };
-
-  // [IMAGENES-SUB] subir imagen de subcategoría
-  const onUploadSubcategoryImage = async (subId: string, file: File | null) => {
-    if (!file) return;
-    try {
-      const current = subcategories.find((s) => s.id === subId);
-      if (current?.imagePath) {
-        try { await deleteImageByPath(current.imagePath); } catch {}
-      }
-      const cleanName = file.name.replace(/\s+/g, '_');
-      const keyPath = `subcategories/${subId}/${Date.now()}_${cleanName}`;
-      const up = await uploadMenuImage(file, keyPath);
-      await updateDocById('subcategories', subId, { imageUrl: up.url, imagePath: up.path });
-    } catch (e: any) {
-      alert(e?.message || 'No se pudo subir la imagen de la subcategoría');
     }
   };
 
@@ -643,37 +602,13 @@ function AdminMenuPage_Inner() {
               <div className="list-group">
                 {categories.map((c) => (
                   <div key={c.id} className="list-group-item d-flex justify-content-between align-items-center">
-                    <div className="d-flex align-items-center gap-2">
-                      {/* [IMAGENES-CAT] miniatura */}
-                      <div style={{ width: 48, height: 48, background: '#f8f9fa', borderRadius: 6, overflow: 'hidden' }}>
-                        {c.imageUrl ? (
-                          <img src={c.imageUrl} alt={c.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        ) : (
-                          <div className="d-flex h-100 w-100 align-items-center justify-content-center text-muted" style={{ fontSize: 10 }}>Sin img</div>
-                        )}
-                      </div>
-                      <div>
-                        <div className="fw-semibold">{c.name}</div>
-                        <div className="text-muted small">
-                          slug: {c.slug || '—'} · orden: {c.sortOrder ?? '—'} · activo: {String(c.isActive ?? true)}
-                        </div>
+                    <div>
+                      <div className="fw-semibold">{c.name}</div>
+                      <div className="text-muted small">
+                        slug: {c.slug || '—'} · orden: {c.sortOrder ?? '—'} · activo: {String(c.isActive ?? true)}
                       </div>
                     </div>
                     <div className="btn-group btn-group-sm">
-                      {/* [IMAGENES-CAT] botón subir */}
-                      <label className="btn btn-outline-primary">
-                        Imagen
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="d-none"
-                          onChange={(e) => {
-                            const f = e.target.files?.[0] || null;
-                            onUploadCategoryImage(c.id, f);
-                            e.currentTarget.value = "";
-                          }}
-                        />
-                      </label>
                       <button className="btn btn-outline-secondary" onClick={() => onEditCategory(c)}>Editar</button>
                       <button className="btn btn-outline-danger" onClick={() => onDeleteCategory(c.id)}>Eliminar</button>
                     </div>
@@ -720,35 +655,11 @@ function AdminMenuPage_Inner() {
                   return (
                     <div key={s.id} className="list-group-item">
                       <div className="d-flex justify-content-between align-items-center">
-                        <div className="d-flex align-items-center gap-2">
-                          {/* [IMAGENES-SUB] miniatura */}
-                          <div style={{ width: 44, height: 44, background: '#f8f9fa', borderRadius: 6, overflow: 'hidden' }}>
-                            {s.imageUrl ? (
-                              <img src={s.imageUrl} alt={s.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                            ) : (
-                              <div className="d-flex h-100 w-100 align-items-center justify-content-center text-muted" style={{ fontSize: 10 }}>Sin img</div>
-                            )}
-                          </div>
-                          <div>
-                            <div className="fw-semibold">{s.name}</div>
-                            <div className="text-muted small">Categoría: {catName} · orden: {s.sortOrder ?? '—'}</div>
-                          </div>
+                        <div>
+                          <div className="fw-semibold">{s.name}</div>
+                          <div className="text-muted small">Categoría: {catName} · orden: {s.sortOrder ?? '—'}</div>
                         </div>
                         <div className="btn-group btn-group-sm">
-                          {/* [IMAGENES-SUB] botón subir */}
-                          <label className="btn btn-outline-primary">
-                            Imagen
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="d-none"
-                              onChange={(e) => {
-                                const f = e.target.files?.[0] || null;
-                                onUploadSubcategoryImage(s.id, f);
-                                e.currentTarget.value = "";
-                              }}
-                            />
-                          </label>
                           <button className="btn btn-outline-secondary" onClick={() => onEditSubcategory(s)}>Editar</button>
                           <button className="btn btn-outline-danger" onClick={() => onDeleteSubcategory(s.id)}>Eliminar</button>
                         </div>
@@ -983,6 +894,7 @@ function ImagePicker({
     </>
   );
 }
+
 
 export default function AdminMenuPage() {
   return (
