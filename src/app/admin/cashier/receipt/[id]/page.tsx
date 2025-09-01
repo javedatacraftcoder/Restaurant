@@ -1,3 +1,5 @@
+// src/app/admin/cashier/receipt/[id]/page.tsx
+
 'use client';
 
 import { OnlyCashier } from "@/components/Only";
@@ -61,17 +63,25 @@ type StatusSnake =
   | 'ready_to_close' | 'assigned_to_courier' | 'on_the_way'
   | 'delivered' | 'closed' | 'cancelled';
 
+type OptionItem = { id?: string; name?: string; price?: number; priceCents?: number; priceDelta?: number; priceDeltaCents?: number; priceExtra?: number; priceExtraCents?: number };
 type OrderItemLine = {
   menuItemName: string;
   quantity: number;
-  options?: Array<{ groupName: string; selected: Array<any> }>;
+  optionGroups?: Array<{ groupId?: string; groupName?: string; type?: 'single'|'multiple'; items: OptionItem[] }>;
+  options?: Array<{ groupName: string; selected: OptionItem[] }>;
   addons?: Array<any>;
   extras?: Array<any>;
   modifiers?: Array<any>;
   unitPriceCents?: number;
+  unitPrice?: number;
   priceCents?: number;
   price?: number;
+  basePriceCents?: number;
+  basePrice?: number;
+  menuItemPriceCents?: number;
+  menuItemPrice?: number;
   totalCents?: number;
+  menuItem?: { price?: number; priceCents?: number };
 };
 type Amounts = {
   subtotal?: number;
@@ -94,6 +104,9 @@ type OrderDoc = {
   deliveryAddress?: string | null;
   notes?: string | null;
   createdAt?: any;
+
+  // checkout (nuevo)
+  orderInfo?: { type?: 'dine-in' | 'delivery'; table?: string; notes?: string; address?: string; phone?: string } | null;
 };
 
 const toNum = (x: any) => { const n = Number(x); return Number.isFinite(n) ? n : undefined; };
@@ -110,27 +123,54 @@ function toDate(x: any): Date {
 }
 function getLineQty(l: any) { return Number(l?.quantity ?? l?.qty ?? 1) || 1; }
 function getLineName(l: any) { return String(l?.menuItemName ?? l?.name ?? l?.menuItem?.name ?? 'Ítem'); }
-function extractDeltaQ(x: any): number {
-  const a = toNum(x?.priceDelta); if (a !== undefined) return a;
-  const b = toNum(x?.priceExtra); if (b !== undefined) return b;
-  const ac = toNum(x?.priceDeltaCents); if (ac !== undefined) return ac / 100;
-  const bc = toNum(x?.priceExtraCents); if (bc !== undefined) return bc / 100;
-  const p = toNum(x?.price); if (p !== undefined) return p;
-  const pc = toNum(x?.priceCents); if (pc !== undefined) return pc / 100;
+
+/** Precio base c/u del plato (sin addons). Incluye varios fallbacks. */
+function baseUnitPriceQ(l: any): number {
+  const baseCents = toNum(l?.basePriceCents) ?? toNum(l?.menuItemPriceCents);
+  if (baseCents !== undefined) return baseCents / 100;
+  const base = toNum(l?.basePrice) ?? toNum(l?.menuItemPrice);
+  if (base !== undefined) return base;
+
+  const miCents = toNum(l?.menuItem?.priceCents);
+  if (miCents !== undefined) return miCents / 100;
+  const mi = toNum(l?.menuItem?.price);
+  if (mi !== undefined) return mi;
+
+  const upc = toNum(l?.unitPriceCents);
+  if (upc !== undefined) return upc / 100;
+  const up = toNum(l?.unitPrice);
+  if (up !== undefined) return up;
+
+  const qty = getLineQty(l);
+  const totC = toNum(l?.totalCents);
+  if (totC !== undefined && qty > 0) {
+    const per = totC / 100 / qty;
+    const addons = perUnitAddonsQ(l);
+    const derived = per - addons;
+    return derived > 0 ? derived : 0;
+  }
+
+  const pc = toNum(l?.priceCents);
+  if (pc !== undefined) return pc / 100;
+  const p = toNum(l?.price);
+  if (p !== undefined) return p;
+
   return 0;
 }
-function unitPriceQ(l: any): number {
-  const upc = toNum(l?.unitPriceCents); if (upc !== undefined) return upc / 100;
-  const pc = toNum(l?.priceCents); if (pc !== undefined) return pc / 100;
-  const p = toNum(l?.price); if (p !== undefined) return p;
-  return 0;
-}
+
+/** Suma por unidad de addons/opciones. */
 function perUnitAddonsQ(l: any): number {
   let sum = 0;
+  if (Array.isArray(l?.optionGroups)) {
+    for (const g of l.optionGroups) {
+      const its = Array.isArray(g?.items) ? g.items : [];
+      for (const it of its) sum += extractDeltaQ(it);
+    }
+  }
   if (Array.isArray(l?.options)) {
     for (const g of l.options) {
-      const sel = Array.isArray(g?.selected) ? g.selected : [];
-      for (const s of sel) sum += extractDeltaQ(s);
+      const sels = Array.isArray(g?.selected) ? g.selected : [];
+      for (const s of sels) sum += extractDeltaQ(s);
     }
   }
   for (const key of ['addons', 'extras', 'modifiers'] as const) {
@@ -144,10 +184,20 @@ function perUnitAddonsQ(l: any): number {
   }
   return sum;
 }
+function extractDeltaQ(x: any): number {
+  const a = toNum(x?.priceDelta); if (a !== undefined) return a;
+  const b = toNum(x?.priceExtra); if (b !== undefined) return b;
+  const ac = toNum(x?.priceDeltaCents); if (ac !== undefined) return ac / 100;
+  const bc = toNum(x?.priceExtraCents); if (bc !== undefined) return bc / 100;
+  const p = toNum(x?.price); if (p !== undefined) return p;
+  const pc = toNum(x?.priceCents); if (pc !== undefined) return pc / 100;
+  return 0;
+}
 function lineTotalQ(l: any): number {
   const qty = getLineQty(l);
-  if (Number.isFinite(l?.totalCents)) return Number(l.totalCents) / 100;
-  const base = unitPriceQ(l);
+  const totC = toNum(l?.totalCents);
+  if (totC !== undefined) return totC / 100;
+  const base = baseUnitPriceQ(l);
   const deltas = perUnitAddonsQ(l);
   return (base + deltas) * qty;
 }
@@ -181,34 +231,23 @@ function computeOrderTotalsQ(o: OrderDoc) {
   return { subtotal, tax: 0, serviceFee: 0, discount: 0, tip, total: subtotal + tip };
 }
 
-/* ======= NUEVOS helpers para evitar Q 0.00 en unit/subtotal línea ======= */
-function unitWithAddonsQ(l: any, order?: OrderDoc, linesCount?: number): number {
-  const qty = getLineQty(l);
-  const base = unitPriceQ(l);
-  const addons = perUnitAddonsQ(l);
-
-  if ((base ?? 0) > 0 || (addons ?? 0) > 0) return (base || 0) + (addons || 0);
-
-  if (Number.isFinite(l?.totalCents) && qty > 0) {
-    return Number(l.totalCents) / 100 / qty;
-  }
-
-  const count = Number(linesCount || 0);
-  if (order && count === 1 && qty > 0) {
-    const subFromAmounts = Number.isFinite(order?.amounts?.subtotal) ? Number(order!.amounts!.subtotal) : undefined;
-    const subFromCents = Number.isFinite(order?.totals?.subtotalCents) ? Number(order!.totals!.subtotalCents) / 100 : undefined;
-    const sub = (subFromAmounts ?? subFromCents);
-    if (Number.isFinite(sub) && (sub as number) > 0) {
-      return (sub as number) / qty;
-    }
-  }
-  return 0;
-}
+/* ======= Helpers unit/subtotal ======= */
 function safeLineTotalsQ(l: any, order?: OrderDoc, linesCount?: number) {
   const qty = getLineQty(l);
-  const unitWith = unitWithAddonsQ(l, order, linesCount);
-  const lineTotal = unitWith * qty;
-  return { unitWith, lineTotal, qty };
+  let baseUnit = baseUnitPriceQ(l);
+  const addonsUnit = perUnitAddonsQ(l);
+
+  if (baseUnit === 0) {
+    const totC = toNum(l?.totalCents);
+    if (totC !== undefined && qty > 0) {
+      const per = totC / 100 / qty;
+      const derived = per - addonsUnit;
+      if (derived > 0) baseUnit = derived;
+    }
+  }
+
+  const lineTotal = (baseUnit + addonsUnit) * qty;
+  return { baseUnit, addonsUnit, lineTotal, qty };
 }
 
 /* ============ Fetch de la orden por id ============ */
@@ -241,10 +280,7 @@ function ReceiptPage_Inner() {
         if (!alive) return;
         if (!o) { setError('Orden no encontrada'); return; }
         setOrder(o);
-        // Imprimir tras montar
-        setTimeout(() => {
-          try { window.print(); } catch {}
-        }, 150);
+        setTimeout(() => { try { window.print(); } catch {} }, 150);
       } catch (e: any) {
         if (!alive) return;
         setError(e?.message || 'No se pudo cargar la orden.');
@@ -253,13 +289,22 @@ function ReceiptPage_Inner() {
     return () => { alive = false; };
   }, [id]);
 
-  const type = useMemo(() => (order?.type || (order?.deliveryAddress ? 'delivery' : 'dine_in')), [order]);
+  const type = useMemo(() => {
+    const t = order?.orderInfo?.type?.toLowerCase?.();
+    if (t === 'delivery') return 'delivery';
+    return order?.type || (order?.orderInfo?.address || order?.deliveryAddress ? 'delivery' : 'dine_in');
+  }, [order]);
+
   const lines = useMemo(() => (order ? preferredLines(order) : []), [order]);
   const totals = useMemo(() => (order ? computeOrderTotalsQ(order) : null), [order]);
 
+  const address = order?.orderInfo?.address || order?.deliveryAddress || null;
+  const phone   = order?.orderInfo?.phone || null;
+  const table   = order?.orderInfo?.table || order?.tableNumber || null;
+  const notes   = order?.orderInfo?.notes || order?.notes || null;
+
   return (
     <>
-      {/* Estilos locales para el ticket */}
       <style>{`
         * { box-sizing: border-box; }
         @media print { .noprint { display: none !important; } }
@@ -289,16 +334,33 @@ function ReceiptPage_Inner() {
           <>
             <h1>{type === 'delivery' ? 'Delivery' : 'Dine-in'}</h1>
             <div className="muted">#{order.orderNumber || order.id} · {toDate(order.createdAt ?? new Date()).toLocaleString()}</div>
-            {order.tableNumber ? <div className="muted">Mesa: {order.tableNumber}</div> : null}
-            {order.deliveryAddress ? <div className="muted">Entrega: {order.deliveryAddress}</div> : null}
-            {order.notes ? <div className="muted">Nota: {order.notes}</div> : null}
+            {table ? <div className="muted">Mesa: {table}</div> : null}
+            {address ? <div className="muted">Entrega: {address}</div> : null}
+            {phone ? <div className="muted">Tel: {phone}</div> : null}
+            {notes ? <div className="muted">Nota: {notes}</div> : null}
             <div className="hr"></div>
 
             {lines.map((l, idx) => {
-              const { unitWith, lineTotal, qty } = safeLineTotalsQ(l, order, lines.length);
+              const { baseUnit, addonsUnit, lineTotal, qty } = safeLineTotalsQ(l, order, lines.length);
               const name = getLineName(l);
 
               const groupsHtml: React.ReactNode[] = [];
+
+              // optionGroups (nuevo)
+              if (Array.isArray(l?.optionGroups)) {
+                for (const g of l.optionGroups) {
+                  const its = Array.isArray(g?.items) ? g.items : [];
+                  if (!its.length) continue;
+                  const rows = its.map((it: any, i:number) => {
+                    const nm = it?.name ?? '';
+                    const pr = extractDeltaQ(it);
+                    return <span key={i}>{nm}{pr ? ` (${fmtCurrency(pr)})` : ''}{i < its.length - 1 ? ', ' : ''}</span>;
+                  });
+                  groupsHtml.push(<div className="addon" key={`g${groupsHtml.length}`}>• <b>{g?.groupName ?? 'Opciones'}:</b> {rows}</div>);
+                }
+              }
+
+              // options legacy
               if (Array.isArray(l?.options)) {
                 for (const g of l.options) {
                   const sels = Array.isArray(g?.selected) ? g.selected : [];
@@ -311,6 +373,8 @@ function ReceiptPage_Inner() {
                   groupsHtml.push(<div className="addon" key={`g${groupsHtml.length}`}>• <b>{g?.groupName ?? 'Opciones'}:</b> {rows}</div>);
                 }
               }
+
+              // buckets
               for (const key of ['addons', 'extras', 'modifiers'] as const) {
                 const arr = (l as any)[key];
                 if (Array.isArray(arr) && arr.length) {
@@ -328,7 +392,7 @@ function ReceiptPage_Inner() {
                 <div className="item" key={idx}>
                   <div className="row">
                     <div className="name">{qty} × {name}</div>
-                    {unitWith > 0 && <div>{fmtCurrency(unitWith)}</div>}
+                    <div>{fmtCurrency(baseUnit)}</div>
                   </div>
                   {groupsHtml}
                   {lineTotal > 0 && (

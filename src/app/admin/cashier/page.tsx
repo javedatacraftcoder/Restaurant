@@ -1,3 +1,5 @@
+// src/app/admin/cashier/page.tsx
+
 'use client';
 
 import { OnlyCashier } from "@/components/Only";
@@ -90,7 +92,7 @@ function useAuthClaims() {
   const flags = useMemo(() => ({
     isAdmin: !!claims?.admin,
     isKitchen: !!claims?.kitchen || !!claims?.admin,
-    isCashier: !!claims?.cashier || !!claims?.admin, // por si defines este rol más adelante
+    isCashier: !!claims?.cashier || !!claims?.admin,
     isDelivery: !!claims?.delivery || !!claims?.admin,
     isWaiter: !!claims?.waiter || !!claims?.admin,
   }), [claims]);
@@ -126,17 +128,30 @@ type StatusSnake =
   | 'closed'
   | 'cancelled';
 
+type OptionItem = { id?: string; name?: string; price?: number; priceCents?: number; priceDelta?: number; priceDeltaCents?: number; priceExtra?: number; priceExtraCents?: number };
 type OrderItemLine = {
   menuItemName: string;
   quantity: number;
-  options?: Array<{ groupName: string; selected: Array<{ name: string; priceDelta?: number; priceDeltaCents?: number; priceExtra?: number; priceExtraCents?: number }> }>;
-  addons?: Array<string | { name: string; priceDelta?: number; priceDeltaCents?: number }>;
-  extras?: Array<string | { name: string; priceDelta?: number; priceDeltaCents?: number }>;
-  modifiers?: Array<string | { name: string; priceDelta?: number; priceDeltaCents?: number }>;
+
+  // NUEVO: optionGroups desde Checkout (además de legacy options)
+  optionGroups?: Array<{ groupId?: string; groupName?: string; type?: 'single' | 'multiple'; items: OptionItem[] }>;
+
+  options?: Array<{ groupName: string; selected: OptionItem[] }>;
+  addons?: Array<string | OptionItem>;
+  extras?: Array<string | OptionItem>;
+  modifiers?: Array<string | OptionItem>;
   unitPriceCents?: number;
+  unitPrice?: number;
   priceCents?: number;
   price?: number;
+  basePriceCents?: number;
+  basePrice?: number;
+  menuItemPriceCents?: number;
+  menuItemPrice?: number;
   totalCents?: number;
+
+  // opcional por compat
+  menuItem?: { price?: number; priceCents?: number };
 };
 type Amounts = {
   subtotal?: number;
@@ -159,6 +174,9 @@ type OrderDoc = {
   deliveryAddress?: string | null;
   notes?: string | null;
   createdAt?: any;
+
+  // Además puede venir orderInfo desde Checkout
+  orderInfo?: { type?: 'dine-in' | 'delivery'; table?: string; notes?: string; address?: string; phone?: string } | null;
 };
 
 const TitleMap: Record<StatusSnake, string> = {
@@ -221,7 +239,9 @@ async function changeStatus(orderId: string, to: StatusSnake) {
   return res.json();
 }
 async function advanceToClose(order: OrderDoc, onStep?: (s: StatusSnake) => Promise<void>) {
-  const type = order.type || (order.deliveryAddress ? 'delivery' : 'dine_in');
+  const type = (order.orderInfo?.type?.toLowerCase?.() === 'delivery')
+    ? 'delivery'
+    : (order.type || (order.deliveryAddress ? 'delivery' : 'dine_in'));
   let cur = order.status;
   while (cur !== 'closed') {
     const nx = nextAllowed(type, cur);
@@ -237,15 +257,79 @@ async function advanceToClose(order: OrderDoc, onStep?: (s: StatusSnake) => Prom
 =================================================== */
 function getLineQty(l: any) { return Number(l?.quantity ?? l?.qty ?? 1) || 1; }
 function getLineName(l: any) { return String(l?.menuItemName ?? l?.name ?? l?.menuItem?.name ?? 'Ítem'); }
-function unitPriceQ(l: any): number {
+
+/** Precio base c/u del plato (sin addons). Incluye varios fallbacks. */
+function baseUnitPriceQ(l: any): number {
+  // Preferir campos "base"
+  const baseCents = toNum(l?.basePriceCents) ?? toNum(l?.menuItemPriceCents);
+  if (baseCents !== undefined) return baseCents / 100;
+  const base = toNum(l?.basePrice) ?? toNum(l?.menuItemPrice);
+  if (base !== undefined) return base;
+
+  // Fallback: menuItem?.price
+  const miCents = toNum(l?.menuItem?.priceCents);
+  if (miCents !== undefined) return miCents / 100;
+  const mi = toNum(l?.menuItem?.price);
+  if (mi !== undefined) return mi;
+
+  // Compat: unitPrice* suele ser base en algunos flujos
   const upc = toNum(l?.unitPriceCents);
   if (upc !== undefined) return upc / 100;
+  const up = toNum(l?.unitPrice);
+  if (up !== undefined) return up;
+
+  // Si solo tenemos totalCents y addons, derivar base (= total/qty - addons)
+  const qty = getLineQty(l);
+  const totC = toNum(l?.totalCents);
+  if (totC !== undefined && qty > 0) {
+    const per = totC / 100 / qty;
+    const addons = perUnitAddonsQ(l);
+    const derived = per - addons;
+    return derived > 0 ? derived : 0;
+  }
+
+  // Último fallback: price/priceCents (si en tu payload representan base)
   const pc = toNum(l?.priceCents);
   if (pc !== undefined) return pc / 100;
   const p = toNum(l?.price);
   if (p !== undefined) return p;
+
   return 0;
 }
+
+/** Suma por unidad de todos los addons/opciones. */
+function perUnitAddonsQ(l: any): number {
+  let sum = 0;
+
+  // 0) Checkout nuevo: optionGroups[].items[] (cada item con delta)
+  if (Array.isArray(l?.optionGroups)) {
+    for (const g of l.optionGroups) {
+      const its = Array.isArray(g?.items) ? g.items : [];
+      for (const it of its) sum += extractDeltaQ(it);
+    }
+  }
+
+  // 1) Legacy: options[].selected[]
+  if (Array.isArray(l?.options)) {
+    for (const g of l.options) {
+      const sel = Array.isArray(g?.selected) ? g.selected : [];
+      for (const s of sel) sum += extractDeltaQ(s);
+    }
+  }
+
+  // 2) Buckets: addons/extras/modifiers
+  for (const key of ['addons', 'extras', 'modifiers'] as const) {
+    const arr = l?.[key];
+    if (Array.isArray(arr)) {
+      for (const x of arr) {
+        if (typeof x === 'string') continue; // sin precio
+        sum += extractDeltaQ(x);
+      }
+    }
+  }
+  return sum;
+}
+
 function extractDeltaQ(x: any): number {
   // soporta priceDelta, priceExtra, priceDeltaCents, priceExtraCents, price/priceCents
   const a = toNum(x?.priceDelta);
@@ -262,33 +346,12 @@ function extractDeltaQ(x: any): number {
   if (pc !== undefined) return pc / 100;
   return 0;
 }
-function perUnitAddonsQ(l: any): number {
-  let sum = 0;
-  // Forma A: groups con selected [{name, priceDelta...}]
-  if (Array.isArray(l?.options)) {
-    for (const g of l.options) {
-      const sel = Array.isArray(g?.selected) ? g.selected : [];
-      for (const s of sel) sum += extractDeltaQ(s);
-    }
-  }
-  // Forma B: addons/extras/modifiers como arrays
-  for (const key of ['addons', 'extras', 'modifiers'] as const) {
-    const arr = l?.[key];
-    if (Array.isArray(arr)) {
-      for (const x of arr) {
-        if (typeof x === 'string') continue; // sin precio
-        sum += extractDeltaQ(x);
-      }
-    }
-  }
-  return sum;
-}
+
 function lineTotalQ(l: any): number {
   const qty = getLineQty(l);
-  // Si ya viene totalCents, úsalo
-  if (Number.isFinite(l?.totalCents)) return Number(l.totalCents) / 100;
-  // si no, unit + addons per-unit
-  const base = unitPriceQ(l);
+  const totC = toNum(l?.totalCents);
+  if (totC !== undefined) return totC / 100;
+  const base = baseUnitPriceQ(l);
   const deltas = perUnitAddonsQ(l);
   return (base + deltas) * qty;
 }
@@ -323,34 +386,24 @@ function computeOrderTotalsQ(o: OrderDoc) {
   return { subtotal, tax: 0, serviceFee: 0, discount: 0, tip, total: subtotal + tip };
 }
 
-/* ======= NUEVOS helpers para evitar Q 0.00 en unit/subtotal línea ======= */
-function unitWithAddonsQ(l: any, order?: OrderDoc, linesCount?: number): number {
-  const qty = getLineQty(l);
-  const base = unitPriceQ(l);
-  const addons = perUnitAddonsQ(l);
-
-  if ((base ?? 0) > 0 || (addons ?? 0) > 0) return (base || 0) + (addons || 0);
-
-  if (Number.isFinite(l?.totalCents) && qty > 0) {
-    return Number(l.totalCents) / 100 / qty;
-  }
-
-  const count = Number(linesCount || 0);
-  if (order && count === 1 && qty > 0) {
-    const subFromAmounts = Number.isFinite(order?.amounts?.subtotal) ? Number(order!.amounts!.subtotal) : undefined;
-    const subFromCents = Number.isFinite(order?.totals?.subtotalCents) ? Number(order!.totals!.subtotalCents) / 100 : undefined;
-    const sub = (subFromAmounts ?? subFromCents);
-    if (Number.isFinite(sub) && (sub as number) > 0) {
-      return (sub as number) / qty;
-    }
-  }
-  return 0;
-}
+/* ======= Helpers para mostrar precio unitario/subtotal línea ======= */
 function safeLineTotalsQ(l: any, order?: OrderDoc, linesCount?: number) {
   const qty = getLineQty(l);
-  const unitWith = unitWithAddonsQ(l, order, linesCount);
-  const lineTotal = unitWith * qty;
-  return { unitWith, lineTotal, qty };
+  let baseUnit = baseUnitPriceQ(l);
+  const addonsUnit = perUnitAddonsQ(l);
+
+  // Si no tenemos base pero sí totalCents, derivar base = total/qty - addons
+  if (baseUnit === 0) {
+    const totC = toNum(l?.totalCents);
+    if (totC !== undefined && qty > 0) {
+      const per = totC / 100 / qty;
+      const derived = per - addonsUnit;
+      if (derived > 0) baseUnit = derived;
+    }
+  }
+
+  const lineTotal = (baseUnit + addonsUnit) * qty;
+  return { baseUnit, addonsUnit, lineTotal, qty };
 }
 
 /* ===================================================
@@ -438,7 +491,9 @@ function OrderCard({
 }) {
   const created = toDate(o.createdAt ?? new Date());
   const totals = computeOrderTotalsQ(o);
-  const type = o.type || (o.deliveryAddress ? 'delivery' : 'dine_in');
+  const type = (o.orderInfo?.type?.toLowerCase?.() === 'delivery')
+    ? 'delivery'
+    : (o.type || (o.deliveryAddress ? 'delivery' : 'dine_in'));
   const lines = preferredLines(o);
 
   return (
@@ -446,7 +501,9 @@ function OrderCard({
       <div className="card-header d-flex align-items-center justify-content-between">
         <div className="d-flex flex-column">
           <div className="fw-semibold">#{o.orderNumber || o.id}</div>
-          {type === 'dine_in' && o.tableNumber && <div className="fw-semibold">Mesa {o.tableNumber}</div>}
+          {(type === 'dine_in' && (o.orderInfo?.table || o.tableNumber)) && (
+            <div className="fw-semibold">Mesa {o.orderInfo?.table || o.tableNumber}</div>
+          )}
           <small className="text-muted">
             {created.toLocaleString()}
           </small>
@@ -457,44 +514,81 @@ function OrderCard({
         </div>
       </div>
       <div className="card-body">
-        {type === 'delivery' && o.deliveryAddress ? (
-          <div className="mb-1"><strong>Entrega:</strong> {o.deliveryAddress}</div>
+        {type === 'delivery' && (o.orderInfo?.address || o.deliveryAddress) ? (
+          <div className="mb-1"><strong>Entrega:</strong> {o.orderInfo?.address || o.deliveryAddress}</div>
         ) : null}
-        {o.notes ? <div className="mb-2"><em>Nota: {o.notes}</em></div> : null}
+        {o.orderInfo?.phone ? <div className="mb-1"><strong>Tel:</strong> {o.orderInfo.phone}</div> : null}
+        {(o.orderInfo?.notes || o.notes) ? <div className="mb-2"><em>Nota: {o.orderInfo?.notes || o.notes}</em></div> : null}
 
-        {/* Ítems y addons */}
+        {/* Ítems y addons (con precios por línea) */}
         <div className="mb-2">
           {lines.map((l, idx) => {
-            const { unitWith, lineTotal, qty } = safeLineTotalsQ(l, o, lines.length);
+            const { baseUnit, addonsUnit, lineTotal, qty } = safeLineTotalsQ(l, o, lines.length);
             const name = getLineName(l);
 
-            // Nombres de grupos/opciones
-            const groups: Array<{ label: string; values: string[] }> = [];
-            if (Array.isArray(l?.options)) {
-              for (const g of l.options) {
-                const values = Array.isArray(g?.selected) ? g.selected.map((s: any) => String(s?.name ?? s)).filter(Boolean) : [];
-                if (values.length) groups.push({ label: String(g?.groupName ?? 'Opciones'), values });
+            const groupRows: React.ReactNode[] = [];
+
+            // A) optionGroups (Checkout nuevo)
+            if (Array.isArray(l?.optionGroups)) {
+              for (const g of l.optionGroups) {
+                const its = Array.isArray(g?.items) ? g.items : [];
+                if (!its.length) continue;
+                const rows = its.map((it, i) => {
+                  const nm = it?.name ?? '';
+                  const pr = extractDeltaQ(it);
+                  return <span key={i}>{nm}{pr ? ` (${fmtCurrency(pr)})` : ''}{i < its.length - 1 ? ', ' : ''}</span>;
+                });
+                groupRows.push(
+                  <div className="ms-3 text-muted" key={`og-${idx}-${g.groupId || g.groupName}`}>
+                    <span className="fw-semibold">{g?.groupName ?? 'Opciones'}:</span> {rows}
+                  </div>
+                );
               }
             }
+
+            // B) options legacy
+            if (Array.isArray(l?.options)) {
+              for (const g of l.options) {
+                const sel = Array.isArray(g?.selected) ? g.selected : [];
+                if (!sel.length) continue;
+                const rows = sel.map((s, i) => {
+                  const nm = s?.name ?? '';
+                  const pr = extractDeltaQ(s);
+                  return <span key={i}>{nm}{pr ? ` (${fmtCurrency(pr)})` : ''}{i < sel.length - 1 ? ', ' : ''}</span>;
+                });
+                groupRows.push(
+                  <div className="ms-3 text-muted" key={`op-${idx}-${g.groupName}`}>
+                    <span className="fw-semibold">{g?.groupName ?? 'Opciones'}:</span> {rows}
+                  </div>
+                );
+              }
+            }
+
+            // C) buckets: addons/extras/modifiers (cada item con precio si lo trae)
             for (const key of ['addons', 'extras', 'modifiers'] as const) {
               const arr: any[] = (l as any)[key];
               if (Array.isArray(arr) && arr.length) {
-                const vals = arr.map((x) => (typeof x === 'string' ? x : (x?.name ?? ''))).filter(Boolean);
-                if (vals.length) groups.push({ label: key, values: vals });
+                const rows = arr.map((x, i) => {
+                  if (typeof x === 'string') return <span key={i}>{x}{i < arr.length - 1 ? ', ' : ''}</span>;
+                  const nm = x?.name ?? '';
+                  const pr = extractDeltaQ(x);
+                  return <span key={i}>{nm}{pr ? ` (${fmtCurrency(pr)})` : ''}{i < arr.length - 1 ? ', ' : ''}</span>;
+                });
+                groupRows.push(
+                  <div className="ms-3 text-muted" key={`bk-${idx}-${key}`}>
+                    <span className="fw-semibold">{key}:</span> {rows}
+                  </div>
+                );
               }
             }
 
             return (
-              <div key={idx} className="small mb-1">
-                • {qty} × {name}{' '}
-                {unitWith > 0 && <span className="text-muted">({fmtCurrency(unitWith)} c/u)</span>}
-                {!!groups.length && (
-                  <div className="ms-3 text-muted">
-                    {groups.map((g, ix) => (
-                      <div key={ix}><span className="fw-semibold">{g.label}:</span> {g.values.join(', ')}</div>
-                    ))}
-                  </div>
-                )}
+              <div key={idx} className="small mb-2">
+                <div className="d-flex justify-content-between">
+                  <div>• {qty} × {name}</div>
+                  <div className="text-muted">({fmtCurrency(baseUnit)} c/u)</div>
+                </div>
+                {groupRows}
                 {lineTotal > 0 && (
                   <div className="d-flex justify-content-between">
                     <span className="text-muted">Subtotal línea</span>
@@ -554,10 +648,15 @@ function CashierPage_Inner() {
   };
 
   // separar por tipo para columnas
-  const dineIn = orders.filter(o => (o.type || (o.deliveryAddress ? 'delivery' : 'dine_in')) === 'dine_in')
-                      .slice().sort((a, b) => (toDate(b.createdAt).getTime() - toDate(a.createdAt).getTime()));
-  const delivery = orders.filter(o => (o.type || (o.deliveryAddress ? 'delivery' : 'dine_in')) === 'delivery')
-                         .slice().sort((a, b) => (toDate(b.createdAt).getTime() - toDate(a.createdAt).getTime()));
+  const dineIn = orders.filter(o => {
+    const t = (o.orderInfo?.type?.toLowerCase?.() === 'delivery') ? 'delivery' : (o.type || (o.deliveryAddress ? 'delivery' : 'dine_in'));
+    return t === 'dine_in';
+  }).slice().sort((a, b) => (toDate(b.createdAt).getTime() - toDate(a.createdAt).getTime()));
+
+  const delivery = orders.filter(o => {
+    const t = (o.orderInfo?.type?.toLowerCase?.() === 'delivery') ? 'delivery' : (o.type || (o.deliveryAddress ? 'delivery' : 'dine_in'));
+    return t === 'delivery';
+  }).slice().sort((a, b) => (toDate(b.createdAt).getTime() - toDate(a.createdAt).getTime()));
 
   return (
     <div className="container py-3">

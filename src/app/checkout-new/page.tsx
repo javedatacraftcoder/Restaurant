@@ -50,7 +50,7 @@ export default function CheckoutNewPage() {
       })),
       orderTotal: grand,
       orderInfo: meta,
-      status: 'pending',               // opcional: para admin
+      status: 'placed',               // opcional: para admin
       createdAt: serverTimestamp(),    // timestamp del servidor
     };
 

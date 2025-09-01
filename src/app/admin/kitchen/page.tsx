@@ -1,7 +1,8 @@
+// src/app/admin/kitchen/page.tsx
+
 'use client';
 
 import { OnlyKitchen } from "@/components/Only";
-
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 /* --------------------------------------------
@@ -136,10 +137,25 @@ type StatusSnake =
 type OrderItemLine = {
   menuItemName: string;
   quantity: number;
+
+  // Estructuras posibles de opciones según distintas partes del sistema:
+  // - optionGroups[] (Checkout nuevo)
+  // - options[] + selected[] (legacy)
+  // - addons[] / extras[] / modifiers[] (buckets)
+  // - groupItems[] (compat opcional)
+  optionGroups?: Array<{
+    groupId?: string;
+    groupName?: string;
+    type?: 'single' | 'multiple';
+    items: Array<{ id?: string; name?: string; priceDelta?: number }>;
+  }>;
+
   options?: Array<{ groupName: string; selected: Array<{ name: string; priceDelta?: number }> }>;
   addons?: Array<string | { name: string; priceDelta?: number }>;
   extras?: Array<string | { name: string; priceDelta?: number }>;
   modifiers?: Array<string | { name: string; priceDelta?: number }>;
+  groupItems?: Array<string | { name: string }>;
+
   unitPriceCents?: number;
   priceCents?: number;
   price?: number;
@@ -175,6 +191,9 @@ type OrderDoc = {
   createdAt?: any;
   statusHistory?: StatusHistoryEntry[];
   lines?: OrderItemLine[];
+  // Checkout nuevo:
+  // orderInfo?: { type: 'dine-in' | 'delivery', table?: string, notes?: string, address?: string, phone?: string }
+  orderInfo?: any;
 };
 
 /* --------------------------------------------
@@ -196,14 +215,6 @@ function toDate(x: any): Date {
   if (x?.toDate?.() instanceof Date) return x.toDate();
   const d = new Date(x);
   return isNaN(d.getTime()) ? new Date() : d;
-}
-function fmtCurrency(n?: number, currency = 'GTQ') {
-  if (typeof n !== 'number') return '—';
-  try {
-    return new Intl.NumberFormat('es-GT', { style: 'currency', currency }).format(n);
-  } catch {
-    return n.toFixed(2);
-  }
 }
 function timeAgo(from: Date, now: Date) {
   const ms = Math.max(0, now.getTime() - from.getTime());
@@ -252,7 +263,7 @@ function allowedNextKitchen(from: StatusSnake): StatusSnake[] {
 }
 
 /* --------------------------------------------
-   Helpers de ítems/opciones y total
+   Helpers de ítems/opciones (presentación)
 --------------------------------------------- */
 function getLineQty(l: any): number {
   return Number(l?.quantity ?? l?.qty ?? 1) || 1;
@@ -260,52 +271,94 @@ function getLineQty(l: any): number {
 function getLineName(l: any): string {
   return String(l?.menuItemName ?? l?.name ?? l?.menuItem?.name ?? 'Ítem');
 }
+
+/**
+ * Junta TODAS las variantes de opciones conocidas:
+ * - Checkout nuevo:  line.optionGroups[].{ groupName, items[].name }
+ * - Legacy:          line.options[].{ groupName, selected[].name }
+ * - Buckets:         addons/extras/modifiers
+ * - Compat:          groupItems[] (si existiera)
+ *
+ * Siempre regresa {label, values[]} y NUNCA precios.
+ */
 function normalizeOptions(l: any): Array<{ label: string; values: string[] }> {
   const res: Array<{ label: string; values: string[] }> = [];
-  if (Array.isArray(l?.options)) {
-    for (const g of l.options) {
+
+  // 1) Checkout nuevo: optionGroups
+  if (Array.isArray(l?.optionGroups) && l.optionGroups.length) {
+    for (const g of l.optionGroups) {
       const label = String(g?.groupName ?? 'Opciones');
-      const values = Array.isArray(g?.selected) ? g.selected.map((s: any) => String(s?.name ?? s)).filter(Boolean) : [];
+      const values = Array.isArray(g?.items)
+        ? g.items.map((it: any) => String(it?.name ?? it)).filter(Boolean)
+        : [];
       if (values.length) res.push({ label, values });
     }
   }
+
+  // 2) Legacy: options + selected
+  if (Array.isArray(l?.options) && l.options.length) {
+    for (const g of l.options) {
+      const label = String(g?.groupName ?? 'Opciones');
+      const values = Array.isArray(g?.selected)
+        ? g.selected.map((s: any) => String(s?.name ?? s)).filter(Boolean)
+        : [];
+      if (values.length) res.push({ label, values });
+    }
+  }
+
+  // 3) Buckets conocidos: addons, extras, modifiers
   const buckets = [
-    { key: 'addons', label: 'Extras' },
+    { key: 'addons', label: 'Addons' },
     { key: 'extras', label: 'Extras' },
     { key: 'modifiers', label: 'Modificadores' },
-  ];
+  ] as const;
   for (const b of buckets) {
     const arr = l?.[b.key];
     if (Array.isArray(arr) && arr.length) {
-      const vals = arr
+      const values = arr
         .map((x: any) => (typeof x === 'string' ? x : x?.name ? String(x.name) : null))
         .filter(Boolean) as string[];
-      if (vals.length) res.push({ label: b.label, values: vals });
+      if (values.length) res.push({ label: b.label, values });
     }
   }
+
+  // 4) Compat extra: groupItems[] (si existiera como lista simple)
+  if (Array.isArray(l?.groupItems) && l.groupItems.length) {
+    const values = l.groupItems
+      .map((x: any) => (typeof x === 'string' ? x : x?.name ? String(x.name) : null))
+      .filter(Boolean) as string[];
+    if (values.length) res.push({ label: 'Group items', values });
+  }
+
   return res;
 }
-function computeOrderTotalGTQ(o: OrderDoc): number | undefined {
-  if (Number.isFinite(o?.amounts?.total)) return Number(o.amounts!.total);
-  if (Number.isFinite(o?.amounts?.subtotal)) return Number(o.amounts!.subtotal);
-  if (Number.isFinite(o?.totals?.totalCents)) return Number(o.totals!.totalCents) / 100;
-  const lines: any[] = Array.isArray(o?.items) && o.items.length ? o.items : (Array.isArray(o?.lines) ? o.lines! : []);
-  if (!lines.length) return undefined;
-  const cents = lines.reduce((acc, l) => {
-    const qty = getLineQty(l);
-    if (Number.isFinite(l?.totalCents)) return acc + Number(l.totalCents);
-    if (Number.isFinite(l?.unitPriceCents)) return acc + Number(l.unitPriceCents) * qty;
-    if (Number.isFinite(l?.priceCents)) return acc + Number(l.priceCents) * qty;
-    if (Number.isFinite(l?.price)) return acc + Math.round(Number(l.price) * 100) * qty;
-    return acc;
-  }, 0);
-  return cents > 0 ? cents / 100 : undefined;
+
+/* ---- COMPAT Kitchen <-> Checkout: leer orderInfo primero ---- */
+// Checkout guarda: orderInfo: { type: 'dine-in' | 'delivery', table?, notes?, address?, phone? } :contentReference[oaicite:2]{index=2}
+function getDisplayType(o: OrderDoc): 'dine_in' | 'delivery' {
+  const infoType = String(o?.orderInfo?.type || '').toLowerCase();
+  if (infoType === 'delivery') return 'delivery';
+  if (infoType === 'dine-in' || infoType === 'dine_in') return 'dine_in';
+  if (o.type === 'delivery') return 'delivery';
+  if (o.type === 'dine_in') return 'dine_in';
+  if (o.deliveryAddress) return 'delivery';
+  return 'dine_in';
+}
+function getDisplayTable(o: OrderDoc): string | null {
+  const t = o?.orderInfo?.table;
+  if (t) return String(t);
+  return o.tableNumber ?? null;
+}
+function getDisplayNotes(o: OrderDoc): string | null {
+  const n = o?.orderInfo?.notes;
+  if (n) return String(n);
+  return o.notes ?? null;
 }
 
 /* --------------------------------------------
    Hook de órdenes (solo cocina)
 --------------------------------------------- */
-// ⛔️ Ya no incluimos kitchen_done en la consulta
+// ⛔️ kitchen_done no entra en la consulta
 const STATUS_QUERY = ['placed', 'kitchen_in_progress'].join(',');
 const TYPE_QUERY = ['dine_in', 'delivery'].join(',');
 
@@ -333,9 +386,7 @@ function useKitchenOrders(
         setError('Debes iniciar sesión para ver órdenes.');
         return;
       }
-
       const url = `/api/orders?statusIn=${encodeURIComponent(STATUS_QUERY)}&typeIn=${encodeURIComponent(TYPE_QUERY)}&limit=100`;
-
       const res = await apiFetch(url);
       if (res.status === 401) throw new Error('Unauthorized (401). Inicia sesión nuevamente.');
       if (!res.ok) throw new Error(`GET /orders ${res.status}`);
@@ -350,10 +401,10 @@ function useKitchenOrders(
         return;
       }
 
+      // Normalizamos únicamente el status (no tocamos la data)
       const listRaw: OrderDoc[] = rawList.map((d) => {
         const normalizedStatus = toSnakeStatus(String(d.status || 'placed'));
-        const typeVal = (d.type || (d.deliveryAddress ? 'delivery' : 'dine_in')) as 'dine_in' | 'delivery';
-        return { ...d, status: normalizedStatus, type: typeVal } as OrderDoc;
+        return { ...d, status: normalizedStatus } as OrderDoc;
       });
 
       // Filtro defensivo por si el backend devolviera más estados
@@ -441,18 +492,16 @@ async function changeStatus(orderId: string, to: StatusSnake) {
 --------------------------------------------- */
 function useFullscreen() {
   const [isFs, setIsFs] = useState(false);
-
   useEffect(() => {
     const onChange = () => setIsFs(!!document.fullscreenElement);
     document.addEventListener('fullscreenchange', onChange);
     return () => document.removeEventListener('fullscreenchange', onChange);
   }, []);
-
   const enter = async () => {
     const el: any = document.documentElement;
     if (el.requestFullscreen) await el.requestFullscreen();
-    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen(); // Safari
-    else if (el.msRequestFullscreen) el.msRequestFullscreen(); // IE/Edge antiguo
+    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    else if (el.msRequestFullscreen) el.msRequestFullscreen();
     setIsFs(true);
   };
   const exit = async () => {
@@ -463,7 +512,6 @@ function useFullscreen() {
     setIsFs(false);
   };
   const toggle = async () => (isFs ? exit() : enter());
-
   return { isFs, enter, exit, toggle } as const;
 }
 
@@ -499,41 +547,38 @@ function OrderCard({
   busyKey: string | null;
 }) {
   const created = toDate(o.createdAt ?? new Date());
-  const totalGTQ = computeOrderTotalGTQ(o);
   const isBusy = (to: StatusSnake) => busyKey === `${o.id}:${to}`;
   const prev = getPrevKitchen(o);
   const nexts = nextActionsKitchen(o, canAct);
+
+  const typeVal = getDisplayType(o);
+  const tableVal = getDisplayTable(o);
+  const notesVal = getDisplayNotes(o);
 
   return (
     <div className="card shadow-sm">
       <div className="card-header d-flex align-items-center justify-content-between">
         <div className="d-flex flex-column">
           <div className="fw-semibold">#{o.orderNumber || o.id}</div>
-          {o.tableNumber && <div className="fw-semibold">Mesa {o.tableNumber}</div>}
+          {typeVal === 'dine_in' && tableVal && <div className="fw-semibold">Mesa {tableVal}</div>}
           <small className="text-muted">
             {created.toLocaleString()} · {timeAgo(created, new Date())}
           </small>
         </div>
         <div className="d-flex gap-2 align-items-center">
-          <span className="badge bg-outline-secondary text-dark">
-            {o.type || (o.deliveryAddress ? 'delivery' : 'dine_in')}
-          </span>
+          <span className="badge bg-outline-secondary text-dark">{typeVal}</span>
           <BadgeStatus s={o.status} />
         </div>
       </div>
+
       <div className="card-body">
-        {o.deliveryAddress ? (
-          <div className="mb-1">
-            <strong>Entrega:</strong> {o.deliveryAddress}
-          </div>
-        ) : null}
-        {o.notes ? (
+        {notesVal ? (
           <div className="mb-2">
-            <em>Nota: {o.notes}</em>
+            <em>Nota: {notesVal}</em>
           </div>
         ) : null}
 
-        {/* Ítems + addons/opciones */}
+        {/* Ítems + addons/opciones/group-items (sin valores) */}
         <div className="mb-2">
           {(o.items?.length ? o.items : o.lines || []).map((it: any, idx: number) => {
             const groups = normalizeOptions(it);
@@ -555,12 +600,8 @@ function OrderCard({
           })}
         </div>
 
-        {/* Total y acciones */}
-        <div className="d-flex justify-content-between align-items-center">
-          <div className="small">
-            Total: <span className="fw-semibold">{fmtCurrency(totalGTQ)}</span>
-          </div>
-
+        {/* Acciones (sin totales/precios/dirección) */}
+        <div className="d-flex justify-content-end align-items-center">
           <div className="btn-group">
             {prev && (
               <button
@@ -612,7 +653,6 @@ function KitchenBoardPage_Inner() {
 
   const { orders, loading, error, refresh } = useKitchenOrders(!!user, 4000, onOrdersChange);
 
-  // Guard adicional (no permite saltos extra flujo de cocina)
   const [busy, setBusy] = useState<string | null>(null);
   const doAct = async (id: string, to: StatusSnake) => {
     try {
@@ -637,38 +677,38 @@ function KitchenBoardPage_Inner() {
     }
   };
 
-  // Búsqueda simple
   const [q, setQ] = useState('');
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
     return orders.filter((o) => {
       if (!term) return true;
+      const type = getDisplayType(o);
+      const table = getDisplayTable(o) ?? '';
+      const notes = getDisplayNotes(o) ?? '';
       const hay = [
-        o.orderNumber, o.id, o.tableNumber, o.deliveryAddress, o.notes,
+        o.orderNumber, o.id, table, notes, type,
         ...(o.items?.map((i) => i.menuItemName) || []),
       ].join(' ').toLowerCase();
       return hay.includes(term);
     });
   }, [orders, q]);
 
-  // Split por tipo y ordenado por fecha
   const dineIn = filtered
-    .filter((o) => (o.type || (o.deliveryAddress ? 'delivery' : 'dine_in')) === 'dine_in')
+    .filter((o) => getDisplayType(o) === 'dine_in')
     .slice()
     .sort(byCreatedAtDesc);
+
   const delivery = filtered
-    .filter((o) => (o.type || (o.deliveryAddress ? 'delivery' : 'dine_in')) === 'delivery')
+    .filter((o) => getDisplayType(o) === 'delivery')
     .slice()
     .sort(byCreatedAtDesc);
 
   const canAct = (isKitchen || isAdmin);
 
-  // Pantalla completa
   const { isFs, toggle: toggleFs } = useFullscreen();
 
   return (
     <div className="container py-3">
-      {/* Topbar */}
       <div
         className="d-flex align-items-center justify-content-between gap-3 mb-3 sticky-top bg-white py-2"
         style={{ top: 0, zIndex: 5, borderBottom: '1px solid #eee' }}
@@ -685,7 +725,7 @@ function KitchenBoardPage_Inner() {
             <input
               type="search"
               className="form-control"
-              placeholder="#orden, mesa, dirección, ítem, nota"
+              placeholder="#orden, mesa, ítem, nota"
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
@@ -695,8 +735,6 @@ function KitchenBoardPage_Inner() {
             <input className="form-check-input" type="checkbox" id="soundSwitch" checked={soundOn} onChange={(e) => setSoundOn(e.target.checked)} />
             <label className="form-check-label small" htmlFor="soundSwitch">Sonido</label>
           </div>
-
-          {/* Botón Pantalla completa */}
           <button
             className="btn btn-outline-dark btn-sm"
             onClick={toggleFs}
@@ -707,13 +745,11 @@ function KitchenBoardPage_Inner() {
         </div>
       </div>
 
-      {/* Estado de auth */}
       {!authReady && <div className="text-muted">Inicializando sesión…</div>}
       {authReady && !user && <div className="text-danger">No has iniciado sesión. Inicia sesión para ver las órdenes.</div>}
       {error && <div className="text-danger">{error}</div>}
       {user && loading && <div className="text-muted">Cargando pedidos…</div>}
 
-      {/* ---------- Sección DINE-IN ---------- */}
       {user && (
         <section className="mb-4">
           <div className="d-flex align-items-center justify-content-between mb-2">
@@ -735,7 +771,6 @@ function KitchenBoardPage_Inner() {
         </section>
       )}
 
-      {/* ---------- Sección DELIVERY ---------- */}
       {user && (
         <section className="mt-4">
           <div className="d-flex align-items-center justify-content-between mb-2">
@@ -759,7 +794,6 @@ function KitchenBoardPage_Inner() {
     </div>
   );
 }
-
 
 export default function KitchenBoardPage() {
   return (

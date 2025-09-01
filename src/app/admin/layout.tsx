@@ -44,7 +44,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 <Link className={`nav-link ${isActive('/admin/roles') ? 'active' : ''}`} href="/admin/roles">Roles</Link>
               </li>
               <li className="nav-item">
-                <Link className={`nav-link ${isActive('/ops') ? 'active' : ''}`} href="/ops">Ops</Link>
+                <Link className={`nav-link ${isActive('/admin/ops') ? 'active' : ''}`} href="/admin/ops">Ops</Link>
               </li>
                <li className="nav-item">
                 <Link className={`nav-link ${isActive('/admin/edit-orders') ? 'active' : ''}`} href="/admin/edit-orders">Edit Orders</Link>
