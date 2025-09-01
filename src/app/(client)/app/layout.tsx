@@ -34,7 +34,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
                 <Link className={`nav-link ${isActive('/app/menu') ? 'active' : ''}`} href="/app/menu">Menú</Link>
               </li>
               <li className="nav-item">
-                <Link className={`nav-link ${isActive('/app/cart') ? 'active' : ''}`} href="/app/cart">Carrito</Link>
+                <Link className={`nav-link ${isActive('/cart-new') ? 'active' : ''}`} href="/cart-new">Carrito</Link>
               </li>
               <li className="nav-item">
                 <Link className={`nav-link ${isActive('/app/orders') ? 'active' : ''}`} href="/app/orders">Órdenes</Link>
@@ -46,7 +46,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
 
             <div className="d-flex align-items-center gap-2">
               {/* CartBadge ya cuenta items con useCart */}
-              <CartBadge href="/app/cart" />
+              <CartBadge href="/cart-new" />
               <Link className="btn btn-outline-secondary btn-sm" href="/logout">Salir</Link>
             </div>
           </div>
