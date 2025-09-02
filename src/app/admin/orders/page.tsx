@@ -66,7 +66,16 @@ type OrderDoc = {
   totals?: { totalCents?: number; subtotalCents?: number } | null;
   orderTotal?: number | null;
 
-  orderInfo?: { type?: "dine-in" | "delivery"; table?: string; notes?: string; address?: string; phone?: string } | null;
+  // 🔹 SOLO SE AGREGA delivery y courierName (no se quita nada)
+  orderInfo?: {
+    type?: "dine-in" | "delivery";
+    table?: string;
+    notes?: string;
+    address?: string;
+    phone?: string;
+    delivery?: "pending" | "inroute" | "delivered";
+    courierName?: string | null;
+  } | null;
 
   channel?: string;
   origin?: string;
@@ -155,7 +164,7 @@ function perUnitAddonsQ(l: OrderLine): number {
         if (typeof it === "string") continue;
         const p =
           toNum(it?.price) ??
-          (toNum(it?.priceCents) !== undefined ? Number(it?.priceCents) / 100 : undefined);
+          (toNum(it?.priceCents) !== undefined ? Number(it!.priceCents) / 100 : undefined);
         sum += extractDeltaQ(it) || (p ?? 0);
       }
     }
@@ -183,6 +192,15 @@ function displayType(o: OrderDoc): "dine_in" | "delivery" | "-" {
   if (t === "delivery") return "delivery";
   if (t === "dine-in") return "dine_in";
   if (o.type === "delivery" || o.type === "dine_in") return o.type;
+  return "-";
+}
+
+/* 🔹 NUEVO: label legible para sub-estado delivery */
+function deliverySubstateLabel(s?: string | null) {
+  const v = String(s || "").toLowerCase();
+  if (v === "pending") return "Pendiente";
+  if (v === "inroute") return "En ruta";
+  if (v === "delivered") return "Entregado";
   return "-";
 }
 
@@ -336,6 +354,25 @@ export default function AdminOrdersPage() {
                 {/* Detalle expandible */}
                 {isOpen && (
                   <div id={`order-${o.id}`} className="mt-3">
+                    {/* 🔹 NUEVO: Bloque de delivery (solo si aplica) */}
+                    {type === "delivery" && (o.orderInfo?.delivery || o.orderInfo?.courierName) ? (
+                      <div className="mb-3">
+                        <div className="d-flex flex-wrap align-items-center gap-2 small">
+                          <span className="badge text-bg-secondary">Delivery</span>
+                          {o.orderInfo?.delivery && (
+                            <span className="badge text-bg-info">
+                              Estado: {deliverySubstateLabel(o.orderInfo?.delivery)}
+                            </span>
+                          )}
+                          {o.orderInfo?.courierName && (
+                            <span className="badge text-bg-dark">
+                              Repartidor: {o.orderInfo.courierName}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ) : null}
+
                     {(o.items?.length ? o.items : []).map((l, idx) => {
                       const qty = getQty(l);
                       const name = getName(l);
@@ -384,7 +421,7 @@ export default function AdminOrdersPage() {
                                 const p =
                                   toNum(ad?.price) ??
                                   (toNum(ad?.priceCents) !== undefined ? Number(ad!.priceCents) / 100 : undefined);
-                                return <span key={ai}>{ad?.name}{p ? ` (${fmtMoney(p, o.currency)})` : ""}{ai < l.addons!.length - 1 ? ", " : ""}</span>;
+                                return <span key={ai}>{ad?.name}{p ? ` ({fmtMoney(p, o.currency)})` : ""}{ai < l.addons!.length - 1 ? ", " : ""}</span>;
                               })}
                             </div>
                           )}

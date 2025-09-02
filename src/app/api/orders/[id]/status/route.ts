@@ -11,63 +11,77 @@ const json = (d: unknown, s = 200) => NextResponse.json(d, { status: s });
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   try {
+    // Autenticación (si tus middlewares ya validan roles, esto refuerza)
     const user = await getUserFromRequest(req);
-    // asume auth hecha en middlewares/roles; si no, valida aquí
+    if (!user) return json({ error: "Unauthorized" }, 401);
 
-    if (!((req.headers.get("content-type") || "").includes("application/json"))) {
-      return json({ error: "Content-Type must be application/json" }, 415);
+    const { id } = params;
+    if (!id) return json({ error: "Missing order id" }, 400);
+
+    const body = await req.json().catch(() => null);
+    const rawNext: string | undefined = body?.nextStatus;
+    if (!rawNext || typeof rawNext !== "string") {
+      return json({ error: "Missing nextStatus" }, 400);
     }
 
-    const body = await req.json().catch(() => ({}));
-    const requested = String(body?.nextStatus || "");
-    if (!requested) return json({ error: "nextStatus is required" }, 400);
-
-    let nextStatus: OrderStatus;
-    try {
-      nextStatus = normalizeStatus(requested);
-    } catch (err: any) {
-      return json({ error: err?.message || "Invalid status" }, 400);
+    // Normaliza al enum que usa el sistema (p. ej. camel/snake/alias → snake case)
+    const nextStatus = normalizeStatus(rawNext) as OrderStatus | undefined;
+    if (!nextStatus) {
+      return json({ error: `Unknown status: ${rawNext}` }, 400);
     }
 
-    // Cargar orden
-    const ref = db.collection("orders").doc(params.id);
+    // Carga de la orden
+    const ref = db.collection("orders").doc(id);
     const snap = await ref.get();
     if (!snap.exists) return json({ error: "Order not found" }, 404);
 
-    const data = snap.data() as any;
-    const currentStatus: OrderStatus = data?.status as OrderStatus;
-    const type = (data?.type || "dine_in") as "dine_in" | "takeaway" | "delivery";
-
+    const data = snap.data() || {};
+    const currentStatus = normalizeStatus(data.status) as OrderStatus | undefined;
     if (!currentStatus) return json({ error: "Order has no current status" }, 500);
 
+    // Tipo de la orden para la matriz de transición (no tocar subestado delivery aquí)
+    const type: "dine_in" | "takeaway" | "delivery" =
+      (data?.type as any) ||
+      (data?.orderInfo?.type === "dine-in" ? "dine_in" : data?.orderInfo?.type) ||
+      "dine_in";
+
+    // Si piden el mismo estado, es idempotente: devolvemos OK sin error
+    if (currentStatus === nextStatus) {
+      return json({ ok: true, order: { id: ref.id, ...data } });
+    }
+
+    // Valida transición (la lógica vive en lib/server/orders)
     if (!canTransition(currentStatus, nextStatus, type)) {
-      // Mensaje con alias “bonito” también
-      const pretty = (s: string) => s.replace(/_/g, " ");
+      const pretty = (s: string) => String(s || "").replace(/_/g, " ");
       return json(
         {
-          error: `Invalid transition: ${pretty(currentStatus)} → ${pretty(
-            nextStatus
-          )} (type=${type})`,
+          error: `Invalid transition: ${pretty(currentStatus)} → ${pretty(nextStatus)} (type=${type})`,
           invalid: true,
           from: currentStatus,
           to: nextStatus,
           type,
         },
-        409
+        400
       );
     }
 
+    // Actualiza SOLO el estado principal (NO tocar orderInfo ni delivery aquí)
     await ref.update({
       status: nextStatus,
       updatedAt: new Date(),
-      // si guardas un timeline:
-      // history: FieldValue.arrayUnion({ at: FieldValue.serverTimestamp(), by: user?.uid, to: nextStatus })
+      // Si manejas timeline/historial, puedes descomentar algo como:
+      // history: FieldValue.arrayUnion({
+      //   at: FieldValue.serverTimestamp(),
+      //   by: user.uid,
+      //   to: nextStatus,
+      // }),
     });
 
+    // Devuelve la orden actualizada
     const updated = await ref.get();
     return json({ ok: true, order: { id: ref.id, ...updated.data() } });
   } catch (e: any) {
-    console.error("[PATCH /api/orders/:id/status]", e);
+    console.error("[PATCH /api/orders/:id/status] error:", e);
     return json({ error: e?.message ?? "Server error" }, 500);
   }
 }

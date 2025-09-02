@@ -1,0 +1,704 @@
+// src/app/delivery/page.tsx
+'use client';
+
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+
+/* --------------------------------------------
+   Firebase init (patrón similar a Kitchen)
+--------------------------------------------- */
+function getFirebaseClientConfig() {
+  return {
+    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
+    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN!,
+    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID!,
+    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID!,
+    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  };
+}
+async function ensureFirebaseApp() {
+  const app = await import('firebase/app');
+  if (!app.getApps().length) {
+    const cfg = getFirebaseClientConfig();
+    if (cfg.apiKey && cfg.authDomain && cfg.projectId && cfg.appId) {
+      app.initializeApp(cfg);
+    } else {
+      console.warn('[Firebase] Faltan variables NEXT_PUBLIC_*; Auth no podrá inicializar.');
+    }
+  }
+}
+
+/* --------------------------------------------
+   Firebase Auth helpers
+--------------------------------------------- */
+async function getAuthMod() {
+  await ensureFirebaseApp();
+  const mod = await import('firebase/auth');
+  return mod;
+}
+async function getIdTokenSafe(forceRefresh = false): Promise<string | null> {
+  try {
+    const { getAuth } = await getAuthMod();
+    const auth = getAuth();
+    const user = auth.currentUser;
+    if (!user) return null;
+    return await user.getIdToken(forceRefresh);
+  } catch {
+    return null;
+  }
+}
+function useAuthState() {
+  const [authReady, setAuthReady] = useState(false);
+  const [user, setUser] = useState<any | null>(null);
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const { onAuthStateChanged, getAuth } = await getAuthMod();
+      const auth = getAuth();
+      const unsub = onAuthStateChanged(auth, (u) => {
+        if (!mounted) return;
+        setUser(u ?? null);
+        setAuthReady(true);
+      });
+      return () => unsub();
+    })();
+    return () => { mounted = false; };
+  }, []);
+  return { authReady, user } as const;
+}
+
+/* --------------------------------------------
+   Fetch helper con reintento 401
+--------------------------------------------- */
+async function apiFetch(path: string, init?: RequestInit) {
+  let token = await getIdTokenSafe(false);
+  let headers: HeadersInit = { ...(init?.headers || {}) };
+  if (token) (headers as any)['Authorization'] = `Bearer ${token}`;
+  let res = await fetch(path, { ...init, headers });
+
+  if (res.status === 401) {
+    token = await getIdTokenSafe(true);
+    headers = { ...(init?.headers || {}) };
+    if (token) (headers as any)['Authorization'] = `Bearer ${token}`;
+    res = await fetch(path, { ...init, headers });
+  }
+  return res;
+}
+
+/* --------------------------------------------
+   Types
+--------------------------------------------- */
+type StatusSnake =
+  | 'cart'
+  | 'placed'
+  | 'kitchen_in_progress'
+  | 'kitchen_done'
+  | 'ready_to_close'
+  | 'assigned_to_courier'
+  | 'on_the_way'
+  | 'delivered'
+  | 'closed'
+  | 'cancelled';
+
+type OrderItemLine = {
+  menuItemName?: string;
+  quantity?: number;
+  optionGroups?: Array<{
+    groupId?: string;
+    groupName?: string;
+    type?: 'single' | 'multiple';
+    items: Array<{ id?: string; name?: string; priceDelta?: number }>;
+  }>;
+  options?: Array<{ groupName: string; selected: Array<{ name: string; priceDelta?: number }> }>;
+  addons?: Array<string | { name: string; priceDelta?: number }>;
+  extras?: Array<string | { name: string; priceDelta?: number }>;
+  modifiers?: Array<string | { name: string; priceDelta?: number }>;
+  groupItems?: Array<string | { name: string }>;
+};
+
+type OrderDoc = {
+  id: string;
+  orderNumber?: string;
+  type?: 'dine_in' | 'delivery';
+  status: StatusSnake;
+  items?: OrderItemLine[];
+  lines?: OrderItemLine[];
+  createdAt?: any;
+  notes?: string | null;
+  tableNumber?: string | null;
+  deliveryAddress?: string | null;
+  orderInfo?: {
+    type?: 'dine-in' | 'delivery';
+    table?: string;
+    notes?: string;
+    address?: string;
+    phone?: string;
+    delivery?: 'pending' | 'inroute' | 'delivered'; // ← viene del checkout con 'pending'
+    courierName?: string | null;
+  } | any;
+};
+
+/* --------------------------------------------
+   Utils y helpers (alineados con Kitchen)
+--------------------------------------------- */
+const TitleMap: Record<StatusSnake, string> = {
+  cart: 'Carrito',
+  placed: 'Recibido',
+  kitchen_in_progress: 'En cocina',
+  kitchen_done: 'Cocina lista',
+  ready_to_close: 'Listo para cerrar',
+  assigned_to_courier: 'Asignado a repartidor',
+  on_the_way: 'En camino',
+  delivered: 'Entregado',
+  closed: 'Cerrado',
+  cancelled: 'Cancelado',
+};
+function toDate(x: any): Date {
+  if (x?.toDate?.() instanceof Date) return x.toDate();
+  const d = new Date(x);
+  return isNaN(d.getTime()) ? new Date() : d;
+}
+function timeAgo(from: Date, now: Date) {
+  const ms = Math.max(0, now.getTime() - from.getTime());
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return 'hace segundos';
+  if (m < 60) return `hace ${m} min`;
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return `hace ${h} h ${rem} m`;
+}
+function toSnakeStatus(s: string): StatusSnake {
+  if (!s) return 'placed';
+  const snake = s.includes('_') ? s : s.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`);
+  const aliasMap: Record<string, StatusSnake> = {
+    ready: 'ready_to_close',
+    served: 'ready_to_close',
+    completed: 'closed',
+    ready_for_delivery: 'assigned_to_courier',
+    out_for_delivery: 'on_the_way',
+  };
+  return (aliasMap[snake] ?? (snake as StatusSnake)) as StatusSnake;
+}
+
+/* ---- Lectura de tipo/datos desde orderInfo (compat con Kitchen/Checkout) ---- */
+function getDisplayType(o: OrderDoc): 'dine_in' | 'delivery' {
+  const infoType = String(o?.orderInfo?.type || '').toLowerCase();
+  if (infoType === 'delivery') return 'delivery';
+  if (infoType === 'dine-in' || infoType === 'dine_in') return 'dine_in';
+  if (o.type === 'delivery') return 'delivery';
+  if (o.type === 'dine_in') return 'dine_in';
+  if (o.deliveryAddress) return 'delivery';
+  return 'dine_in';
+}
+function getDisplayNotes(o: OrderDoc): string | null {
+  const n = o?.orderInfo?.notes;
+  if (n) return String(n);
+  return o.notes ?? null;
+}
+function getDisplayAddress(o: OrderDoc): string | null {
+  const a = o?.orderInfo?.address;
+  if (a) return String(a);
+  return o.deliveryAddress ?? null;
+}
+function getDisplayPhone(o: OrderDoc): string | null {
+  const p = o?.orderInfo?.phone;
+  if (p) return String(p);
+  return null;
+}
+function getLineQty(l: any): number {
+  return Number(l?.quantity ?? l?.qty ?? 1) || 1;
+}
+function getLineName(l: any): string {
+  return String(l?.menuItemName ?? l?.name ?? l?.menuItem?.name ?? 'Ítem');
+}
+/** Unifica option-groups, options, addons, etc. */
+function normalizeOptions(l: any): Array<{ label: string; values: string[] }> {
+  const res: Array<{ label: string; values: string[] }> = [];
+  if (Array.isArray(l?.optionGroups) && l.optionGroups.length) {
+    for (const g of l.optionGroups) {
+      const label = String(g?.groupName ?? 'Opciones');
+      const values = Array.isArray(g?.items)
+        ? g.items.map((it: any) => String(it?.name ?? it)).filter(Boolean)
+        : [];
+      if (values.length) res.push({ label, values });
+    }
+  }
+  if (Array.isArray(l?.options) && l.options.length) {
+    for (const g of l.options) {
+      const label = String(g?.groupName ?? 'Opciones');
+      const values = Array.isArray(g?.selected)
+        ? g.selected.map((s: any) => String(s?.name ?? s)).filter(Boolean)
+        : [];
+      if (values.length) res.push({ label, values });
+    }
+  }
+  const buckets = [
+    { key: 'addons', label: 'Addons' },
+    { key: 'extras', label: 'Extras' },
+    { key: 'modifiers', label: 'Modificadores' },
+  ] as const;
+  for (const b of buckets) {
+    const arr = l?.[b.key];
+    if (Array.isArray(arr) && arr.length) {
+      const values = arr
+        .map((x: any) => (typeof x === 'string' ? x : x?.name ? String(x.name) : null))
+        .filter(Boolean) as string[];
+      if (values.length) res.push({ label: b.label, values });
+    }
+  }
+  if (Array.isArray(l?.groupItems) && l.groupItems.length) {
+    const values = l.groupItems
+      .map((x: any) => (typeof x === 'string' ? x : x?.name ? String(x.name) : null))
+      .filter(Boolean) as string[];
+    if (values.length) res.push({ label: 'Group items', values });
+  }
+  return res;
+}
+
+/* --------------------------------------------
+   Hook de órdenes (trae también closed y delivered)
+--------------------------------------------- */
+// Para que aparezcan si el cajero cerró, pero delivery sigue pendiente/inroute
+const STATUS_QUERY_MAIN = [
+  'kitchen_done',
+  'assigned_to_courier',
+  'on_the_way',
+  'ready_to_close',
+  'closed',
+  'delivered',
+].join(',');
+const TYPE_QUERY = ['delivery'].join(',');
+
+function useDeliveryOrders(enabled: boolean, pollMs = 4000) {
+  const [orders, setOrders] = useState<OrderDoc[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const timer = useRef<any>(null);
+
+  const fetchNow = async () => {
+    try {
+      setError(null);
+      if (!enabled) { setLoading(false); return; }
+      const token = await getIdTokenSafe(false);
+      if (!token) { setLoading(false); setError('Debes iniciar sesión.'); return; }
+
+      const url = `/api/orders?statusIn=${encodeURIComponent(STATUS_QUERY_MAIN)}&typeIn=${encodeURIComponent(TYPE_QUERY)}&limit=100`;
+      const res = await apiFetch(url);
+      if (res.status === 401) throw new Error('Unauthorized (401).');
+      if (!res.ok) throw new Error(`GET /orders ${res.status}`);
+
+      const data = await res.json();
+      const rawList = (data.items ?? data.orders ?? []) as any[];
+      const listRaw: OrderDoc[] = (rawList || []).map((d) => ({ ...d, status: toSnakeStatus(String(d.status || 'placed')) }));
+
+      const list = listRaw
+        .filter(o => getDisplayType(o) === 'delivery')
+        .sort((a, b) => {
+          const ta = a.createdAt?._seconds ? a.createdAt._seconds * 1000 : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+          const tb = b.createdAt?._seconds ? b.createdAt._seconds * 1000 : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+          return tb - ta;
+        });
+
+      setOrders(list);
+      setLoading(false);
+    } catch (e: any) {
+      setError(e?.message || 'Error al cargar');
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchNow();
+    return () => timer.current && clearInterval(timer.current);
+  }, [enabled]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    timer.current = setInterval(fetchNow, pollMs);
+    return () => timer.current && clearInterval(timer.current);
+  }, [enabled, pollMs]);
+
+  return { orders, loading, error, refresh: fetchNow } as const;
+}
+
+/* --------------------------------------------
+   PATCH sub-estado: courierName / delivery
+--------------------------------------------- */
+async function updateDeliveryMeta(
+  orderId: string,
+  patch: { courierName?: string | null; delivery?: 'pending' | 'inroute' | 'delivered' }
+) {
+  const res = await apiFetch(`/api/orders/${orderId}/delivery`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.error || `PATCH /delivery ${res.status}`);
+  }
+  return res.json();
+}
+
+/* --------------------------------------------
+   UI helpers
+--------------------------------------------- */
+function BadgeStatus({ s }: { s: StatusSnake }) {
+  const map: Record<StatusSnake, string> = {
+    placed: 'bg-primary',
+    kitchen_in_progress: 'bg-warning text-dark',
+    kitchen_done: 'bg-secondary',
+    ready_to_close: 'bg-success',
+    assigned_to_courier: 'bg-info text-dark',
+    on_the_way: 'bg-info text-dark',
+    delivered: 'bg-success',
+    closed: 'bg-dark',
+    cancelled: 'bg-danger',
+    cart: 'bg-light text-dark',
+  };
+  const cls = `badge ${map[s] || 'bg-light text-dark'}`;
+  return <span className={cls}>{TitleMap[s] || s}</span>;
+}
+
+/* --------------------------------------------
+   Modal para capturar nombre del repartidor
+--------------------------------------------- */
+function CourierModal({
+  show,
+  defaultName,
+  onClose,
+  onSave,
+}: {
+  show: boolean;
+  defaultName?: string | null;
+  onClose: () => void;
+  onSave: (name: string) => void;
+}) {
+  const [name, setName] = useState(defaultName ?? '');
+  useEffect(() => { setName(defaultName ?? ''); }, [defaultName, show]);
+
+  if (!show) return null;
+  return (
+    <div className="modal d-block" tabIndex={-1} style={{ background: 'rgba(0,0,0,0.25)' }}>
+      <div className="modal-dialog">
+        <div className="modal-content shadow">
+          <div className="modal-header">
+            <h5 className="modal-title">Asignar repartidor</h5>
+            <button type="button" className="btn-close" onClick={onClose} />
+          </div>
+          <div className="modal-body">
+            <label className="form-label">Nombre del repartidor</label>
+            <input
+              className="form-control"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Ej. Carlos Pérez"
+              autoFocus
+            />
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-outline-secondary" onClick={onClose}>Cancelar</button>
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                const v = name.trim();
+                if (!v) return;
+                onSave(v);
+              }}
+            >
+              Guardar y tomar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* --------------------------------------------
+   Tarjeta de Delivery (solo sub-estado)
+--------------------------------------------- */
+function DeliveryCard({
+  o,
+  onRefresh,
+}: {
+  o: OrderDoc;
+  onRefresh: () => Promise<void> | void;
+}) {
+  const created = toDate(o.createdAt ?? new Date());
+  const address = getDisplayAddress(o);
+  const phone = getDisplayPhone(o);
+  const notes = getDisplayNotes(o);
+  const courierName: string | null = o?.orderInfo?.courierName ?? null;
+  const subState: 'pending' | 'inroute' | 'delivered' = o?.orderInfo?.delivery ?? 'pending'; // ← viene 'pending' desde checkout
+
+  const isDelivery = getDisplayType(o) === 'delivery';
+
+  // Botones basados SOLO en sub-estado
+  const canTake   = isDelivery && subState === 'pending';
+  const canGo     = isDelivery && subState === 'pending' && !!(courierName && courierName.trim());
+  const canFinish = isDelivery && subState === 'inroute';
+
+  const [busy, setBusy] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+
+  async function doAssignWithName(name: string) {
+    try {
+      setBusy(true);
+      // Solo guardamos el nombre del repartidor. NO cambiamos status principal.
+      await updateDeliveryMeta(o.id, { courierName: name });
+      await onRefresh();
+    } catch (e: any) {
+      alert(e?.message || 'Error');
+    } finally {
+      setBusy(false);
+      setShowModal(false);
+    }
+  }
+  const doOut = async () => {
+    try {
+      setBusy(true);
+      await updateDeliveryMeta(o.id, { delivery: 'inroute' });
+      await onRefresh();
+    } catch (e: any) {
+      alert(e?.message || 'Error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const doDelivered = async () => {
+    try {
+      setBusy(true);
+      await updateDeliveryMeta(o.id, { delivery: 'delivered' });
+      await onRefresh();
+    } catch (e: any) {
+      alert(e?.message || 'Error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const lines = (o.items?.length ? o.items : o.lines || []);
+
+  return (
+    <>
+      <div className="card shadow-sm">
+        <div className="card-header d-flex align-items-center justify-content-between">
+          <div className="d-flex flex-column">
+            <div className="fw-semibold">#{o.orderNumber || o.id}</div>
+            <small className="text-muted">
+              {created.toLocaleString()} · {timeAgo(created, new Date())}
+            </small>
+            {courierName && <small className="text-muted">Repartidor: <strong>{courierName}</strong></small>}
+          </div>
+          <div className="d-flex gap-2 align-items-center">
+            <span className="badge bg-outline-secondary text-dark">delivery</span>
+            <BadgeStatus s={o.status} />
+          </div>
+        </div>
+
+        <div className="card-body">
+          {/* Datos de entrega */}
+          <div className="mb-2">
+            <div><span className="fw-semibold">Dirección:</span> {address || <em className="text-muted">—</em>}</div>
+            <div><span className="fw-semibold">Teléfono:</span> {phone || <em className="text-muted">—</em>}</div>
+            {notes ? <div><span className="fw-semibold">Notas:</span> {notes}</div> : null}
+            <div className="small text-muted">Sub-estado: {subState}</div>
+          </div>
+
+          {/* Ítems con addons / option-groups */}
+          <div className="mb-2">
+            {lines.map((it: any, idx: number) => {
+              const groups = normalizeOptions(it);
+              return (
+                <div key={idx} className="small mb-1">
+                  • {getLineQty(it)} × {getLineName(it)}
+                  {!!groups.length && (
+                    <div className="ms-3 text-muted">
+                      {groups.map((g, ix) => (
+                        <div key={ix}>
+                          <span className="fw-semibold">{g.label}:</span>{' '}
+                          <span>{g.values.join(', ')}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Acciones (solo sub-estado) */}
+          <div className="d-flex justify-content-end">
+            <div className="btn-group">
+              <button className="btn btn-outline-secondary btn-sm" disabled>{TitleMap[o.status]}</button>
+              {canTake && (
+                <button
+                  className="btn btn-primary btn-sm"
+                  disabled={busy}
+                  onClick={() => setShowModal(true)}
+                  title="Asignar repartidor y tomar pedido"
+                >
+                  Tomar
+                </button>
+              )}
+              {canGo && (
+                <button className="btn btn-primary btn-sm" disabled={busy} onClick={doOut} title="Salir en ruta">
+                  En ruta
+                </button>
+              )}
+              {canFinish && (
+                <button className="btn btn-success btn-sm" disabled={busy} onClick={doDelivered} title="Marcar como entregado">
+                  Entregado
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Modal para capturar el nombre del repartidor */}
+      <CourierModal
+        show={showModal}
+        defaultName={courierName}
+        onClose={() => setShowModal(false)}
+        onSave={doAssignWithName}
+      />
+    </>
+  );
+}
+
+/* --------------------------------------------
+   Página /delivery (3 secciones)
+--------------------------------------------- */
+export default function DeliveryBoardPage() {
+  const { authReady, user } = useAuthState();
+  const { orders, loading, error, refresh } = useDeliveryOrders(!!user, 4000);
+
+  // Búsqueda (teléfono, dirección, notas, #orden, ítems…)
+  const [q, setQ] = useState('');
+  const term = q.trim().toLowerCase();
+
+  // Filtrado con búsqueda (se aplica a las 3 secciones)
+  const filtered = useMemo(() => {
+    return orders.filter((o) => {
+      if (!term) return true;
+      const address = getDisplayAddress(o) ?? '';
+      const phone = getDisplayPhone(o) ?? '';
+      const notes = getDisplayNotes(o) ?? '';
+      const hay = [
+        o.orderNumber, o.id, address, phone, notes,
+        ...(o.items?.map(i => i.menuItemName || '') || []),
+      ].join(' ').toLowerCase();
+      return hay.includes(term);
+    });
+  }, [orders, term]);
+
+  // 1) Listos para asignar: status kitchen_done y sub-estado pending
+  const listosParaAsignar = useMemo(
+    () => filtered.filter(o =>
+      o.status === 'kitchen_done' &&
+      String(o?.orderInfo?.delivery ?? 'pending') === 'pending'
+    ),
+    [filtered]
+  );
+
+  // 2) En ruta: sub-estado inroute
+  const enRuta = useMemo(
+    () => filtered.filter(o => String(o?.orderInfo?.delivery ?? '') === 'inroute'),
+    [filtered]
+  );
+
+  // 3) Entregados: sub-estado delivered
+  const entregados = useMemo(
+    () => filtered.filter(o => String(o?.orderInfo?.delivery ?? '') === 'delivered'),
+    [filtered]
+  );
+
+  return (
+    <div className="container py-3">
+      <div className="d-flex align-items-center justify-content-between mb-3 gap-2 flex-wrap">
+        <h1 className="h4 m-0">Delivery — Asignación y Ruta</h1>
+        <div className="d-flex align-items-center gap-2">
+          <div className="input-group input-group-sm" style={{ width: 280 }}>
+            <span className="input-group-text">Buscar</span>
+            <input
+              type="search"
+              className="form-control"
+              placeholder="#orden, dirección, teléfono, ítem, nota"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+          </div>
+          <button className="btn btn-outline-secondary btn-sm" onClick={() => refresh()}>Refrescar</button>
+        </div>
+      </div>
+
+      {!authReady && <div className="text-muted">Inicializando sesión…</div>}
+      {authReady && !user && <div className="text-danger">Inicia sesión para ver órdenes.</div>}
+      {error && <div className="text-danger">{error}</div>}
+      {user && loading && <div className="text-muted">Cargando pedidos…</div>}
+
+      {user && (
+        <>
+          {/* 1) Listos para asignar */}
+          <section className="mb-4">
+            <div className="d-flex align-items-center justify-content-between mb-2">
+              <h2 className="h5 m-0">Listos para asignar</h2>
+              <span className="badge bg-secondary">{listosParaAsignar.length}</span>
+            </div>
+            {listosParaAsignar.length === 0 ? (
+              <div className="text-muted small">No hay órdenes listas para asignar.</div>
+            ) : (
+              <div className="row g-3">
+                {listosParaAsignar.map((o) => (
+                  <div key={o.id} className="col-12 col-md-6 col-lg-4">
+                    <DeliveryCard o={o} onRefresh={refresh} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* 2) En ruta */}
+          <section className="mb-4">
+            <div className="d-flex align-items-center justify-content-between mb-2">
+              <h2 className="h5 m-0">En ruta</h2>
+              <span className="badge bg-secondary">{enRuta.length}</span>
+            </div>
+            {enRuta.length === 0 ? (
+              <div className="text-muted small">No hay órdenes en ruta.</div>
+            ) : (
+              <div className="row g-3">
+                {enRuta.map((o) => (
+                  <div key={o.id} className="col-12 col-md-6 col-lg-4">
+                    <DeliveryCard o={o} onRefresh={refresh} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* 3) Entregados */}
+          <section className="mb-4">
+            <div className="d-flex align-items-center justify-content-between mb-2">
+              <h2 className="h5 m-0">Entregados</h2>
+              <span className="badge bg-secondary">{entregados.length}</span>
+            </div>
+            {entregados.length === 0 ? (
+              <div className="text-muted small">No hay entregas registradas.</div>
+            ) : (
+              <div className="row g-3">
+                {entregados.map((o) => (
+                  <div key={o.id} className="col-12 col-md-6 col-lg-4">
+                    <DeliveryCard o={o} onRefresh={refresh} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </>
+      )}
+    </div>
+  );
+}
