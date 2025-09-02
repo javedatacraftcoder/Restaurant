@@ -7,6 +7,8 @@ import { useRouter } from 'next/navigation';
 
 // Firestore
 import { getFirestore, collection, addDoc, serverTimestamp } from 'firebase/firestore';
+// 🔹 MÍNIMO: leer usuario actual para tomar su email (si hay sesión)
+import { getAuth } from 'firebase/auth';
 
 function fmtQ(n?: number) {
   const v = Number.isFinite(Number(n)) ? Number(n) : 0;
@@ -33,6 +35,12 @@ export default function CheckoutNewPage() {
       ? { type: 'dine-in', table, notes: notes || undefined }
       : { type: 'delivery', address, phone, notes: notes || undefined };
 
+    // 🔹 Tomar email/uid del usuario si está autenticado (sin cambiar el UI)
+    const auth = getAuth();
+    const u = auth.currentUser;
+    const userEmail = u?.email || undefined;
+    const uid = u?.uid || undefined;
+
     const orderPayload = {
       items: cart.items.map((ln) => ({
         menuItemId: ln.menuItemId,
@@ -49,9 +57,17 @@ export default function CheckoutNewPage() {
         lineTotal: cart.computeLineTotal(ln),
       })),
       orderTotal: grand,
-      orderInfo: meta,
-      status: 'placed',               // opcional: para admin
-      createdAt: serverTimestamp(),    // timestamp del servidor
+
+      // 👇 ÚNICO CAMBIO: si es delivery, añadimos delivery: "pending" dentro de orderInfo
+      orderInfo: mode === 'delivery' ? { ...(meta as DeliveryInfo), delivery: 'pending' } : meta,
+
+      status: 'placed',
+      createdAt: serverTimestamp(),
+
+      // 🔹 Campos mínimos para filtro por email
+      userEmail: userEmail,
+      userEmail_lower: userEmail ? userEmail.toLowerCase() : undefined,
+      createdBy: (uid || userEmail) ? { uid, email: userEmail ?? null } : undefined,
     };
 
     try {
@@ -59,9 +75,8 @@ export default function CheckoutNewPage() {
       const ref = await addDoc(collection(db, 'orders'), orderPayload);
       console.log('[CHECKOUT] Orden guardada en orders con id:', ref.id);
 
-      // Limpiamos carrito y redirigimos (o mostrar gracias)
       cart.clear();
-      router.push('/cart-new'); // o '/menu' o una página de "gracias"
+      router.push('/cart-new'); // o '/menu'
       alert('¡Orden creada! ID: ' + ref.id);
     } catch (err) {
       console.error('Error guardando la orden:', err);

@@ -137,25 +137,17 @@ type StatusSnake =
 type OrderItemLine = {
   menuItemName: string;
   quantity: number;
-
-  // Estructuras posibles de opciones según distintas partes del sistema:
-  // - optionGroups[] (Checkout nuevo)
-  // - options[] + selected[] (legacy)
-  // - addons[] / extras[] / modifiers[] (buckets)
-  // - groupItems[] (compat opcional)
   optionGroups?: Array<{
     groupId?: string;
     groupName?: string;
     type?: 'single' | 'multiple';
     items: Array<{ id?: string; name?: string; priceDelta?: number }>;
   }>;
-
   options?: Array<{ groupName: string; selected: Array<{ name: string; priceDelta?: number }> }>;
   addons?: Array<string | { name: string; priceDelta?: number }>;
   extras?: Array<string | { name: string; priceDelta?: number }>;
   modifiers?: Array<string | { name: string; priceDelta?: number }>;
   groupItems?: Array<string | { name: string }>;
-
   unitPriceCents?: number;
   priceCents?: number;
   price?: number;
@@ -191,9 +183,12 @@ type OrderDoc = {
   createdAt?: any;
   statusHistory?: StatusHistoryEntry[];
   lines?: OrderItemLine[];
-  // Checkout nuevo:
-  // orderInfo?: { type: 'dine-in' | 'delivery', table?: string, notes?: string, address?: string, phone?: string }
   orderInfo?: any;
+
+  /* 👇 Campos que PODEMOS tener si la orden fue editada (solo lectura) */
+  reopenedAt?: any;
+  currentAppendBatchId?: string | null;
+  itemsCountBeforeAppend?: number | null;
 };
 
 /* --------------------------------------------
@@ -272,15 +267,7 @@ function getLineName(l: any): string {
   return String(l?.menuItemName ?? l?.name ?? l?.menuItem?.name ?? 'Ítem');
 }
 
-/**
- * Junta TODAS las variantes de opciones conocidas:
- * - Checkout nuevo:  line.optionGroups[].{ groupName, items[].name }
- * - Legacy:          line.options[].{ groupName, selected[].name }
- * - Buckets:         addons/extras/modifiers
- * - Compat:          groupItems[] (si existiera)
- *
- * Siempre regresa {label, values[]} y NUNCA precios.
- */
+/** Junta TODAS las variantes de opciones conocidas sin precios. */
 function normalizeOptions(l: any): Array<{ label: string; values: string[] }> {
   const res: Array<{ label: string; values: string[] }> = [];
 
@@ -306,7 +293,7 @@ function normalizeOptions(l: any): Array<{ label: string; values: string[] }> {
     }
   }
 
-  // 3) Buckets conocidos: addons, extras, modifiers
+  // 3) Buckets conocidos
   const buckets = [
     { key: 'addons', label: 'Addons' },
     { key: 'extras', label: 'Extras' },
@@ -322,7 +309,7 @@ function normalizeOptions(l: any): Array<{ label: string; values: string[] }> {
     }
   }
 
-  // 4) Compat extra: groupItems[] (si existiera como lista simple)
+  // 4) Compat: groupItems[]
   if (Array.isArray(l?.groupItems) && l.groupItems.length) {
     const values = l.groupItems
       .map((x: any) => (typeof x === 'string' ? x : x?.name ? String(x.name) : null))
@@ -334,7 +321,6 @@ function normalizeOptions(l: any): Array<{ label: string; values: string[] }> {
 }
 
 /* ---- COMPAT Kitchen <-> Checkout: leer orderInfo primero ---- */
-// Checkout guarda: orderInfo: { type: 'dine-in' | 'delivery', table?, notes?, address?, phone? } :contentReference[oaicite:2]{index=2}
 function getDisplayType(o: OrderDoc): 'dine_in' | 'delivery' {
   const infoType = String(o?.orderInfo?.type || '').toLowerCase();
   if (infoType === 'delivery') return 'delivery';
@@ -353,6 +339,39 @@ function getDisplayNotes(o: OrderDoc): string | null {
   const n = o?.orderInfo?.notes;
   if (n) return String(n);
   return o.notes ?? null;
+}
+
+/* --------------------------------------------
+   🔴 NUEVO: helpers para resaltar líneas agregadas
+--------------------------------------------- */
+function tsMs(x: any): number {
+  if (!x) return 0;
+  try {
+    if (typeof x.toDate === 'function') return x.toDate().getTime();
+    if (typeof x.seconds === 'number') return x.seconds * 1000;
+    const t = new Date(x).getTime();
+    return Number.isFinite(t) ? t : 0;
+  } catch { return 0; }
+}
+/** Es nueva si:
+ *  1) line.addedAt >= order.reopenedAt
+ *  2) o line.addedBatchId === order.currentAppendBatchId
+ *  3) o idx >= order.itemsCountBeforeAppend
+ */
+function isNewLine(order: OrderDoc, line: any, idx: number): boolean {
+  const addedAt = tsMs(line?.addedAt);
+  const reopenedAt = tsMs(order?.reopenedAt);
+  if (addedAt && reopenedAt && addedAt >= reopenedAt) return true;
+
+  if (order?.currentAppendBatchId && line?.addedBatchId && order.currentAppendBatchId === line.addedBatchId) {
+    return true;
+  }
+
+  if (typeof order?.itemsCountBeforeAppend === 'number' && idx >= Number(order.itemsCountBeforeAppend)) {
+    return true;
+  }
+
+  return false;
 }
 
 /* --------------------------------------------
@@ -401,13 +420,11 @@ function useKitchenOrders(
         return;
       }
 
-      // Normalizamos únicamente el status (no tocamos la data)
       const listRaw: OrderDoc[] = rawList.map((d) => {
         const normalizedStatus = toSnakeStatus(String(d.status || 'placed'));
         return { ...d, status: normalizedStatus } as OrderDoc;
       });
 
-      // Filtro defensivo por si el backend devolviera más estados
       const list = listRaw.filter(o => o.status === 'placed' || o.status === 'kitchen_in_progress');
 
       setOrders(list);
@@ -488,7 +505,7 @@ async function changeStatus(orderId: string, to: StatusSnake) {
 }
 
 /* --------------------------------------------
-   Fullscreen hook (nuevo)
+   Fullscreen hook
 --------------------------------------------- */
 function useFullscreen() {
   const [isFs, setIsFs] = useState(false);
@@ -582,11 +599,12 @@ function OrderCard({
         <div className="mb-2">
           {(o.items?.length ? o.items : o.lines || []).map((it: any, idx: number) => {
             const groups = normalizeOptions(it);
+            const isNew = isNewLine(o, it, idx); // 🔴 NUEVO
             return (
-              <div key={idx} className="small mb-1">
+              <div key={idx} className={`small mb-1 ${isNew ? 'text-danger' : ''}`}>
                 • {getLineQty(it)} × {getLineName(it)}
                 {!!groups.length && (
-                  <div className="ms-3 text-muted">
+                  <div className={`ms-3 ${isNew ? 'text-danger' : 'text-muted'}`}>
                     {groups.map((g, ix) => (
                       <div key={ix}>
                         <span className="fw-semibold">{g.label}:</span>{' '}

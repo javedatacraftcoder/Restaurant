@@ -1,131 +1,316 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
-import { useAuth } from "@/app/providers";
-import { useEditCart } from "@/lib/edit-cart/context";
-import Link from "next/link";
-import { apiFetch } from "@/lib/api/client";
+import { useParams, useRouter } from 'next/navigation';
+import React, { useEffect, useState } from 'react';
+
+const storageKey = (orderId: string) => `editcart:${orderId}`;
 
 type MenuItem = {
   id: string;
   name: string;
-  priceCents: number;          // normalizamos a cents
-  description?: string;
+  price?: number;
+
+  // Formatos conocidos
+  addons?: Array<{ name: string; price?: number }>;
+  optionGroups?: Array<{
+    groupId?: string;
+    groupName?: string;
+    type?: 'single' | 'multiple';
+    items: Array<{ id?: string; name?: string; priceDelta?: number; price?: number }>;
+  }>;
+
+  // Posibles alias que he visto en menús
+  options?: Array<{ groupId?: string; groupName?: string; items: Array<{ id?: string; name?: string; priceDelta?: number; price?: number }> }>;
+  groups?: Array<{ id?: string; name?: string; items: Array<{ id?: string; name?: string; priceDelta?: number; price?: number }> }>;
+  option_groups?: Array<{ id?: string; name?: string; items: Array<{ id?: string; name?: string; priceDelta?: number; price?: number }> }>;
 };
 
-function toPriceCents(x: any): number {
-  if (Number.isFinite(+x?.priceCents)) return +x.priceCents;
-  if (Number.isFinite(+x?.price_cents)) return +x.price_cents;
-  if (Number.isFinite(+x?.price)) return Math.round(+x.price * 100);
-  return 0;
+type NewLine = {
+  menuItemId?: string;
+  menuItemName?: string;
+  basePrice?: number;
+  quantity?: number;
+  addons: Array<{ name: string; price?: number }>;
+  optionGroups: Array<{
+    groupId: string;
+    groupName: string;
+    type?: 'single' | 'multiple';
+    items: Array<{ id: string; name: string; priceDelta?: number }>;
+  }>;
+  lineTotal?: number;
+};
+
+const toNum = (x: any) => (Number.isFinite(Number(x)) ? Number(x) : 0);
+
+/** Detección robusta de option-groups sin importar cómo vengan nombradas las llaves */
+function toOptionGroups(mi: MenuItem): NonNullable<NewLine['optionGroups']> {
+  // 1) Directo si ya está en el formato esperado
+  if (Array.isArray(mi.optionGroups) && mi.optionGroups.length) {
+    return mi.optionGroups.map((g) => ({
+      groupId: String(g.groupId ?? g.groupName ?? 'group'),
+      groupName: String(g.groupName ?? g.groupId ?? 'Opciones'),
+      type: (g.type === 'multiple' ? 'multiple' : 'single') as 'single' | 'multiple',
+      items: (g.items || []).map((it) => ({
+        id: String(it.id ?? it.name ?? Math.random()),
+        name: String(it.name ?? 'Opción'),
+        // algunos menús ponen price en lugar de priceDelta
+        priceDelta: Number.isFinite(Number((it as any).priceDelta))
+          ? Number((it as any).priceDelta)
+          : Number.isFinite(Number((it as any).price))
+          ? Number((it as any).price)
+          : undefined,
+      })),
+    }));
+  }
+
+  // 2) Alias comunes: options, groups, option_groups
+  const candidates: any[] = [];
+  if (Array.isArray(mi.options)) candidates.push(...mi.options);
+  if (Array.isArray(mi.groups)) candidates.push(...mi.groups);
+  if (Array.isArray(mi.option_groups)) candidates.push(...mi.option_groups);
+
+  if (candidates.length) {
+    return candidates.map((g: any) => ({
+      groupId: String(g.groupId ?? g.id ?? g.groupName ?? g.name ?? 'group'),
+      groupName: String(g.groupName ?? g.name ?? 'Opciones'),
+      type: 'single' as const,
+      items: (g.items || []).map((it: any) => ({
+        id: String(it.id ?? it.name ?? Math.random()),
+        name: String(it.name ?? 'Opción'),
+        priceDelta: Number.isFinite(Number(it.priceDelta))
+          ? Number(it.priceDelta)
+          : Number.isFinite(Number(it.price))
+          ? Number(it.price)
+          : undefined,
+      })),
+    })) as NonNullable<NewLine['optionGroups']>;
+  }
+
+  // 3) Exploración genérica: busca arrays con objetos que tengan "items"
+  for (const [key, val] of Object.entries(mi as any)) {
+    if (!Array.isArray(val)) continue;
+    if (!val.length) continue;
+    const looksLikeGroupArray = val.every(
+      (g: any) => typeof g === 'object' && Array.isArray(g?.items)
+    );
+    if (looksLikeGroupArray) {
+      return (val as any[]).map((g: any, i: number) => ({
+        groupId: String(g.groupId ?? g.id ?? g.groupName ?? g.name ?? `group_${i}`),
+        groupName: String(g.groupName ?? g.name ?? `Opciones ${i + 1}`),
+        type: (g.type === 'multiple' ? 'multiple' : 'single') as 'single' | 'multiple',
+        items: (g.items || []).map((it: any, j: number) => ({
+          id: String(it.id ?? it.name ?? `opt_${i}_${j}`),
+          name: String(it.name ?? `Opción ${j + 1}`),
+          priceDelta: Number.isFinite(Number(it.priceDelta))
+            ? Number(it.priceDelta)
+            : Number.isFinite(Number(it.price))
+            ? Number(it.price)
+            : undefined,
+        })),
+      })) as NonNullable<NewLine['optionGroups']>;
+    }
+  }
+
+  return [];
 }
 
-export default function EditMenuPage() {
-  const { id } = useParams<{ id: string }>();
-  const { flags, loading } = useAuth();
-  const { cart, loadFromOrderDoc, addLine, setCart } = useEditCart();
-  const router = useRouter();
+function perUnitAddonsQ(line: NewLine) {
+  let s = 0;
+  for (const g of line.optionGroups || [])
+    for (const it of g.items || []) s += toNum(it.priceDelta);
+  for (const a of line.addons || []) s += toNum(a.price);
+  return s;
+}
+function computeLineTotal(l: NewLine) {
+  const q = Number(l.quantity || 1);
+  const base = toNum(l.basePrice);
+  return (base + perUnitAddonsQ(l)) * q;
+}
 
+export default function EditOrderMenuPage() {
+  const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const [menu, setMenu] = useState<MenuItem[]>([]);
-  const [menuMap, setMenuMap] = useState<Record<string, MenuItem>>({});
-  const [loadingAll, setLoadingAll] = useState(true);
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const [qtyBy, setQtyBy] = useState<Record<string, number>>({});
+  const [addonsSel, setAddonsSel] = useState<Record<string, Record<string, boolean>>>({});
+  const [optSel, setOptSel] = useState<Record<string, Record<string, boolean>>>({});
 
   useEffect(() => {
-    if (loading) return;
-    if (!flags.isAdmin && !flags.isWaiter) { router.replace("/"); return; }
-
+    let alive = true;
     (async () => {
-      // 1) Cargar orden
-      const res = await apiFetch(`/api/orders/${id}`);
-      if (res.status === 401) { router.replace("/login"); return; }
-      if (!res.ok) { router.replace("/admin/edit-orders"); return; }
-      const order = await res.json();
-      loadFromOrderDoc(order, id);
-
-      // 2) Cargar menú y normalizar
-      const mRes = await apiFetch("/api/menu");
-      const raw = await mRes.json();
-      const normalized: MenuItem[] = (raw?.items ?? raw ?? []).map((x: any) => ({
-        id: String(x.id),
-        name: x.name,
-        priceCents: toPriceCents(x),
-        description: x.description ?? "",
-      }));
-      setMenu(normalized);
-      const mp: Record<string, MenuItem> = {};
-      for (const it of normalized) mp[it.id] = it;
-      setMenuMap(mp);
-
-      // 3) Backfill de líneas sin precio/nombre
-      setCart(c => ({
-        ...c,
-        lines: (c.lines ?? []).map(l => {
-          const idStr = String(l.menuItemId ?? "");
-          const fromMenu = mp[idStr];
-          const price =
-            typeof l.unitPriceCents === "number" && Number.isFinite(l.unitPriceCents)
-              ? l.unitPriceCents
-              : (fromMenu?.priceCents ?? 0);
-
-          return {
-            ...l,
-            menuItemId: idStr,
-            unitPriceCents: price,
-            name: l.name ?? fromMenu?.name ?? idStr,
-          };
-        }),
-      }));
-
-      setLoadingAll(false);
+      try {
+        let items: MenuItem[] | null = null;
+        try {
+          const r = await fetch('/api/menu?flat=1', { cache: 'no-store' });
+          if (r.ok) {
+            const j = await r.json();
+            items = (j.items || j) as MenuItem[];
+          }
+        } catch {}
+        if (!items) {
+          const r2 = await fetch('/api/menu', { cache: 'no-store' }).catch(() => null);
+          if (r2 && r2.ok) {
+            const j = await r2.json();
+            items = (j.items || j) as MenuItem[];
+          }
+        }
+        if (alive) setMenu(items || []);
+      } catch (e) {
+        console.error(e);
+      }
     })();
-  }, [id, flags.isAdmin, flags.isWaiter, loading, router, loadFromOrderDoc, setCart]);
+    return () => {
+      alive = false;
+    };
+  }, []);
 
-  if (loading || loadingAll) return <div className="container py-4">Cargando…</div>;
+  const toggle = (mid: string) => setOpen((m) => ({ ...m, [mid]: !m[mid] }));
+  const setQty = (mid: string, q: number) =>
+    setQtyBy((m) => ({ ...m, [mid]: Math.max(1, Math.min(99, Math.floor(q || 1))) }));
+  const checkAddon = (mid: string, name: string) => !!addonsSel[mid]?.[name];
+  const toggleAddon = (mid: string, name: string) =>
+    setAddonsSel((m) => ({ ...m, [mid]: { ...(m[mid] || {}), [name]: !m[mid]?.[name] } }));
+
+  // Selección de opciones: usar clave robusta (id || name)
+  const isOptChecked = (mid: string, key: string) => !!optSel[mid]?.[key];
+  const toggleOpt = (mid: string, key: string) =>
+    setOptSel((m) => ({ ...m, [mid]: { ...(m[mid] || {}), [key]: !m[mid]?.[key] } }));
+
+  function addToCart(mi: MenuItem) {
+    const groups = toOptionGroups(mi);
+
+    const selectedAddons = (mi.addons || []).filter((a) => !!addonsSel[mi.id]?.[a.name]);
+
+    const selectedOpts: NewLine['optionGroups'] = groups
+      .map((g) => ({
+        groupId: String(g.groupId ?? g.groupName ?? 'group'),
+        groupName: String(g.groupName ?? g.groupId ?? 'Opciones'),
+        type: (g.type === 'multiple' ? 'multiple' : 'single') as 'single' | 'multiple',
+        items: (g.items || [])
+          .filter((it) => !!optSel[mi.id]?.[String(it.id ?? it.name)])
+          .map((it) => ({
+            id: String(it.id ?? it.name),
+            name: String(it.name ?? 'Opción'),
+            priceDelta: Number.isFinite(Number((it as any).priceDelta))
+              ? Number((it as any).priceDelta)
+              : Number.isFinite(Number((it as any).price))
+              ? Number((it as any).price)
+              : undefined,
+          })),
+      }))
+      .filter((g) => g.items.length > 0);
+
+    const line: NewLine = {
+      menuItemId: mi.id,
+      menuItemName: mi.name,
+      basePrice: mi.price ?? 0,
+      quantity: qtyBy[mi.id] || 1,
+      addons: selectedAddons.map((a) => ({ name: a.name, price: a.price })),
+      optionGroups: selectedOpts,
+    };
+    line.lineTotal = computeLineTotal(line);
+
+    const key = storageKey(String(id));
+    const prev: NewLine[] = JSON.parse(sessionStorage.getItem(key) || '[]');
+    sessionStorage.setItem(key, JSON.stringify([...prev, line]));
+    router.push(`/admin/edit-orders/${id}/cart`);
+  }
 
   return (
-    <div className="container py-3">
-      <div className="alert alert-warning mb-3">
-        Editando orden <strong>#{(cart.orderId ?? "").slice(-6).toUpperCase()}</strong>
-      </div>
+    <div className="container py-4">
+      <h1 className="h5 mb-3">Agregar a la orden #{String(id).slice(0, 6)}</h1>
 
-      <div className="d-flex justify-content-between align-items-center mb-2">
-        <h2 className="h6 m-0">Menú (edición)</h2>
-        <div className="d-flex gap-2">
-          <Link className="btn btn-sm btn-outline-secondary" href={`/admin/edit-orders/${id}/cart`}>Ver carrito</Link>
-          <Link className="btn btn-sm btn-success" href={`/admin/edit-orders/${id}/checkout`}>Continuar</Link>
-        </div>
-      </div>
+      {menu.length === 0 && (
+        <div className="alert alert-light border">No se encontraron platos en /api/menu.</div>
+      )}
 
-      <div className="row g-3">
-        {menu.map(i => (
-          <div className="col-12 col-md-6 col-lg-4" key={i.id}>
-            <div className="card h-100">
-              <div className="card-body">
-                <div className="d-flex justify-content-between">
-                  <h3 className="h6">{i.name}</h3>
-                  <span className="badge text-bg-light">{(i.priceCents/100).toFixed(2)} GTQ</span>
+      <div className="list-group">
+        {menu.map((mi) => {
+          const isOpen = !!open[mi.id];
+          const q = qtyBy[mi.id] || 1;
+          const groups = toOptionGroups(mi);
+          return (
+            <div key={mi.id} className="list-group-item">
+              <div className="d-flex align-items-center justify-content-between">
+                <div>
+                  <div className="fw-semibold">{mi.name}</div>
+                  <div className="small text-muted">
+                    {mi.price !== undefined ? `Q ${toNum(mi.price).toFixed(2)}` : '—'}
+                  </div>
                 </div>
-                {i.description && <p className="text-muted small mb-3">{i.description}</p>}
-                <button
-                  className="btn btn-sm btn-primary"
-                  onClick={() =>
-                    addLine({
-                      menuItemId: i.id,
-                      name: i.name,
-                      quantity: 1,
-                      unitPriceCents: i.priceCents,
-                      selections: [],
-                    })
-                  }
-                >
-                  Agregar
-                </button>
+                <div className="d-flex align-items-center gap-2">
+                  <input
+                    type="number"
+                    className="form-control form-control-sm"
+                    style={{ width: 90 }}
+                    value={q}
+                    min={1}
+                    max={99}
+                    onChange={(e) => setQty(mi.id, Number(e.target.value))}
+                  />
+                  <button
+                    className="btn btn-outline-secondary btn-sm"
+                    onClick={() => toggle(mi.id)}
+                  >
+                    {isOpen ? 'Ocultar' : 'Opciones'}
+                  </button>
+                  <button className="btn btn-primary btn-sm" onClick={() => addToCart(mi)}>
+                    Agregar
+                  </button>
+                </div>
               </div>
+
+              {isOpen && (
+                <div className="mt-3">
+                  {(mi.addons || []).length > 0 && (
+                    <div className="mb-3">
+                      <div className="fw-semibold">Addons</div>
+                      {(mi.addons || []).map((a) => (
+                        <label key={a.name} className="d-flex align-items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={checkAddon(mi.id, a.name)}
+                            onChange={() => toggleAddon(mi.id, a.name)}
+                          />
+                          <span>{a.name}</span>
+                          <span className="text-muted small">
+                            {a.price !== undefined ? `(Q ${toNum(a.price).toFixed(2)})` : '—'}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Option-groups */}
+                  {groups.map((g, gi) => (
+                    <div key={`${g.groupId}_${gi}`} className="mb-2">
+                      <div className="fw-semibold">{g.groupName}</div>
+                      {(g.items || []).map((it, ii) => {
+                        const key = String(it.id ?? it.name);
+                        return (
+                          <label key={`${key}_${ii}`} className="d-flex align-items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={isOptChecked(mi.id, key)}
+                              onChange={() => toggleOpt(mi.id, key)}
+                            />
+                            <span>{it.name}</span>
+                            <span className="text-muted small">
+                              {it.priceDelta !== undefined
+                                ? `(Q ${toNum(it.priceDelta).toFixed(2)})`
+                                : ''}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
-        ))}
-        {menu.length === 0 && <div className="col-12 text-muted">No hay productos</div>}
+          );
+        })}
       </div>
     </div>
   );

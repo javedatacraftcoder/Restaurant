@@ -1,249 +1,210 @@
-// src/app/admin/edit-orders/page.tsx
-"use client";
+'use client';
 
-import { useEffect, useMemo, useState, useCallback } from "react";
-import { useAuth } from "@/app/providers";
-import { useRouter } from "next/navigation";
-import { apiFetch } from "@/lib/api/client"; // <-- NUEVO
+import Link from 'next/link';
+import { useEffect, useMemo, useState } from 'react';
 
-type MenuItem = { id: string; name: string; priceCents?: number };
+type TS = any;
 
-type AnyOrder = {
-  id: string;
-  number?: string;
-  shortId?: string;
-  status: string;
-  type?: "dine_in" | "delivery" | "pickup" | string;
-  tableNumber?: string;
-  currency?: string;
-  createdAt?: string | Date;
-  // OPS model
-  items?: Array<{
-    menuItemId: string;
-    name?: string;
-    quantity?: number;
-    unitPriceCents?: number;
-    priceCents?: number; // por si viene así
-    options?: Array<{ groupId: string; optionItemIds: string[] }>;
-  }>;
-  amounts?: {
-    subtotalCents?: number;
-    taxCents?: number;
-    serviceFeeCents?: number;
-    discountCents?: number;
-    tipCents?: number;
-    totalCents?: number;
-    subtotal?: number;
-    total?: number;
-  };
-  // legacy
-  lines?: Array<{
-    menuItemId: string;
-    name?: string;
-    qty?: number;
-    quantity?: number;
-    unitPriceCents?: number;
-    priceCents?: number;
-  }>;
-  totals?: { totalCents?: number; total?: number };
-  totalCents?: number;
-  total?: number;
+type OptItem = {
+  id?: string; name?: string;
+  price?: number; priceCents?: number;
+  priceDelta?: number; priceDeltaCents?: number;
+  priceExtra?: number; priceExtraCents?: number;
+};
+type Line = {
+  menuItemName?: string; name?: string; menuItem?: { price?: number; priceCents?: number } | null;
+  quantity?: number;
+  basePrice?: number; unitPrice?: number; unitPriceCents?: number; price?: number; priceCents?: number;
+  totalCents?: number; lineTotal?: number;
+  addons?: Array<string | { name?: string; price?: number; priceCents?: number }>;
+  optionGroups?: Array<{ groupId?: string; groupName?: string; type?: 'single'|'multiple'; items: OptItem[] }>;
+  options?: Array<{ groupName: string; selected: OptItem[] }>;
+};
+type Order = {
+  id: string; orderNumber?: string|number; status?: string; currency?: string;
+  createdAt?: TS;
+  orderInfo?: { type?: 'dine-in'|'delivery'; table?: string } | null;
+  tableNumber?: string | null;
+  items?: Line[]; lines?: any[];
+  amounts?: { total?: number } | null; totals?: { totalCents?: number } | null; orderTotal?: number | null;
+  userEmail?: string|null; createdBy?: { email?: string|null } | null;
 };
 
-const ALLOWED = new Set(["placed","kitchen_in_progress","kitchen_done","ready_to_close"]);
-
-function n(x: any, d = 0) {
-  const v = Number(x);
-  return Number.isFinite(v) ? v : d;
+const toNum=(x:any)=> (Number.isFinite(Number(x))?Number(x):undefined);
+const centsToQ=(c?:number)=> (Number.isFinite(c)?Number(c)/100:0);
+function tsToDate(ts:TS){ if(!ts) return null; try{
+  if (typeof (ts as any).toDate === 'function') return (ts as any).toDate();
+  if (typeof (ts as any).seconds === 'number') return new Date((ts as any).seconds*1000);
+  if (typeof ts === 'number') return new Date(ts);
+  const d = new Date(ts); return isNaN(d.getTime())? null : d;
+}catch{return null;} }
+function fmtMoney(n?:number, cur='GTQ'){ const v=Number(n||0); try{ return new Intl.NumberFormat('es-GT',{style:'currency',currency:cur}).format(v);}catch{return `Q ${v.toFixed(2)}`;} }
+function extractDeltaQ(x:any){ const a=toNum(x?.priceDelta); if(a!==undefined) return a;
+  const b=toNum(x?.priceExtra); if(b!==undefined) return b;
+  const ac=toNum(x?.priceDeltaCents); if(ac!==undefined) return ac/100;
+  const bc=toNum(x?.priceExtraCents); if(bc!==undefined) return bc/100;
+  const p=toNum(x?.price); if(p!==undefined) return p;
+  const pc=toNum(x?.priceCents); if(pc!==undefined) return pc/100;
+  return 0;
 }
-
-function qtyOf(it: any) {
-  return n(it?.quantity ?? it?.qty, 1);
+function perUnitAddonsQ(l:Line){ let s=0;
+  if(Array.isArray(l.optionGroups)) for(const g of l.optionGroups) for(const it of (g.items||[])) s += extractDeltaQ(it);
+  if(Array.isArray(l.options)) for(const g of l.options) for(const it of (g.selected||[])) s += extractDeltaQ(it);
+  for (const it of (l.addons||[])) {
+    if (typeof it === 'string') continue;
+    const p = toNum(it?.price) ?? (toNum(it?.priceCents)!==undefined ? Number(it!.priceCents)/100 : undefined);
+    s += p ?? 0;
+  }
+  return s;
 }
-
-function priceOf(it: any) {
-  return n(it?.unitPriceCents ?? it?.priceCents, 0);
+function baseUnitPriceQ(l:Line){ const b=toNum(l.basePrice); if(b!==undefined) return b;
+  const upc=toNum(l.unitPriceCents); if(upc!==undefined) return upc/100;
+  const up=toNum(l.unitPrice); if(up!==undefined) return up;
+  const pc=toNum(l.priceCents); if(pc!==undefined) return pc/100;
+  const p=toNum(l.price); if(p!==undefined) return p;
+  const miC=toNum(l.menuItem?.priceCents); if(miC!==undefined) return miC/100;
+  const mi=toNum(l.menuItem?.price); if(mi!==undefined) return mi;
+  const tC=toNum(l.totalCents), q=Number(l.quantity||1); if(tC!==undefined && q>0){ const per=tC/100/q; const add=perUnitAddonsQ(l); return Math.max(0, per - add); }
+  return 0;
 }
-
-function orderNumber(o: AnyOrder) {
-  return o.number ?? o.shortId ?? o.id?.slice?.(-6)?.toUpperCase?.() ?? o.id;
+function lineTotalQ(l:Line){ if(toNum(l.lineTotal)!==undefined) return Number(l.lineTotal);
+  if(toNum(l.totalCents)!==undefined) return Number(l.totalCents)/100;
+  const q=Number(l.quantity||1); return (baseUnitPriceQ(l)+perUnitAddonsQ(l))*q;
 }
+function orderTotalQ(o:Order){ if(toNum(o.amounts?.total)!==undefined) return Number(o.amounts!.total);
+  if(toNum(o.orderTotal)!==undefined) return Number(o.orderTotal);
+  if(toNum(o.totals?.totalCents)!==undefined) return centsToQ(o.totals!.totalCents!);
+  const lines=(o.items||[]); if(lines.length) return lines.reduce((acc,l)=>acc+lineTotalQ(l),0);
+  return 0;
+}
+function displayType(o:Order){ const t=o.orderInfo?.type?.toLowerCase?.(); if(t==='delivery') return 'Delivery'; if(t==='dine-in') return 'Dine-in'; return o.orderInfo?.type || '-'; }
+function getQty(l:Line){ return Number(l?.quantity ?? 1) || 1; }
+function getName(l:Line){ return String(l?.menuItemName ?? l?.name ?? 'Ítem'); }
 
-export default function EditOrdersPage() {
-  const { flags, loading } = useAuth();
-  const router = useRouter();
+type ApiList = { ok?: boolean; orders?: Order[]; items?: Order[]; error?: string };
 
-  const [orders, setOrders] = useState<AnyOrder[]>([]);
-  const [q, setQ] = useState("");
-  const [menuMap, setMenuMap] = useState<Record<string, MenuItem>>({});
+export default function EditOrdersListPage() {
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [q, setQ] = useState('');
 
-  // --- cargar menú para resolver nombres si la orden no trae name ---
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await apiFetch("/api/menu");
-        if (res.status === 401) { router.replace("/login"); return; }
-        if (!res.ok) return;
-        const m = await res.json();
-        const arr: MenuItem[] = (m?.items ?? m ?? []).map((x: any) => ({
-          id: x.id,
-          name: x.name,
-          priceCents: x.priceCents ?? x.price_cents ?? 0,
-        }));
-        const mp: Record<string, MenuItem> = {};
-        for (const it of arr) mp[it.id] = it;
-        setMenuMap(mp);
-      } catch {
-        // ignore
-      }
-    })();
-  }, [router]);
+  useEffect(()=>{ let alive=true;(async()=>{
+    try{
+      const res = await fetch('/api/orders?limit=100',{cache:'no-store'});
+      const data: ApiList = await res.json();
+      if(!res.ok || data?.ok===false) throw new Error(data?.error||`HTTP ${res.status}`);
+      const list = (data.orders || data.items || []).map((o:any)=>o) as Order[];
+      if(alive) setOrders(list);
+    } catch(e){ console.error(e); } finally { if(alive) setLoading(false); }
+  })(); return ()=>{alive=false}; },[]);
 
-  // --- cargar órdenes editables ---
-  useEffect(() => {
-    if (loading) return;
-    if (!flags.isAdmin && !flags.isWaiter) {
-      router.replace("/");
-      return;
-    }
-    (async () => {
-      const res = await apiFetch("/api/orders?scope=editable");
-      if (res.status === 401) { router.replace("/login"); return; }
-      if (!res.ok) return;
-      const data = await res.json();
-      const list: AnyOrder[] = (data?.orders ?? data ?? []).map((o: any) => ({
-        id: o.id,
-        number: o.number,
-        shortId: o.shortId,
-        status: o.status,
-        type: o.type,
-        tableNumber: o.tableNumber,
-        currency: o.currency ?? "GTQ",
-        createdAt: o.createdAt,
-        items: o.items,
-        amounts: o.amounts,
-        lines: o.lines,
-        totals: o.totals,
-        totalCents: o.totalCents,
-        total: o.total,
-      }));
-      const filtered = list.filter(o => ALLOWED.has(o.status));
-      setOrders(filtered);
-    })();
-  }, [flags.isAdmin, flags.isWaiter, loading, router]);
-
-  // --- total robusto ---
-  const computeTotalCents = useCallback((o: AnyOrder): number => {
-    // 1) variantes directas
-    const direct =
-      n(o.amounts?.totalCents, NaN) ??
-      n(o.amounts?.total, NaN) ??
-      n(o.totals?.totalCents, NaN) ??
-      n(o.totalCents, NaN) ??
-      n(o.total, NaN);
-    if (Number.isFinite(direct)) return Number(direct);
-
-    // 2) items / lines
-    const src = (Array.isArray(o.items) && o.items.length ? o.items : o.lines) ?? [];
-    const sum = src.reduce((acc, it) => acc + priceOf(it) * qtyOf(it), 0);
-    return sum;
-  }, []);
-
-  // --- resumen de items con nombres (usando menuMap si falta name) ---
-  const itemSummary = useCallback((o: AnyOrder): string => {
-    const src = Array.isArray(o.items) && o.items.length ? o.items : (o.lines ?? []);
-    if (!src.length) return "-";
-    const mapped = src.map((it: any) => {
-      const baseName = it?.name;
-      const byMenu = menuMap[it?.menuItemId]?.name;
-      const label = (baseName || byMenu || it?.menuItemId || "").toString();
-      return `${label} ×${qtyOf(it)}`;
+  const filtered = useMemo(()=>{
+    const s=q.trim().toLowerCase();
+    if(!s) return orders;
+    return orders.filter(o=>{
+      const email = (o.userEmail || o.createdBy?.email || '').toLowerCase();
+      const num = String(o.orderNumber ?? o.id).toLowerCase();
+      return email.includes(s) || num.includes(s);
     });
-    const MAX = 4;
-    const head = mapped.slice(0, MAX);
-    const extra = mapped.length > MAX ? ` +${mapped.length - MAX} más` : "";
-    return head.join(", ") + extra;
-  }, [menuMap]);
-
-  const filtered = useMemo(() => {
-    const term = q.trim().toLowerCase();
-    return orders
-      .filter(o => {
-        if (!term) return true;
-        const on = (orderNumber(o) || "").toLowerCase();
-        return on.includes(term) || o.id.toLowerCase().includes(term);
-      })
-      .slice(0, 300);
-  }, [orders, q]);
-
-  const onEdit = useCallback((id: string) => {
-    router.push(`/admin/edit-orders/${id}/menu`);
-  }, [router]);
-
-  if (loading) return <div className="container py-4">Cargando…</div>;
-  if (!flags.isAdmin && !flags.isWaiter) return null;
+  },[orders,q]);
 
   return (
     <div className="container py-4">
-      <h1 className="h5 mb-3">Editar órdenes</h1>
-
-      <div className="mb-3 d-flex gap-2">
-        <input
-          className="form-control"
-          placeholder="Buscar por #orden o ID…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
+      <div className="d-flex align-items-center justify-content-between mb-3">
+        <h1 className="h4 m-0">Editar órdenes</h1>
+        <div className="input-group" style={{maxWidth: 360}}>
+          <span className="input-group-text">@</span>
+          <input className="form-control" placeholder="Buscar por correo o #"
+                 value={q} onChange={e=>setQ(e.target.value)} />
+        </div>
       </div>
 
-      <div className="table-responsive">
-        <table className="table table-sm align-middle">
-          <thead>
-            <tr>
-              <th># Orden</th>
-              <th>Estado</th>
-              <th>Tipo</th>
-              <th>Mesa</th>
-              <th>Items</th>
-              <th className="text-end">Total</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((o) => {
-              const totalCents = computeTotalCents(o);
-              const isDineIn = (o.type ?? "").toLowerCase() === "dine_in";
-              const cur = o.currency ?? "GTQ";
-              return (
-                <tr key={o.id}>
-                  <td>#{orderNumber(o)}</td>
-                  <td><span className="badge text-bg-secondary">{o.status}</span></td>
-                  <td>{o.type ?? "-"}</td>
-                  <td>{isDineIn ? (o.tableNumber || "-") : "-"}</td>
-                  <td className="text-truncate" style={{ maxWidth: 420 }}>
-                    {itemSummary(o)}
-                  </td>
-                  <td className="text-end">
-                    {cur} {(n(totalCents) / 100).toFixed(2)}
-                  </td>
-                  <td className="text-end">
-                    <button className="btn btn-sm btn-primary" onClick={() => onEdit(o.id)}>
-                      Editar
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-            {filtered.length === 0 && (
-              <tr>
-                <td colSpan={7} className="text-center py-4 text-muted">
-                  No hay órdenes editables.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      {loading && <div className="alert alert-info">Cargando…</div>}
+
+      {!loading && (
+        <ul className="list-group">
+          {filtered.map(o=>{
+            const total = orderTotalQ(o);
+            const d = tsToDate(o.createdAt)?.toLocaleString() ?? '-';
+            const n = o.orderNumber ?? o.id.slice(0,6);
+            return (
+              <li key={o.id} className="list-group-item">
+                <div className="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between">
+                  <div>
+                    <div className="fw-semibold">#{n} <span className="badge text-bg-light">{displayType(o)}</span></div>
+                    <div className="small text-muted">Fecha: {d}</div>
+                  </div>
+                  <div className="d-flex align-items-center gap-2 mt-2 mt-md-0">
+                    <div className="fw-bold">{fmtMoney(total, o.currency)}</div>
+                    <Link href={`/admin/edit-orders/${o.id}/menu`} className="btn btn-primary btn-sm">Edit</Link>
+                  </div>
+                </div>
+
+                {/* Detalle completo de líneas */}
+                <div className="mt-2">
+                  {(o.items||[]).map((l, idx)=>{
+                    const qty = getQty(l);
+                    const name = getName(l);
+                    const base = baseUnitPriceQ(l);
+                    const sum = lineTotalQ(l);
+                    return (
+                      <div key={idx} className="small mb-2 border-top pt-2">
+                        <div className="d-flex justify-content-between">
+                          <div>• {qty} × {name}</div>
+                          <div className="text-muted">({fmtMoney(base, o.currency)} c/u)</div>
+                        </div>
+
+                        {/* optionGroups / options con precio */}
+                        {Array.isArray(l.optionGroups) && l.optionGroups.map((g,gi)=>{
+                          const rows = (g.items||[]).map((it,ii)=>{
+                            const p = extractDeltaQ(it);
+                            return <span key={ii}>{it?.name}{p?` (${fmtMoney(p, o.currency)})`:''}{ii<(g.items!.length-1)?', ':''}</span>;
+                          });
+                          return rows.length?(
+                            <div key={gi} className="ms-3 text-muted">
+                              <span className="fw-semibold">{g.groupName || 'Opciones'}:</span> {rows}
+                            </div>
+                          ):null;
+                        })}
+
+                        {Array.isArray(l.options) && l.options.map((g,gi)=>{
+                          const rows = (g.selected||[]).map((it,ii)=>{
+                            const p = extractDeltaQ(it);
+                            return <span key={ii}>{it?.name}{p?` (${fmtMoney(p, o.currency)})`:''}{ii<(g.selected!.length-1)?', ':''}</span>;
+                          });
+                          return rows.length?(
+                            <div key={`op-${gi}`} className="ms-3 text-muted">
+                              <span className="fw-semibold">{g.groupName || 'Opciones'}:</span> {rows}
+                            </div>
+                          ):null;
+                        })}
+
+                        {/* addons con precio */}
+                        {Array.isArray(l.addons) && l.addons.length>0 && (
+                          <div className="ms-3 text-muted">
+                            <span className="fw-semibold">addons:</span>{' '}
+                            {l.addons.map((ad:any,ai:number)=>{
+                              if (typeof ad==='string') return <span key={ai}>{ad}{ai<l.addons!.length-1?', ':''}</span>;
+                              const p = toNum(ad?.price) ?? (toNum(ad?.priceCents)!==undefined ? Number(ad!.priceCents)/100 : undefined);
+                              return <span key={ai}>{ad?.name}{p?` (${fmtMoney(p, o.currency)})`:''}{ai<l.addons!.length-1?', ':''}</span>;
+                            })}
+                          </div>
+                        )}
+
+                        <div className="d-flex justify-content-between">
+                          <span className="text-muted">Subtotal línea</span>
+                          <span className="text-muted">{fmtMoney(sum, o.currency)}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </li>
+            );
+          })}
+          {filtered.length===0 && <li className="list-group-item text-muted">Sin resultados</li>}
+        </ul>
+      )}
     </div>
   );
 }
