@@ -595,11 +595,13 @@ export default function DeliveryBoardPage() {
   }, [orders, term]);
 
   // 1) Listos para asignar: status kitchen_done y sub-estado pending
-  const listosParaAsignar = useMemo(
-    () => filtered.filter(o =>
-      o.status === 'kitchen_done' &&
-      String(o?.orderInfo?.delivery ?? 'pending') === 'pending'
-    ),
+    const listosParaAsignar = useMemo(
+    () =>
+      filtered.filter(
+        (o) =>
+          (o.status === 'kitchen_done' || o.status === 'closed') &&
+          String(o?.orderInfo?.delivery ?? 'pending') === 'pending'
+      ),
     [filtered]
   );
 
