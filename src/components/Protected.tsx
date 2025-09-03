@@ -1,10 +1,114 @@
+// src/components/Protected.tsx
 "use client";
+
 import { useAuth } from "@/app/providers";
 import Link from "next/link";
+import { Suspense, useEffect } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
-export default function Protected({ children }: { children: React.ReactNode }) {
+type Props = {
+  children: React.ReactNode;
+  /** Activa redirección automática a /login cuando no hay sesión */
+  redirect?: boolean; // default: false (mantiene el comportamiento actual)
+};
+
+export default function Protected({ children, redirect = false }: Props) {
+  // ⬇️ Agregamos Suspense aquí para cubrir los hooks usados en Gate
+  return (
+    <Suspense
+      fallback={
+        <div className="d-flex align-items-center justify-content-center" style={{ minHeight: "40vh" }}>
+          <div className="text-center">
+            <div className="spinner-border" role="status" aria-label="Cargando" />
+            <div className="mt-2 text-muted">Cargando…</div>
+          </div>
+        </div>
+      }
+    >
+      <Gate redirect={redirect}>{children}</Gate>
+    </Suspense>
+  );
+}
+
+function Gate({ children, redirect = false }: Props) {
   const { user, loading } = useAuth();
-  if (loading) return <p style={{ padding: 24 }}>Cargando…</p>;
-  if (!user) return <p style={{ padding: 24 }}>Necesitas iniciar sesión. <Link href="/login">Ir a login</Link></p>;
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  // Ruta de login (evita bucles si por error envuelven /login)
+  const isLoginRoute = pathname === "/login" || pathname?.startsWith("/login/");
+  const search = searchParams?.toString();
+  const next = pathname + (search ? `?${search}` : "");
+
+  // Redirección opcional a /login?next=<ruta-actual>
+  useEffect(() => {
+    if (!redirect) return;
+    if (loading) return;
+    if (isLoginRoute) return;
+    if (!user) {
+      router.replace(`/login?next=${encodeURIComponent(next)}`);
+    }
+  }, [redirect, loading, user, pathname, searchParams, router, isLoginRoute, next]);
+
+  // Loading UI (spinner Bootstrap)
+  if (loading) {
+    return (
+      <div className="d-flex align-items-center justify-content-center" style={{ minHeight: "40vh" }}>
+        <div className="text-center">
+          <div className="spinner-border" role="status" aria-label="Cargando" />
+          <div className="mt-2 text-muted">Cargando…</div>
+        </div>
+      </div>
+    );
+  }
+
+  // Sin sesión
+  if (!user) {
+    // Con redirect: ya disparamos router.replace → no renderizamos
+    if (redirect && !isLoginRoute) return null;
+
+    // Sin redirect: mostramos tarjeta con estilos Bootstrap + botón de login
+    return (
+      <div className="container py-5">
+        <div className="row justify-content-center">
+          <div className="col-12 col-md-8 col-lg-6">
+            <div className="card shadow-sm border-0">
+              <div className="card-body p-4 text-center">
+                <div className="display-6 mb-2">🔒</div>
+                <h5 className="card-title mb-2">Necesitas iniciar sesión</h5>
+                <p className="text-muted mb-4">
+                  Para continuar, inicia sesión con tu cuenta.
+                </p>
+
+                <Link
+                  href={`/login?next=${encodeURIComponent(next)}`}
+                  className="btn btn-primary btn-lg"
+                >
+                  Iniciar sesión
+                </Link>
+
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    className="btn btn-link"
+                    onClick={() => router.refresh()}
+                  >
+                    Reintentar
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <p className="text-center text-muted small mt-3 mb-0">
+              Si no tienes una cuenta, solicita acceso al administrador.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Autenticado: render normal
   return <>{children}</>;
 }
