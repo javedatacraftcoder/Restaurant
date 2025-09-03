@@ -1,7 +1,12 @@
+// src/app/admin/edit-orders/page.tsx
 'use client';
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
+
+/* 🔐 NOTA: Agregado para seguridad */
+import Protected from '@/components/Protected';
+import { RoleGate } from '@/components/RoleGate'; // allow={['admin','waiter']}
 
 type TS = any;
 
@@ -108,103 +113,110 @@ export default function EditOrdersListPage() {
     });
   },[orders,q]);
 
+  /* 🔐 NOTA: Envolver TODO el contenido visible con:
+     <Protected><RoleGate allow={['admin','waiter']}> … </RoleGate></Protected>
+     Para copiar en otras páginas, cambia el arreglo de roles según necesites. */
   return (
-    <div className="container py-4">
-      <div className="d-flex align-items-center justify-content-between mb-3">
-        <h1 className="h4 m-0">Editar órdenes</h1>
-        <div className="input-group" style={{maxWidth: 360}}>
-          <span className="input-group-text">@</span>
-          <input className="form-control" placeholder="Buscar por correo o #"
-                 value={q} onChange={e=>setQ(e.target.value)} />
-        </div>
-      </div>
+    <Protected>
+      <RoleGate allow={['admin','waiter']}>
+        <div className="container py-4">
+          <div className="d-flex align-items-center justify-content-between mb-3">
+            <h1 className="h4 m-0">Editar órdenes</h1>
+            <div className="input-group" style={{maxWidth: 360}}>
+              <span className="input-group-text">@</span>
+              <input className="form-control" placeholder="Buscar por correo o #"
+                    value={q} onChange={e=>setQ(e.target.value)} />
+            </div>
+          </div>
 
-      {loading && <div className="alert alert-info">Cargando…</div>}
+          {loading && <div className="alert alert-info">Cargando…</div>}
 
-      {!loading && (
-        <ul className="list-group">
-          {filtered.map(o=>{
-            const total = orderTotalQ(o);
-            const d = tsToDate(o.createdAt)?.toLocaleString() ?? '-';
-            const n = o.orderNumber ?? o.id.slice(0,6);
-            return (
-              <li key={o.id} className="list-group-item">
-                <div className="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between">
-                  <div>
-                    <div className="fw-semibold">#{n} <span className="badge text-bg-light">{displayType(o)}</span></div>
-                    <div className="small text-muted">Fecha: {d}</div>
-                  </div>
-                  <div className="d-flex align-items-center gap-2 mt-2 mt-md-0">
-                    <div className="fw-bold">{fmtMoney(total, o.currency)}</div>
-                    <Link href={`/admin/edit-orders/${o.id}/menu`} className="btn btn-primary btn-sm">Edit</Link>
-                  </div>
-                </div>
-
-                {/* Detalle completo de líneas */}
-                <div className="mt-2">
-                  {(o.items||[]).map((l, idx)=>{
-                    const qty = getQty(l);
-                    const name = getName(l);
-                    const base = baseUnitPriceQ(l);
-                    const sum = lineTotalQ(l);
-                    return (
-                      <div key={idx} className="small mb-2 border-top pt-2">
-                        <div className="d-flex justify-content-between">
-                          <div>• {qty} × {name}</div>
-                          <div className="text-muted">({fmtMoney(base, o.currency)} c/u)</div>
-                        </div>
-
-                        {/* optionGroups / options con precio */}
-                        {Array.isArray(l.optionGroups) && l.optionGroups.map((g,gi)=>{
-                          const rows = (g.items||[]).map((it,ii)=>{
-                            const p = extractDeltaQ(it);
-                            return <span key={ii}>{it?.name}{p?` (${fmtMoney(p, o.currency)})`:''}{ii<(g.items!.length-1)?', ':''}</span>;
-                          });
-                          return rows.length?(
-                            <div key={gi} className="ms-3 text-muted">
-                              <span className="fw-semibold">{g.groupName || 'Opciones'}:</span> {rows}
-                            </div>
-                          ):null;
-                        })}
-
-                        {Array.isArray(l.options) && l.options.map((g,gi)=>{
-                          const rows = (g.selected||[]).map((it,ii)=>{
-                            const p = extractDeltaQ(it);
-                            return <span key={ii}>{it?.name}{p?` (${fmtMoney(p, o.currency)})`:''}{ii<(g.selected!.length-1)?', ':''}</span>;
-                          });
-                          return rows.length?(
-                            <div key={`op-${gi}`} className="ms-3 text-muted">
-                              <span className="fw-semibold">{g.groupName || 'Opciones'}:</span> {rows}
-                            </div>
-                          ):null;
-                        })}
-
-                        {/* addons con precio */}
-                        {Array.isArray(l.addons) && l.addons.length>0 && (
-                          <div className="ms-3 text-muted">
-                            <span className="fw-semibold">addons:</span>{' '}
-                            {l.addons.map((ad:any,ai:number)=>{
-                              if (typeof ad==='string') return <span key={ai}>{ad}{ai<l.addons!.length-1?', ':''}</span>;
-                              const p = toNum(ad?.price) ?? (toNum(ad?.priceCents)!==undefined ? Number(ad!.priceCents)/100 : undefined);
-                              return <span key={ai}>{ad?.name}{p?` (${fmtMoney(p, o.currency)})`:''}{ai<l.addons!.length-1?', ':''}</span>;
-                            })}
-                          </div>
-                        )}
-
-                        <div className="d-flex justify-content-between">
-                          <span className="text-muted">Subtotal línea</span>
-                          <span className="text-muted">{fmtMoney(sum, o.currency)}</span>
-                        </div>
+          {!loading && (
+            <ul className="list-group">
+              {filtered.map(o=>{
+                const total = orderTotalQ(o);
+                const d = tsToDate(o.createdAt)?.toLocaleString() ?? '-';
+                const n = o.orderNumber ?? o.id.slice(0,6);
+                return (
+                  <li key={o.id} className="list-group-item">
+                    <div className="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between">
+                      <div>
+                        <div className="fw-semibold">#{n} <span className="badge text-bg-light">{displayType(o)}</span></div>
+                        <div className="small text-muted">Fecha: {d}</div>
                       </div>
-                    );
-                  })}
-                </div>
-              </li>
-            );
-          })}
-          {filtered.length===0 && <li className="list-group-item text-muted">Sin resultados</li>}
-        </ul>
-      )}
-    </div>
+                      <div className="d-flex align-items-center gap-2 mt-2 mt-md-0">
+                        <div className="fw-bold">{fmtMoney(total, o.currency)}</div>
+                        <Link href={`/admin/edit-orders/${o.id}/menu`} className="btn btn-primary btn-sm">Edit</Link>
+                      </div>
+                    </div>
+
+                    {/* Detalle completo de líneas */}
+                    <div className="mt-2">
+                      {(o.items||[]).map((l, idx)=>{
+                        const qty = getQty(l);
+                        const name = getName(l);
+                        const base = baseUnitPriceQ(l);
+                        const sum = lineTotalQ(l);
+                        return (
+                          <div key={idx} className="small mb-2 border-top pt-2">
+                            <div className="d-flex justify-content-between">
+                              <div>• {qty} × {name}</div>
+                              <div className="text-muted">({fmtMoney(base, o.currency)} c/u)</div>
+                            </div>
+
+                            {/* optionGroups / options con precio */}
+                            {Array.isArray(l.optionGroups) && l.optionGroups.map((g,gi)=>{
+                              const rows = (g.items||[]).map((it,ii)=>{
+                                const p = extractDeltaQ(it);
+                                return <span key={ii}>{it?.name}{p?` (${fmtMoney(p, o.currency)})`:''}{ii<(g.items!.length-1)?', ':''}</span>;
+                              });
+                              return rows.length?(
+                                <div key={gi} className="ms-3 text-muted">
+                                  <span className="fw-semibold">{g.groupName || 'Opciones'}:</span> {rows}
+                                </div>
+                              ):null;
+                            })}
+
+                            {Array.isArray(l.options) && l.options.map((g,gi)=>{
+                              const rows = (g.selected||[]).map((it,ii)=>{
+                                const p = extractDeltaQ(it);
+                                return <span key={ii}>{it?.name}{p?` (${fmtMoney(p, o.currency)})`:''}{ii<(g.selected!.length-1)?', ':''}</span>;
+                              });
+                              return rows.length?(
+                                <div key={`op-${gi}`} className="ms-3 text-muted">
+                                  <span className="fw-semibold">{g.groupName || 'Opciones'}:</span> {rows}
+                                </div>
+                              ):null;
+                            })}
+
+                            {/* addons con precio */}
+                            {Array.isArray(l.addons) && l.addons.length>0 && (
+                              <div className="ms-3 text-muted">
+                                <span className="fw-semibold">addons:</span>{' '}
+                                {l.addons.map((ad:any,ai:number)=>{
+                                  if (typeof ad==='string') return <span key={ai}>{ad}{ai<l.addons!.length-1?', ':''}</span>;
+                                  const p = toNum(ad?.price) ?? (toNum(ad?.priceCents)!==undefined ? Number(ad!.priceCents)/100 : undefined);
+                                  return <span key={ai}>{ad?.name}{p?` (${fmtMoney(p, o.currency)})`:''}{ai<l.addons!.length-1?', ':''}</span>;
+                                })}
+                              </div>
+                            )}
+
+                            <div className="d-flex justify-content-between">
+                              <span className="text-muted">Subtotal línea</span>
+                              <span className="text-muted">{fmtMoney(sum, o.currency)}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </li>
+                );
+              })}
+              {filtered.length===0 && <li className="list-group-item text-muted">Sin resultados</li>}
+            </ul>
+          )}
+        </div>
+      </RoleGate>
+    </Protected>
   );
 }

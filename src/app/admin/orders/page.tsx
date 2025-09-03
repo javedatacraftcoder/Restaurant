@@ -2,6 +2,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Protected from "@/components/Protected";   // 🔐 NOTA: Import para obligar login
+import AdminOnly from "@/components/AdminOnly";   // 🔐 NOTA: Import para rol admin
 
 /* ------------------- Tipos base ------------------- */
 type FirestoreTimestamp =
@@ -204,8 +206,8 @@ function deliverySubstateLabel(s?: string | null) {
   return "-";
 }
 
-/* ------------------- Componente ------------------- */
-export default function AdminOrdersPage() {
+/* ------------------- Página interna ------------------- */
+function AdminOrdersPageInner() {
   const [orders, setOrders] = useState<OrderDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -354,7 +356,7 @@ export default function AdminOrdersPage() {
                 {/* Detalle expandible */}
                 {isOpen && (
                   <div id={`order-${o.id}`} className="mt-3">
-                    {/* 🔹 NUEVO: Bloque de delivery (solo si aplica) */}
+                    {/* Bloque de delivery (solo si aplica) */}
                     {type === "delivery" && (o.orderInfo?.delivery || o.orderInfo?.courierName) ? (
                       <div className="mb-3">
                         <div className="d-flex flex-wrap align-items-center gap-2 small">
@@ -447,5 +449,16 @@ export default function AdminOrdersPage() {
         </ul>
       )}
     </div>
+  );
+}
+
+/* ------------------- Export default protegido ------------------- */
+export default function AdminOrdersPage() {
+  return (
+    <Protected>     {/* 🔐 NOTA: fuerza login */}
+      <AdminOnly>   {/* 🔐 NOTA: restringe a rol admin */}
+        <AdminOrdersPageInner />
+      </AdminOnly>
+    </Protected>
   );
 }

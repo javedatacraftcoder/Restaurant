@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+
 import {
   getFirestore,
   collection,
@@ -8,6 +9,8 @@ import {
   orderBy,
   query,
 } from 'firebase/firestore';
+import Protected from '@/components/Protected';
+import AdminOnly from '@/components/AdminOnly';
 
 import OrderCardOps, { type OpsOrder } from '@/components/admin/ops/OrderCardOps';
 import { ACTIVE_STATUSES, isActive, isCancelled, isClosed, statusLabel } from '@/lib/orders/status';
@@ -79,6 +82,8 @@ export default function AdminOpsPage() {
   }, [orders, filter, search]);
 
   return (
+    <Protected>
+      <AdminOnly>
     <div className="container py-4">
       <div className="d-flex flex-wrap align-items-center justify-content-between mb-3 gap-2">
         <h1 className="h4 m-0">Ops — Órdenes</h1>
@@ -133,5 +138,7 @@ export default function AdminOpsPage() {
         </div>
       )}
     </div>
+     </AdminOnly>
+    </Protected>
   );
 }

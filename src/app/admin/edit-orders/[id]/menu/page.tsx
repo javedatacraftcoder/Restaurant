@@ -2,6 +2,8 @@
 
 import { useParams, useRouter } from 'next/navigation';
 import React, { useEffect, useState } from 'react';
+import Protected from '@/components/Protected';
+import { RoleGate } from '@/components/RoleGate'; // allow={['admin','waiter']}
 
 const storageKey = (orderId: string) => `editcart:${orderId}`;
 
@@ -218,6 +220,8 @@ export default function EditOrderMenuPage() {
   }
 
   return (
+    <Protected>
+              <RoleGate allow={['admin','waiter']}>
     <div className="container py-4">
       <h1 className="h5 mb-3">Agregar a la orden #{String(id).slice(0, 6)}</h1>
 
@@ -313,5 +317,7 @@ export default function EditOrderMenuPage() {
         })}
       </div>
     </div>
+    </RoleGate>
+            </Protected>
   );
 }

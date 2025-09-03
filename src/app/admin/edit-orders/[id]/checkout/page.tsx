@@ -5,6 +5,8 @@ import { useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useEditCart } from "@/lib/edit-cart/context";
 import { apiFetch } from "@/lib/api/client";
+import Protected from '@/components/Protected';
+import { RoleGate } from '@/components/RoleGate'; // allow={['admin','waiter']}
 
 export default function EditCheckoutPage() {
   const { id } = useParams<{ id: string }>();
@@ -93,6 +95,8 @@ export default function EditCheckoutPage() {
   const currency = cart.currency ?? "GTQ";
 
   return (
+    <Protected>
+          <RoleGate allow={['admin','waiter']}>
     <div className="container py-3">
       <div className="alert alert-warning mb-3">
         Editando orden{" "}
@@ -145,5 +149,7 @@ export default function EditCheckoutPage() {
         </div>
       </form>
     </div>
+    </RoleGate>
+            </Protected>
   );
 }

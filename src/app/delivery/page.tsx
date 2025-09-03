@@ -2,6 +2,8 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import Protected from "@/components/Protected";
+import { OnlyDelivery } from "@/components/Only";
 
 /* --------------------------------------------
    Firebase init (patrón similar a Kitchen)
@@ -571,7 +573,7 @@ function DeliveryCard({
 /* --------------------------------------------
    Página /delivery (3 secciones)
 --------------------------------------------- */
-export default function DeliveryBoardPage() {
+function DeliveryBoardPageInner() {
   const { authReady, user } = useAuthState();
   const { orders, loading, error, refresh } = useDeliveryOrders(!!user, 4000);
 
@@ -595,7 +597,7 @@ export default function DeliveryBoardPage() {
   }, [orders, term]);
 
   // 1) Listos para asignar: status kitchen_done y sub-estado pending
-    const listosParaAsignar = useMemo(
+  const listosParaAsignar = useMemo(
     () =>
       filtered.filter(
         (o) =>
@@ -702,5 +704,18 @@ export default function DeliveryBoardPage() {
         </>
       )}
     </div>
+  );
+}
+
+/* --------------------------------------------
+   Export default protegido
+--------------------------------------------- */
+export default function DeliveryBoardPage() {
+  return (
+    <Protected>
+      <OnlyDelivery>
+        <DeliveryBoardPageInner />
+      </OnlyDelivery>
+    </Protected>
   );
 }

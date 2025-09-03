@@ -2,6 +2,8 @@
 
 import { useParams, useRouter } from 'next/navigation';
 import React, { useEffect, useMemo, useState } from 'react';
+import Protected from '@/components/Protected';
+import { RoleGate } from '@/components/RoleGate'; // allow={['admin','waiter']}
 
 /* ---------- Auth opcional (solo si existe usuario) ---------- */
 function getFirebaseClientConfig() {
@@ -277,6 +279,8 @@ export default function EditOrderCartPage(){
   const currentTotal = orderTotalQ(original || {}, origLines);
 
   return (
+    <Protected>
+      <RoleGate allow={['admin','waiter']}>
     <div className="container py-4">
       <h1 className="h5">Editar orden #{String(id).slice(0,6)}</h1>
 
@@ -401,5 +405,7 @@ export default function EditOrderCartPage(){
         </div>
       </div>
     </div>
+      </RoleGate>
+        </Protected>
   );
 }
