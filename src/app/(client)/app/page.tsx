@@ -45,7 +45,7 @@ export default function AppHome() {
               <p className="mb-2 text-body-secondary">
                 Revisa el estado de tu última orden en tiempo real.
               </p>
-              <a className="btn btn-outline-primary" href="/app/orders" aria-label="Ver seguimiento">
+              <a className="btn btn-outline-primary" href="/app/tracking" aria-label="Ver seguimiento">
                 Ver seguimiento
               </a>
 
