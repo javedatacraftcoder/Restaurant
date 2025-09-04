@@ -86,13 +86,60 @@ type OrderDoc = {
 type ApiListResponse = { ok?: boolean; orders?: OrderDoc[]; error?: string };
 
 /* ------------------- Utils ------------------- */
-function tsToDate(ts: FirestoreTimestamp): Date | null {
+function tsToDate(ts: any): Date | null {
   if (!ts) return null;
-  if (ts instanceof Date) return ts;
-  if (typeof (ts as any)?.toDate === "function") return (ts as any).toDate();
-  if (typeof (ts as any)?.seconds === "number") return new Date((ts as any).seconds * 1000);
+
+  // 1) Date ya listo
+  if (ts instanceof Date) return isNaN(ts.getTime()) ? null : ts;
+
+  // 2) Firestore Timestamp (cliente)
+  if (typeof ts?.toDate === "function") {
+    const d = ts.toDate();
+    return d instanceof Date && !isNaN(d.getTime()) ? d : null;
+  }
+
+  // 3) Objeto serializado con segundos/nanosegundos (con o sin guion bajo)
+  if (typeof ts === "object") {
+    const seconds =
+      ts.seconds ?? ts._seconds ?? ts.$seconds ?? null;
+    const nanos =
+      ts.nanoseconds ?? ts._nanoseconds ?? ts.nanos ?? 0;
+    if (seconds != null) {
+      const ms = seconds * 1000 + Math.floor((nanos || 0) / 1e6);
+      const d = new Date(ms);
+      if (!isNaN(d.getTime())) return d;
+    }
+    // 3b) ISO serializado dentro de otra propiedad común
+    const iso = ts.$date ?? ts.iso ?? ts.date ?? null;
+    if (typeof iso === "string") {
+      const d = new Date(iso);
+      if (!isNaN(d.getTime())) return d;
+    }
+  }
+
+  // 4) String: ISO o número en string (ms/segundos)
+  if (typeof ts === "string") {
+    const d = new Date(ts);
+    if (!isNaN(d.getTime())) return d;
+    const n = Number(ts);
+    if (Number.isFinite(n)) {
+      const ms = n > 1e12 ? n : n * 1000; // heurística ms vs s
+      const d2 = new Date(ms);
+      if (!isNaN(d2.getTime())) return d2;
+    }
+    return null;
+  }
+
+  // 5) Número: epoch en ms o s
+  if (typeof ts === "number") {
+    const ms = ts > 1e12 ? ts : ts * 1000; // heurística ms vs s
+    const d = new Date(ms);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
   return null;
 }
+
 function formatDate(ts: FirestoreTimestamp): string {
   const d = tsToDate(ts);
   if (!d) return "-";

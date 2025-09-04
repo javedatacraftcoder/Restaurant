@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import Protected from "@/components/Protected";
 import { useAuth } from "@/app/providers";
 
 /** --------------------------
@@ -15,7 +16,22 @@ type FirestoreTS =
   | undefined;
 
 type OpsOption = { groupName: string; selected: Array<{ name: string; priceDelta: number }> };
-type OpsItem = { menuItemId: string; menuItemName?: string; quantity: number; options?: OpsOption[] };
+
+// 🔧 NUEVO: shape usado por checkout (addons + optionGroups.items)
+type OpsAddon = { name: string; price?: number };
+type OpsGroupItem = { id: string; name: string; priceDelta?: number };
+type OpsGroup = { groupId: string; groupName: string; type?: "single" | "multiple"; items: OpsGroupItem[] };
+
+type OpsItem = {
+  menuItemId: string;
+  menuItemName?: string;
+  quantity: number;
+  // Compat: viejo
+  options?: OpsOption[];
+  // Nuevo (checkout)
+  addons?: OpsAddon[];
+  optionGroups?: OpsGroup[];
+};
 
 type LegacyLine = {
   itemId?: string;
@@ -32,9 +48,20 @@ type Order = {
   createdAt?: FirestoreTS;
   updatedAt?: FirestoreTS;
   notes?: string | null;
-  // OPS
+
+  // OPS (ambas variantes)
   items?: OpsItem[];
-  amounts?: { subtotal: number; tax?: number; serviceFee?: number; discount?: number; tip?: number; total: number } | null;
+
+  // Totales
+  amounts?: {
+    subtotal: number;
+    tax?: number;
+    serviceFee?: number;
+    discount?: number;
+    tip?: number;
+    total: number;
+  } | null;
+
   // LEGACY
   lines?: LegacyLine[];
   totals?: { totalCents?: number } | null;
@@ -42,6 +69,8 @@ type Order = {
   // autoría
   createdBy?: { uid?: string; email?: string | null } | null;
   userEmail?: string | null;
+  userEmail_lower?: string | null;
+  contact?: { email?: string | null } | null;
 };
 
 type ApiList = { ok?: boolean; orders?: Order[]; error?: string };
@@ -49,14 +78,60 @@ type ApiList = { ok?: boolean; orders?: Order[]; error?: string };
 /** --------------------------
  *  Helpers de formato/fecha
  *  -------------------------- */
-function tsToDate(ts: FirestoreTS): Date | null {
+function tsToDate(ts: any): Date | null {
   if (!ts) return null;
-  if (ts instanceof Date) return ts;
-  const anyTs = ts as any;
-  if (typeof anyTs?.toDate === "function") return anyTs.toDate();
-  if (typeof anyTs?.seconds === "number") return new Date(anyTs.seconds * 1000);
+
+  // 1) Date ya listo
+  if (ts instanceof Date) return isNaN(ts.getTime()) ? null : ts;
+
+  // 2) Firestore Timestamp (cliente)
+  if (typeof ts?.toDate === "function") {
+    const d = ts.toDate();
+    return d instanceof Date && !isNaN(d.getTime()) ? d : null;
+  }
+
+  // 3) Objeto serializado con segundos/nanosegundos (con o sin guion bajo)
+  if (typeof ts === "object") {
+    const seconds =
+      ts.seconds ?? ts._seconds ?? ts.$seconds ?? null;
+    const nanos =
+      ts.nanoseconds ?? ts._nanoseconds ?? ts.nanos ?? 0;
+    if (seconds != null) {
+      const ms = seconds * 1000 + Math.floor((nanos || 0) / 1e6);
+      const d = new Date(ms);
+      if (!isNaN(d.getTime())) return d;
+    }
+    // 3b) ISO serializado dentro de otra propiedad común
+    const iso = ts.$date ?? ts.iso ?? ts.date ?? null;
+    if (typeof iso === "string") {
+      const d = new Date(iso);
+      if (!isNaN(d.getTime())) return d;
+    }
+  }
+
+  // 4) String: ISO o número en string (ms/segundos)
+  if (typeof ts === "string") {
+    const d = new Date(ts);
+    if (!isNaN(d.getTime())) return d;
+    const n = Number(ts);
+    if (Number.isFinite(n)) {
+      const ms = n > 1e12 ? n : n * 1000; // heurística ms vs s
+      const d2 = new Date(ms);
+      if (!isNaN(d2.getTime())) return d2;
+    }
+    return null;
+  }
+
+  // 5) Número: epoch en ms o s
+  if (typeof ts === "number") {
+    const ms = ts > 1e12 ? ts : ts * 1000; // heurística ms vs s
+    const d = new Date(ms);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
   return null;
 }
+
 
 function fmtDate(ts?: FirestoreTS) {
   const d = tsToDate(ts || null);
@@ -98,26 +173,32 @@ function closedStatus(s?: string) {
 }
 
 /** --------------------------
- *  Página
+ *  Página (inner)
  *  -------------------------- */
-export default function ClientOrdersPage() {
-  const { user } = useAuth();
+function ClientOrdersPageInner() {
+  const { user, idToken } = useAuth();
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
 
-  // Cargar órdenes y filtrar por el usuario actual (uid/email) en el cliente.
+  // Cargar órdenes y filtrar por el usuario actual (uid/email).
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
         setLoading(true);
         setErr(null);
-        // Traemos un batch decente y filtramos en cliente.
-        const res = await fetch(`/api/orders?limit=200`, { cache: "no-store" });
+
+        const headers: HeadersInit = {};
+        if (idToken) headers["Authorization"] = `Bearer ${idToken}`;
+
+        const res = await fetch(`/api/orders?limit=200`, {
+          cache: "no-store",
+          headers,
+        });
         const data: ApiList = await res.json().catch(() => ({} as any));
-        if (!res.ok || !data.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+        if (!res.ok || data?.ok === false) throw new Error(data?.error || `HTTP ${res.status}`);
 
         const uid = user?.uid || "";
         const mail = (user as any)?.email?.toLowerCase() || "";
@@ -126,7 +207,9 @@ export default function ClientOrdersPage() {
           const byUid = (o.createdBy?.uid || "") === uid;
           const byMail =
             (o.userEmail || "").toLowerCase() === mail ||
-            (o.createdBy?.email || "").toLowerCase() === mail;
+            (o.userEmail_lower || "").toLowerCase() === mail ||
+            (o.createdBy?.email || "").toLowerCase() === mail ||
+            (o.contact?.email || "").toLowerCase() === mail;
           return byUid || byMail;
         });
 
@@ -148,7 +231,7 @@ export default function ClientOrdersPage() {
     return () => {
       alive = false;
     };
-  }, [user?.uid, (user as any)?.email]);
+  }, [user?.uid, (user as any)?.email, idToken]);
 
   const totalOrders = orders.length;
 
@@ -179,11 +262,7 @@ export default function ClientOrdersPage() {
 
             return (
               <div key={o.id} className="list-group-item p-0 border-0 mb-3">
-                <div
-                  role="button"
-                  className="card shadow-sm"
-                  onClick={() => setOpenId(isOpen ? null : o.id)}
-                >
+                <div className="card shadow-sm">
                   <div className="card-body d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center">
                     <div className="me-md-3">
                       <div className="d-flex align-items-center flex-wrap gap-2">
@@ -197,7 +276,21 @@ export default function ClientOrdersPage() {
                     </div>
                   </div>
 
-                  {/* Detalle expandible */}
+                  {/* Acciones */}
+                  <div className="card-footer d-flex gap-2">
+                    <button
+                      type="button"
+                      className="btn btn-outline-secondary btn-sm"
+                      onClick={() => setOpenId(isOpen ? null : o.id)}
+                    >
+                      {isOpen ? "Ocultar detalle" : "Ver detalle"}
+                    </button>
+                    <Link href={`/app/orders/${o.id}`} className="btn btn-outline-primary btn-sm">
+                      Abrir / Compartir
+                    </Link>
+                  </div>
+
+                  {/* Detalle expandible en línea */}
                   {isOpen && (
                     <div className="card-footer bg-white">
                       {/* OPS items */}
@@ -212,22 +305,57 @@ export default function ClientOrdersPage() {
                                     <div className="fw-semibold">
                                       {it.menuItemName || it.menuItemId}
                                     </div>
-                                    {/* Addons / Opciones */}
-                                    {Array.isArray(it.options) && it.options.length > 0 ? (
+
+                                    {/* ✅ Nuevo: addons */}
+                                    {Array.isArray(it.addons) && it.addons.length > 0 && (
+                                      <ul className="small text-muted mt-1 ps-3">
+                                        {it.addons.map((ad, ai) => (
+                                          <li key={ai}>
+                                            (addon) {ad.name}
+                                            {typeof ad.price === "number" ? ` — ${fmtMoneyQ(ad.price, o.currency)}` : ""}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    )}
+
+                                    {/* ✅ Nuevo: optionGroups.items */}
+                                    {Array.isArray(it.optionGroups) && it.optionGroups.some(g => (g.items || []).length > 0) && (
+                                      <ul className="small text-muted mt-1 ps-3">
+                                        {it.optionGroups.map((g, gi) => (
+                                          (g.items || []).length > 0 ? (
+                                            <li key={gi}>
+                                              <span className="fw-semibold">{g.groupName}:</span>{" "}
+                                              {(g.items || [])
+                                                .map(og => `${og.name}${typeof og.priceDelta === "number" ? ` (${fmtMoneyQ(og.priceDelta, o.currency)})` : ""}`)
+                                                .join(", ")}
+                                            </li>
+                                          ) : null
+                                        ))}
+                                      </ul>
+                                    )}
+
+                                    {/* Compat: shape viejo con 'options' */}
+                                    {Array.isArray(it.options) && it.options.length > 0 && (
                                       <ul className="small text-muted mt-1 ps-3">
                                         {it.options.map((g, gi) => (
                                           <li key={gi}>
-                                            <span className="fw-semibold">{g.groupName}: </span>
+                                            <span className="fw-semibold">{g.groupName}:</span>{" "}
                                             {(g.selected || [])
-                                              .map((s) => s.name)
+                                              .map((s) => `${s.name}${typeof s.priceDelta === "number" ? ` (${fmtMoneyQ(s.priceDelta, o.currency)})` : ""}`)
                                               .join(", ")}
                                           </li>
                                         ))}
                                       </ul>
-                                    ) : (
+                                    )}
+
+                                    {/* Si nada de lo anterior aplica */}
+                                    {!((it.addons && it.addons.length) ||
+                                       (it.optionGroups && it.optionGroups.some(g => (g.items || []).length > 0)) ||
+                                       (it.options && it.options.length)) && (
                                       <div className="small text-muted">Sin addons</div>
                                     )}
                                   </div>
+
                                   <div className="ms-3 text-nowrap">x{it.quantity}</div>
                                 </div>
                               </li>
@@ -342,5 +470,16 @@ export default function ClientOrdersPage() {
         <Link href="/menu" className="btn btn-outline-secondary">Volver al menú</Link>
       </div>
     </div>
+  );
+}
+
+/** --------------------------
+ *  Export protegido
+ *  -------------------------- */
+export default function ClientOrdersPage() {
+  return (
+    <Protected>
+      <ClientOrdersPageInner />
+    </Protected>
   );
 }

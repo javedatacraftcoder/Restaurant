@@ -533,6 +533,23 @@ function useFullscreen() {
 }
 
 /* --------------------------------------------
+   ⏱️ Cronómetros por orden (solo en memoria)
+--------------------------------------------- */
+type TimerInfo = { startAtMs: number; endAtMs?: number; running: boolean };
+
+function formatDuration(ms: number) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+}
+
+// ⚠️ UMBRAL PARA PONER EL CONTADOR EN ROJO (en milisegundos). Cambia aquí, p.ej. 30_000 = 30s.
+const ALERT_RED_MS = 30_000;
+
+/* --------------------------------------------
    UI: Badge y Tarjeta
 --------------------------------------------- */
 function BadgeStatus({ s }: { s: StatusSnake }) {
@@ -557,11 +574,15 @@ function OrderCard({
   canAct,
   onAction,
   busyKey,
+  timer,
+  nowMs,
 }: {
   o: OrderDoc;
   canAct: boolean;
   onAction: (id: string, to: StatusSnake) => Promise<void>;
   busyKey: string | null;
+  timer?: TimerInfo | null;
+  nowMs: number;
 }) {
   const created = toDate(o.createdAt ?? new Date());
   const isBusy = (to: StatusSnake) => busyKey === `${o.id}:${to}`;
@@ -571,6 +592,15 @@ function OrderCard({
   const typeVal = getDisplayType(o);
   const tableVal = getDisplayTable(o);
   const notesVal = getDisplayNotes(o);
+
+  let elapsedLabel: string | null = null;
+  let isElapsedAlert = false;
+  if (timer?.startAtMs) {
+    const end = timer.running ? nowMs : (timer.endAtMs ?? nowMs);
+    const elapsedMs = end - timer.startAtMs;
+    elapsedLabel = `⏱ ${formatDuration(elapsedMs)}`;
+    isElapsedAlert = elapsedMs >= ALERT_RED_MS;
+  }
 
   return (
     <div className="card shadow-sm">
@@ -583,6 +613,9 @@ function OrderCard({
           </small>
         </div>
         <div className="d-flex gap-2 align-items-center">
+          {elapsedLabel && (
+            <span className={`badge ${isElapsedAlert ? 'bg-danger' : 'bg-dark-subtle text-dark'}`}>{elapsedLabel}</span>
+          )}
           <span className="badge bg-outline-secondary text-dark">{typeVal}</span>
           <BadgeStatus s={o.status} />
         </div>
@@ -599,7 +632,7 @@ function OrderCard({
         <div className="mb-2">
           {(o.items?.length ? o.items : o.lines || []).map((it: any, idx: number) => {
             const groups = normalizeOptions(it);
-            const isNew = isNewLine(o, it, idx); // 🔴 NUEVO
+            const isNew = isNewLine(o, it, idx);
             return (
               <div key={idx} className={`small mb-1 ${isNew ? 'text-danger' : ''}`}>
                 • {getLineQty(it)} × {getLineName(it)}
@@ -671,8 +704,57 @@ function KitchenBoardPage_Inner() {
 
   const { orders, loading, error, refresh } = useKitchenOrders(!!user, 4000, onOrdersChange);
 
+  /* ⏱️ estado de cronómetros (solo en memoria) */
+  const timersRef = useRef<Record<string, TimerInfo>>({});
+  const [tick, setTick] = useState(0);
+  const [nowMs, setNowMs] = useState<number>(Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setNowMs(Date.now());
+      setTick((v) => v + 1); // fuerza repaint de badges
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Limpieza: remover timers de órdenes que ya no están visibles (por ejemplo, pasaron a kitchen_done)
+  useEffect(() => {
+    const visible = new Set(orders.map(o => o.id));
+    let changed = false;
+    for (const k of Object.keys(timersRef.current)) {
+      if (!visible.has(k)) {
+        delete timersRef.current[k];
+        changed = true;
+      }
+    }
+    if (changed) setTick(v => v + 1);
+  }, [orders]);
+
+  const startTimer = (orderId: string) => {
+    timersRef.current[orderId] = { startAtMs: Date.now(), running: true };
+    setTick((v) => v + 1);
+  };
+  const stopTimer = (orderId: string) => {
+    const t = timersRef.current[orderId];
+    if (t) {
+      timersRef.current[orderId] = { ...t, endAtMs: Date.now(), running: false };
+      setTick((v) => v + 1);
+    }
+  };
+  const clearTimer = (orderId: string) => {
+    if (timersRef.current[orderId]) {
+      delete timersRef.current[orderId];
+      setTick((v) => v + 1);
+    }
+  };
+
   const [busy, setBusy] = useState<string | null>(null);
   const doAct = async (id: string, to: StatusSnake) => {
+    // Manejo de cronómetro optimista:
+    const prevSnapshot = timersRef.current[id] ? { ...timersRef.current[id] } : undefined;
+    if (to === 'kitchen_in_progress') startTimer(id);
+    if (to === 'kitchen_done') stopTimer(id);
+
     try {
       const order = orders.find((o) => o.id === id);
       if (!order) throw new Error('Orden no encontrada');
@@ -682,6 +764,11 @@ function KitchenBoardPage_Inner() {
       const isRevert = prev === to;
       if (!isRevert && !allowed.includes(to)) {
         alert(`Transición no permitida desde "${TitleMap[order.status]}" a "${TitleMap[to]}".`);
+        // revertir cronómetro si hicimos algo
+        if (to === 'kitchen_in_progress' && prevSnapshot) timersRef.current[id] = prevSnapshot;
+        if (to === 'kitchen_done' && prevSnapshot) timersRef.current[id] = prevSnapshot;
+        if (!prevSnapshot) clearTimer(id);
+        setTick(v => v + 1);
         return;
       }
 
@@ -689,6 +776,12 @@ function KitchenBoardPage_Inner() {
       await changeStatus(id, to);
       await refresh();
     } catch (e: any) {
+      // En caso de error, revertimos el cambio del cronómetro
+      if (prevSnapshot) {
+        timersRef.current[id] = prevSnapshot;
+      } else {
+        clearTimer(id);
+      }
       alert(e?.message || 'Error');
     } finally {
       setBusy(null);
@@ -781,7 +874,14 @@ function KitchenBoardPage_Inner() {
             <div className="row g-3">
               {dineIn.map((o) => (
                 <div key={o.id} className="col-12 col-md-6 col-lg-4">
-                  <OrderCard o={o} canAct={canAct} onAction={doAct} busyKey={busy} />
+                  <OrderCard
+                    o={o}
+                    canAct={canAct}
+                    onAction={doAct}
+                    busyKey={busy}
+                    timer={timersRef.current[o.id]}
+                    nowMs={nowMs}
+                  />
                 </div>
               ))}
             </div>
@@ -802,7 +902,14 @@ function KitchenBoardPage_Inner() {
             <div className="row g-3">
               {delivery.map((o) => (
                 <div key={o.id} className="col-12 col-md-6 col-lg-4">
-                  <OrderCard o={o} canAct={canAct} onAction={doAct} busyKey={busy} />
+                  <OrderCard
+                    o={o}
+                    canAct={canAct}
+                    onAction={doAct}
+                    busyKey={busy}
+                    timer={timersRef.current[o.id]}
+                    nowMs={nowMs}
+                  />
                 </div>
               ))}
             </div>

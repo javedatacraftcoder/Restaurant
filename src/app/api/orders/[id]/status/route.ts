@@ -9,13 +9,16 @@ import type { OrderStatus } from "@/types/firestore";
 
 const json = (d: unknown, s = 200) => NextResponse.json(d, { status: s });
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> } // ⬅️ params ahora es Promise
+) {
   try {
     // Autenticación (si tus middlewares ya validan roles, esto refuerza)
     const user = await getUserFromRequest(req);
     if (!user) return json({ error: "Unauthorized" }, 401);
 
-    const { id } = params;
+    const { id } = await params; // ⬅️ se espera params antes de usar id
     if (!id) return json({ error: "Missing order id" }, 400);
 
     const body = await req.json().catch(() => null);
