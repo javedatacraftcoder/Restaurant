@@ -25,10 +25,10 @@ export function pickRouteByRole(
   const role = (claims?.role || "").toLowerCase();
 
   if (flags.isAdmin || role === "admin" || claims?.admin) return "/admin";
-  if (flags.isKitchen || role === "kitchen" || claims?.kitchen) return "/ops/kitchen";
-  if (flags.isWaiter || role === "waiter" || claims?.waiter) return "/ops/waiter";
-  if (flags.isDelivery || role === "delivery" || claims?.delivery) return "/ops/delivery";
-  if (flags.isCashier || role === "cashier" || claims?.cashier) return "/ops";
+  if (flags.isKitchen || role === "kitchen" || claims?.kitchen) return "/admin/kitchen";
+  if (flags.isWaiter || role === "waiter" || claims?.waiter) return "/admin/edit-orders";
+  if (flags.isDelivery || role === "delivery" || claims?.delivery) return "/admin/delivery";
+  if (flags.isCashier || role === "cashier" || claims?.cashier) return "/admin/cashier";
 
   // Cliente / invitado
   return "/app";
