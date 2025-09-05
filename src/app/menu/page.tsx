@@ -1,3 +1,4 @@
+// src/app/menu/page.tsx
 "use client";
 
 import "@/lib/firebase/client";

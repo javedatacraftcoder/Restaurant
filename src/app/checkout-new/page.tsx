@@ -17,6 +17,17 @@ function fmtQ(n?: number) {
   catch { return `Q ${v.toFixed(2)}`; }
 }
 
+/** 🔧 Helper agregado: convierte cualquier `undefined` a `null` (profundidad completa). */
+function undefToNullDeep<T>(value: T): T {
+  if (Array.isArray(value)) return value.map(undefToNullDeep) as any;
+  if (value && typeof value === "object") {
+    const out: any = {};
+    for (const [k, v] of Object.entries(value)) out[k] = v === undefined ? null : undefToNullDeep(v as any);
+    return out;
+  }
+  return (value === undefined ? (null as any) : value) as T;
+}
+
 type Addr = {
   line1?: string;
   city?: string;
@@ -135,6 +146,9 @@ export default function CheckoutNewPage() {
       };
     }
 
+    // ✅ aplicar helper SOLO a orderInfo para evitar "undefined"
+    const cleanOrderInfo = undefToNullDeep(orderInfo);
+
     const orderPayload = {
       items: cart.items.map((ln) => ({
         menuItemId: ln.menuItemId,
@@ -153,7 +167,7 @@ export default function CheckoutNewPage() {
       orderTotal: grand,
 
       // estructura original + campos extra para delivery
-      orderInfo,
+      orderInfo: cleanOrderInfo, // ← usar la versión sanitizada
 
       status: 'placed',
       createdAt: serverTimestamp(),
