@@ -51,6 +51,19 @@ export default function AccountsRegisterPage() {
         displayName: name.trim(),
       });
 
+      // 🔗 Inicializa/“sincroniza” el doc customers/{uid} llamando al endpoint protegido
+      try {
+        const token = await cred.user.getIdToken();
+        await fetch("/api/customers/me", {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        // No es crítico manejar la respuesta aquí: el doc se crea/actualiza en el backend.
+      } catch {
+        // Ignorar cualquier error aquí; el doc también se creará al abrir /user-config
+      }
+
       // Redirige al home (o donde gustes)
       router.replace("/");
     } catch (e: any) {

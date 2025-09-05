@@ -31,7 +31,7 @@ export default function AppHome() {
               <div className="d-grid gap-2">
                 <a className="btn btn-light" href="/app/cart" aria-label="Ver carrito">🛒 Ver carrito</a>
                 <a className="btn btn-light" href="/app/checkout" aria-label="Ir al checkout">💳 Ir al checkout</a>
-                <a className="btn btn-light" href="/app/settings" aria-label="Ir a configuración">⚙️ Configuración</a>
+                <a className="btn btn-light" href="/app/user-config" aria-label="Ir a configuración">⚙️ Configuración</a>
               </div>
             </div>
           </div>
