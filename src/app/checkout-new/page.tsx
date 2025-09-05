@@ -1,13 +1,14 @@
+// src/app/(client)/checkout-new/page.tsx
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useNewCart } from '@/lib/newcart/context';
 import type { DineInInfo, DeliveryInfo } from '@/lib/newcart/types';
 import { useRouter } from 'next/navigation';
 
 // Firestore
 import { getFirestore, collection, addDoc, serverTimestamp } from 'firebase/firestore';
-// 🔹 MÍNIMO: leer usuario actual para tomar su email (si hay sesión)
+// Leer usuario actual para tomar su email (si hay sesión)
 import { getAuth } from 'firebase/auth';
 
 function fmtQ(n?: number) {
@@ -16,6 +17,14 @@ function fmtQ(n?: number) {
   catch { return `Q ${v.toFixed(2)}`; }
 }
 
+type Addr = {
+  line1?: string;
+  city?: string;
+  country?: string;
+  zip?: string;
+  notes?: string;
+};
+
 export default function CheckoutNewPage() {
   const cart = useNewCart();
   const grand = useMemo(() => cart.computeGrandTotal(), [cart, cart.items]);
@@ -23,23 +32,108 @@ export default function CheckoutNewPage() {
   const [mode, setMode] = useState<'dine-in' | 'delivery'>('dine-in');
   const [table, setTable] = useState('');
   const [notes, setNotes] = useState('');
+
+  // Dirección / Teléfono (UI)
   const [address, setAddress] = useState('');
   const [phone, setPhone] = useState('');
+  // Datos del usuario (para dropdown y payload extra)
+  const [customerName, setCustomerName] = useState<string>('');
+  const [homeAddr, setHomeAddr] = useState<Addr | null>(null);
+  const [officeAddr, setOfficeAddr] = useState<Addr | null>(null);
+  const [addressLabel, setAddressLabel] = useState<'' | 'home' | 'office'>('');
+
   const [saving, setSaving] = useState(false);
 
   const router = useRouter();
   const db = getFirestore();
+
+  // Cargar datos del cliente para prellenar teléfono y direcciones
+  useEffect(() => {
+    const run = async () => {
+      try {
+        const auth = getAuth();
+        const u = auth.currentUser;
+        if (!u) return;
+        const token = await u.getIdToken();
+        const res = await fetch('/api/customers/me', {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const c = data?.customer;
+        if (!c) return;
+
+        setCustomerName(c.displayName || u.displayName || '');
+
+        if (c.phone && !phone) setPhone(c.phone);
+
+        const h: Addr | null = c.addresses?.home || null;
+        const o: Addr | null = c.addresses?.office || null;
+        setHomeAddr(h);
+        setOfficeAddr(o);
+
+        const hasHome = !!(h && h.line1 && String(h.line1).trim());
+        const hasOffice = !!(o && o.line1 && String(o.line1).trim());
+        if (hasHome) {
+          setAddressLabel('home');
+          setAddress(String(h!.line1));
+        } else if (hasOffice) {
+          setAddressLabel('office');
+          setAddress(String(o!.line1));
+        }
+      } catch {
+        // Silencioso
+      }
+    };
+    run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const hasDropdown =
+    (homeAddr && homeAddr.line1 && String(homeAddr.line1).trim() !== '') ||
+    (officeAddr && officeAddr.line1 && String(officeAddr.line1).trim() !== '');
+
+  function onChangeAddressLabel(value: 'home' | 'office') {
+    setAddressLabel(value);
+    const src = value === 'home' ? homeAddr : officeAddr;
+    setAddress(src?.line1 ? String(src.line1) : '');
+  }
 
   async function onSubmit() {
     const meta: DineInInfo | DeliveryInfo = mode === 'dine-in'
       ? { type: 'dine-in', table, notes: notes || undefined }
       : { type: 'delivery', address, phone, notes: notes || undefined };
 
-    // 🔹 Tomar email/uid del usuario si está autenticado (sin cambiar el UI)
+    // Tomar email/uid del usuario si está autenticado
     const auth = getAuth();
     const u = auth.currentUser;
     const userEmail = u?.email || undefined;
     const uid = u?.uid || undefined;
+
+    // Extra de orderInfo SOLO para delivery (no rompe nada existente)
+    let orderInfo: any = meta;
+    if (mode === 'delivery') {
+      const selectedAddr = addressLabel === 'home' ? homeAddr
+                        : addressLabel === 'office' ? officeAddr
+                        : null;
+      const addressInfo = selectedAddr ? {
+        line1: selectedAddr.line1 || '',
+        city: selectedAddr.city || '',
+        country: selectedAddr.country || '',
+        zip: selectedAddr.zip || '',
+        notes: selectedAddr.notes || '',
+      } : undefined;
+
+      orderInfo = {
+        ...(meta as DeliveryInfo),
+        delivery: 'pending', // ya lo tenías
+        customerName: customerName || u?.displayName || undefined,
+        addressLabel: addressLabel || undefined,
+        addressInfo, // objeto completo de la dirección elegida
+        addressNotes: selectedAddr?.notes || undefined, // ⭐ addressNotes (solo delivery)
+      };
+    }
 
     const orderPayload = {
       items: cart.items.map((ln) => ({
@@ -58,13 +152,12 @@ export default function CheckoutNewPage() {
       })),
       orderTotal: grand,
 
-      // 👇 ÚNICO CAMBIO: si es delivery, añadimos delivery: "pending" dentro de orderInfo
-      orderInfo: mode === 'delivery' ? { ...(meta as DeliveryInfo), delivery: 'pending' } : meta,
+      // estructura original + campos extra para delivery
+      orderInfo,
 
       status: 'placed',
       createdAt: serverTimestamp(),
 
-      // 🔹 Campos mínimos para filtro por email
       userEmail: userEmail,
       userEmail_lower: userEmail ? userEmail.toLowerCase() : undefined,
       createdBy: (uid || userEmail) ? { uid, email: userEmail ?? null } : undefined,
@@ -130,7 +223,48 @@ export default function CheckoutNewPage() {
                 <>
                   <div className="mb-3">
                     <label className="form-label">Dirección</label>
-                    <input className="form-control" value={address} onChange={e => setAddress(e.target.value)} placeholder="Ej. 5a avenida 10-11..." disabled={saving} />
+                    {hasDropdown ? (
+                      <>
+                        <select
+                          className="form-select"
+                          value={addressLabel || ''}
+                          onChange={(e) => onChangeAddressLabel(e.target.value as 'home' | 'office')}
+                          disabled={saving}
+                        >
+                          {homeAddr?.line1 && String(homeAddr.line1).trim() !== '' && (
+                            <option value="home">Casa — {homeAddr.line1}</option>
+                          )}
+                          {officeAddr?.line1 && String(officeAddr.line1).trim() !== '' && (
+                            <option value="office">Oficina — {officeAddr.line1}</option>
+                          )}
+                        </select>
+                        {addressLabel && (
+                          <div className="form-text">
+                            {addressLabel === 'home' ? (
+                              <>
+                                {homeAddr?.city ? `Ciudad: ${homeAddr.city}. ` : ''}
+                                {homeAddr?.zip ? `ZIP: ${homeAddr.zip}. ` : ''}
+                                {homeAddr?.notes ? `Notas: ${homeAddr.notes}.` : ''}
+                              </>
+                            ) : (
+                              <>
+                                {officeAddr?.city ? `Ciudad: ${officeAddr.city}. ` : ''}
+                                {officeAddr?.zip ? `ZIP: ${officeAddr.zip}. ` : ''}
+                                {officeAddr?.notes ? `Notas: ${officeAddr.notes}.` : ''}
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <input
+                        className="form-control"
+                        value={address}
+                        onChange={e => setAddress(e.target.value)}
+                        placeholder="Ej. 5a avenida 10-11..."
+                        disabled={saving}
+                      />
+                    )}
                   </div>
                   <div className="mb-3">
                     <label className="form-label">Teléfono</label>
@@ -164,6 +298,39 @@ export default function CheckoutNewPage() {
           <div className="card border-0 shadow-sm">
             <div className="card-header"><div className="fw-semibold">Resumen</div></div>
             <div className="card-body">
+              {/* Bloque de resumen de entrega con alias y contacto */}
+              {mode === 'delivery' && (
+                <div className="border rounded p-2 mb-3 bg-light">
+                  <div className="small text-muted">Entrega</div>
+                  <div className="fw-semibold">
+                    {addressLabel === 'home' ? 'Casa' : addressLabel === 'office' ? 'Oficina' : 'Dirección'}{': '}
+                    {address || (addressLabel === 'home' ? homeAddr?.line1 : officeAddr?.line1) || '—'}
+                  </div>
+                  {(addressLabel && (addressLabel === 'home' ? homeAddr : officeAddr)) && (
+                    <div className="small text-muted mt-1">
+                      {addressLabel === 'home'
+                        ? [
+                            homeAddr?.city ? `Ciudad: ${homeAddr.city}` : null,
+                            homeAddr?.country ? `País: ${homeAddr.country}` : null,
+                            homeAddr?.zip ? `ZIP: ${homeAddr.zip}` : null,
+                          ].filter(Boolean).join(' · ')
+                        : [
+                            officeAddr?.city ? `Ciudad: ${officeAddr.city}` : null,
+                            officeAddr?.country ? `País: ${officeAddr.country}` : null,
+                            officeAddr?.zip ? `ZIP: ${officeAddr.zip}` : null,
+                          ].filter(Boolean).join(' · ')
+                      }
+                    </div>
+                  )}
+                  <div className="mt-2 small">
+                    <span className="text-muted">Cliente:</span>{' '}
+                    {customerName || '—'}
+                    <span className="text-muted ms-2">Tel:</span>{' '}
+                    {phone || '—'}
+                  </div>
+                </div>
+              )}
+
               <div className="d-flex flex-column gap-3">
                 {cart.items.map((ln, idx) => {
                   const unitExtras = cart.computeLineTotal({ ...ln, quantity: 1 }) - ln.basePrice;

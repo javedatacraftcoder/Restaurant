@@ -132,11 +132,19 @@ type OrderDoc = {
   orderInfo?: {
     type?: 'dine-in' | 'delivery';
     table?: string;
-    notes?: string;
+    notes?: string; // notas de la orden
     address?: string;
     phone?: string;
-    delivery?: 'pending' | 'inroute' | 'delivered'; // ← viene del checkout con 'pending'
+    delivery?: 'pending' | 'inroute' | 'delivered';
     courierName?: string | null;
+
+    // extras que vienen del checkout reciente:
+    customerName?: string;
+    addressLabel?: 'home' | 'office';
+    addressInfo?: {
+      line1?: string; city?: string; country?: string; zip?: string; notes?: string;
+    };
+    addressNotes?: string;
   } | any;
 };
 
@@ -258,9 +266,35 @@ function normalizeOptions(l: any): Array<{ label: string; values: string[] }> {
 }
 
 /* --------------------------------------------
+   Dirección completa + notas (de addressInfo/addressNotes)
+--------------------------------------------- */
+function buildFullAddress(o: OrderDoc): { full: string | null; notes: string | null } {
+  const info = o?.orderInfo || {};
+  const ai = info?.addressInfo || {};
+  const parts = [
+    ai?.line1 ? String(ai.line1) : null,
+    ai?.city ? String(ai.city) : null,
+    ai?.country ? String(ai.country) : null,
+  ].filter(Boolean) as string[];
+
+  let full: string | null = null;
+  if (parts.length) {
+    full = parts.join(', ');
+    if (ai?.zip) {
+      full = `${full} ${String(ai.zip)}`;
+    }
+  } else {
+    // Fallback al address plano si no hay addressInfo
+    full = getDisplayAddress(o);
+  }
+
+  const note = (ai?.notes && String(ai.notes)) || (info?.addressNotes && String(info.addressNotes)) || null;
+  return { full, notes: note };
+}
+
+/* --------------------------------------------
    Hook de órdenes (trae también closed y delivered)
 --------------------------------------------- */
-// Para que aparezcan si el cajero cerró, pero delivery sigue pendiente/inroute
 const STATUS_QUERY_MAIN = [
   'kitchen_done',
   'assigned_to_courier',
@@ -418,6 +452,79 @@ function CourierModal({
 }
 
 /* --------------------------------------------
+   Impresión de ticket
+--------------------------------------------- */
+function escapeHtml(s: string) {
+  return s.replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;', "'":'&#39;' }[c]!));
+}
+function printDeliveryTicket(o: OrderDoc) {
+  const created = toDate(o.createdAt ?? new Date());
+  const info = o?.orderInfo || {};
+  const customer = (info?.customerName && String(info.customerName)) || '—';
+  const phone = (info?.phone && String(info.phone)) || '—';
+  const { full, notes } = buildFullAddress(o);
+
+  const lines = (o.items?.length ? o.items : o.lines || []) as OrderItemLine[];
+  const itemsText = lines.map((it) => {
+    const qty = getLineQty(it);
+    const name = getLineName(it);
+    const groups = normalizeOptions(it);
+    const opts = groups.map(g => `    - ${g.label}: ${g.values.join(', ')}`).join('\n');
+    return `  • ${qty} × ${name}${opts ? '\n' + opts : ''}`;
+  }).join('\n');
+
+  const docHtml = `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Ticket entrega #${escapeHtml(o.orderNumber || o.id)}</title>
+<style>
+  html, body { margin: 0; padding: 0; }
+  body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px; padding: 12px; }
+  h1 { font-size: 14px; margin: 0 0 8px; }
+  .muted { color: #666; }
+  .row { margin-bottom: 8px; }
+  pre { white-space: pre-wrap; word-wrap: break-word; }
+  @media print {
+    body { font-size: 12px; }
+    .no-print { display: none !important; }
+  }
+</style>
+</head>
+<body>
+  <h1>Ticket de entrega</h1>
+  <div class="row"><strong>Orden:</strong> #${escapeHtml(o.orderNumber || o.id)}</div>
+  <div class="row muted">${escapeHtml(created.toLocaleString())}</div>
+  <div class="row"><strong>Cliente:</strong> ${escapeHtml(customer)}</div>
+  <div class="row"><strong>Teléfono:</strong> ${escapeHtml(phone)}</div>
+  <div class="row"><strong>Dirección:</strong> ${escapeHtml(full || '—')}</div>
+  ${notes ? `<div class="row"><strong>Nota de dirección:</strong> ${escapeHtml(notes)}</div>` : ''}
+  <hr/>
+  <div class="row"><strong>Productos:</strong></div>
+  <pre>${escapeHtml(itemsText || '—')}</pre>
+
+  <div class="no-print" style="margin-top:12px;">
+    <button onclick="window.print()">Imprimir</button>
+    <button onclick="window.close()">Cerrar</button>
+  </div>
+  <script>
+    setTimeout(function(){ window.print(); setTimeout(function(){ window.close(); }, 300); }, 200);
+  </script>
+</body>
+</html>`;
+
+  const w = window.open('', 'printTicket', 'width=480,height=640');
+  if (!w) {
+    alert('No se pudo abrir la ventana de impresión (pop-up bloqueado).');
+    return;
+  }
+  w.document.open();
+  w.document.write(docHtml);
+  w.document.close();
+  try { w.focus(); } catch {}
+}
+
+/* --------------------------------------------
    Tarjeta de Delivery (solo sub-estado)
 --------------------------------------------- */
 function DeliveryCard({
@@ -428,11 +535,10 @@ function DeliveryCard({
   onRefresh: () => Promise<void> | void;
 }) {
   const created = toDate(o.createdAt ?? new Date());
-  const address = getDisplayAddress(o);
   const phone = getDisplayPhone(o);
-  const notes = getDisplayNotes(o);
+  const notes = getDisplayNotes(o); // notas de la ORDEN
   const courierName: string | null = o?.orderInfo?.courierName ?? null;
-  const subState: 'pending' | 'inroute' | 'delivered' = o?.orderInfo?.delivery ?? 'pending'; // ← viene 'pending' desde checkout
+  const subState: 'pending' | 'inroute' | 'delivered' = o?.orderInfo?.delivery ?? 'pending';
 
   const isDelivery = getDisplayType(o) === 'delivery';
 
@@ -447,7 +553,6 @@ function DeliveryCard({
   async function doAssignWithName(name: string) {
     try {
       setBusy(true);
-      // Solo guardamos el nombre del repartidor. NO cambiamos status principal.
       await updateDeliveryMeta(o.id, { courierName: name });
       await onRefresh();
     } catch (e: any) {
@@ -482,6 +587,9 @@ function DeliveryCard({
 
   const lines = (o.items?.length ? o.items : o.lines || []);
 
+  // Dirección completa + nota de dirección para mostrar en la tarjeta
+  const { full: fullAddress, notes: addressNote } = buildFullAddress(o);
+
   return (
     <>
       <div className="card shadow-sm">
@@ -502,9 +610,12 @@ function DeliveryCard({
         <div className="card-body">
           {/* Datos de entrega */}
           <div className="mb-2">
-            <div><span className="fw-semibold">Dirección:</span> {address || <em className="text-muted">—</em>}</div>
+            <div><span className="fw-semibold">Dirección:</span> {fullAddress || <em className="text-muted">—</em>}</div>
+            {addressNote ? (
+              <div><span className="fw-semibold">Nota de dirección:</span> {addressNote}</div>
+            ) : null}
             <div><span className="fw-semibold">Teléfono:</span> {phone || <em className="text-muted">—</em>}</div>
-            {notes ? <div><span className="fw-semibold">Notas:</span> {notes}</div> : null}
+            {notes ? <div><span className="fw-semibold">Notas de la orden:</span> {notes}</div> : null}
             <div className="small text-muted">Sub-estado: {subState}</div>
           </div>
 
@@ -533,7 +644,17 @@ function DeliveryCard({
           {/* Acciones (solo sub-estado) */}
           <div className="d-flex justify-content-end">
             <div className="btn-group">
+              {/* Botón de impresión de ticket */}
+              <button
+                className="btn btn-outline-dark btn-sm"
+                onClick={() => printDeliveryTicket(o)}
+                title="Imprimir ticket de entrega"
+              >
+                Imprimir ticket
+              </button>
+
               <button className="btn btn-outline-secondary btn-sm" disabled>{TitleMap[o.status]}</button>
+
               {canTake && (
                 <button
                   className="btn btn-primary btn-sm"
@@ -577,11 +698,9 @@ function DeliveryBoardPageInner() {
   const { authReady, user } = useAuthState();
   const { orders, loading, error, refresh } = useDeliveryOrders(!!user, 4000);
 
-  // Búsqueda (teléfono, dirección, notas, #orden, ítems…)
   const [q, setQ] = useState('');
   const term = q.trim().toLowerCase();
 
-  // Filtrado con búsqueda (se aplica a las 3 secciones)
   const filtered = useMemo(() => {
     return orders.filter((o) => {
       if (!term) return true;
@@ -596,7 +715,6 @@ function DeliveryBoardPageInner() {
     });
   }, [orders, term]);
 
-  // 1) Listos para asignar: status kitchen_done y sub-estado pending
   const listosParaAsignar = useMemo(
     () =>
       filtered.filter(
@@ -607,13 +725,11 @@ function DeliveryBoardPageInner() {
     [filtered]
   );
 
-  // 2) En ruta: sub-estado inroute
   const enRuta = useMemo(
     () => filtered.filter(o => String(o?.orderInfo?.delivery ?? '') === 'inroute'),
     [filtered]
   );
 
-  // 3) Entregados: sub-estado delivered
   const entregados = useMemo(
     () => filtered.filter(o => String(o?.orderInfo?.delivery ?? '') === 'delivered'),
     [filtered]

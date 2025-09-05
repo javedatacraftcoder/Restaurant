@@ -31,6 +31,11 @@ type Customer = {
     home: Addr;
     office: Addr;
   };
+  // ➕ Facturación (opcional)
+  billing?: {
+    name?: string;
+    taxId?: string; // NIT
+  };
 };
 
 type ApiGet = { ok?: boolean; error?: string; customer?: Customer };
@@ -88,18 +93,31 @@ function useCustomer() {
     return data.customer;
   };
 
+  // ➕ Guardar facturación
+  const saveBilling = async (billing: { name?: string; taxId?: string }) => {
+    const res = await fetch("/api/customers/me", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ billing }),
+    });
+    const data: ApiPut = await res.json().catch(() => ({} as any));
+    if (!res.ok || data?.ok === false) throw new Error(data?.error || `HTTP ${res.status}`);
+    setCust(data.customer || null);
+    return data.customer;
+  };
+
   useEffect(() => {
     if (!idToken) return;
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idToken]);
 
-  return { loading, err, cust, refresh, saveProfile, saveAddresses } as const;
+  return { loading, err, cust, refresh, saveProfile, saveAddresses, saveBilling } as const;
 }
 
 function UserConfigInner() {
   const { user } = useAuth();
-  const { loading, err, cust, saveProfile, saveAddresses, refresh } = useCustomer();
+  const { loading, err, cust, saveProfile, saveAddresses, saveBilling, refresh } = useCustomer();
 
   // Form state
   const [displayName, setDisplayName] = useState("");
@@ -111,6 +129,11 @@ function UserConfigInner() {
   const [busyAddr, setBusyAddr] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [errMsg, setErrMsg] = useState<string | null>(null);
+
+  // ➕ Facturación
+  const [billingName, setBillingName] = useState<string>("");
+  const [billingTaxId, setBillingTaxId] = useState<string>("");
+  const [busyBilling, setBusyBilling] = useState(false);
 
   // Password change
   const [currPass, setCurrPass] = useState("");
@@ -137,6 +160,9 @@ function UserConfigInner() {
       zip: cust.addresses?.office?.zip || "",
       notes: cust.addresses?.office?.notes || "",
     });
+    // ➕ Precargar facturación si existe
+    setBillingName(cust.billing?.name || "");
+    setBillingTaxId(cust.billing?.taxId || "");
   }, [cust]);
 
   const onSaveProfile = async () => {
@@ -164,6 +190,21 @@ function UserConfigInner() {
       setErrMsg(e?.message || "No se pudieron guardar las direcciones");
     } finally {
       setBusyAddr(false);
+    }
+  };
+
+  // ➕ Guardar facturación
+  const onSaveBilling = async () => {
+    try {
+      setErrMsg(null);
+      setMsg(null);
+      setBusyBilling(true);
+      await saveBilling({ name: billingName, taxId: billingTaxId });
+      setMsg("Datos de facturación guardados");
+    } catch (e: any) {
+      setErrMsg(e?.message || "No se pudieron guardar los datos de facturación");
+    } finally {
+      setBusyBilling(false);
     }
   };
 
@@ -397,6 +438,42 @@ function UserConfigInner() {
               <div className="card-footer d-flex justify-content-end">
                 <button className="btn btn-primary" onClick={onSaveAddresses} disabled={busyAddr}>
                   {busyAddr ? "Guardando…" : "Guardar direcciones"}
+                </button>
+              </div>
+            </div>
+          </section>
+
+          {/* ➕ FACTURACIÓN */}
+          <section className="mb-4">
+            <div className="card shadow-sm">
+              <div className="card-header">
+                <strong>Facturación</strong>
+              </div>
+              <div className="card-body">
+                <div className="row g-3">
+                  <div className="col-12 col-md-6">
+                    <label className="form-label">Nombre de facturación</label>
+                    <input
+                      className="form-control"
+                      value={billingName}
+                      onChange={(e) => setBillingName(e.target.value)}
+                      placeholder="Razón social / Nombre para factura"
+                    />
+                  </div>
+                  <div className="col-12 col-md-6">
+                    <label className="form-label">Número de Identificación Tributaria (NIT)</label>
+                    <input
+                      className="form-control"
+                      value={billingTaxId}
+                      onChange={(e) => setBillingTaxId(e.target.value)}
+                      placeholder="Ej. CF / 1234567-8"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="card-footer d-flex justify-content-end">
+                <button className="btn btn-primary" onClick={onSaveBilling} disabled={busyBilling}>
+                  {busyBilling ? "Guardando…" : "Guardar facturación"}
                 </button>
               </div>
             </div>

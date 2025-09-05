@@ -1,5 +1,4 @@
 // src/app/admin/cashier/receipt/[id]/page.tsx
-
 'use client';
 
 import { OnlyCashier } from "@/components/Only";
@@ -57,6 +56,12 @@ async function apiFetch(path: string, init?: RequestInit) {
   return res;
 }
 
+/* ===== Firestore (solo para leer billing del cliente) ===== */
+async function getFirestoreMod() {
+  await ensureFirebaseApp();
+  return await import('firebase/firestore');
+}
+
 /* ============ Tipos & utils ============ */
 type StatusSnake =
   | 'cart' | 'placed' | 'kitchen_in_progress' | 'kitchen_done'
@@ -106,7 +111,22 @@ type OrderDoc = {
   createdAt?: any;
 
   // checkout (nuevo)
-  orderInfo?: { type?: 'dine-in' | 'delivery'; table?: string; notes?: string; address?: string; phone?: string } | null;
+  orderInfo?: {
+    type?: 'dine-in' | 'delivery';
+    table?: string;
+    notes?: string;
+    address?: string;
+    phone?: string;
+    customerName?: string;
+    addressLabel?: 'home' | 'office';
+    addressInfo?: { line1?: string; city?: string; country?: string; zip?: string; notes?: string };
+    addressNotes?: string;
+  } | null;
+
+  // 👇 importante para vincular al customer
+  createdBy?: { uid?: string; email?: string | null } | null;
+  userEmail?: string | null;            // fallback antiguo
+  userEmail_lower?: string | null;      // fallback antiguo
 };
 
 const toNum = (x: any) => { const n = Number(x); return Number.isFinite(n) ? n : undefined; };
@@ -195,10 +215,10 @@ function extractDeltaQ(x: any): number {
 }
 function lineTotalQ(l: any): number {
   const qty = getLineQty(l);
-  const totC = toNum(l?.totalCents);
-  if (totC !== undefined) return totC / 100;
   const base = baseUnitPriceQ(l);
   const deltas = perUnitAddonsQ(l);
+  const totC = toNum(l?.totalCents);
+  if (totC !== undefined) return totC / 100;
   return (base + deltas) * qty;
 }
 function preferredLines(o: OrderDoc): OrderItemLine[] {
@@ -250,7 +270,22 @@ function safeLineTotalsQ(l: any, order?: OrderDoc, linesCount?: number) {
   return { baseUnit, addonsUnit, lineTotal, qty };
 }
 
-/* ============ Fetch de la orden por id ============ */
+/* ======= Dirección completa (sin nota) ======= */
+function fullAddressFrom(order: OrderDoc | null | undefined): string | null {
+  const ai = order?.orderInfo?.addressInfo;
+  if (ai && (ai.line1 || ai.city || ai.country || ai.zip)) {
+    const parts: string[] = [];
+    if (ai.line1) parts.push(String(ai.line1));
+    if (ai.city) parts.push(String(ai.city));
+    if (ai.country) parts.push(String(ai.country));
+    let full = parts.join(', ');
+    if (ai.zip) full = `${full} ${ai.zip}`;
+    return full || null;
+  }
+  return order?.orderInfo?.address || order?.deliveryAddress || null;
+}
+
+/* ======= Leer orden por id ======= */
 async function fetchOrder(id: string): Promise<OrderDoc | null> {
   let res = await apiFetch(`/api/orders/${id}`);
   if (res.ok) {
@@ -266,11 +301,50 @@ async function fetchOrder(id: string): Promise<OrderDoc | null> {
   return null;
 }
 
+/* ======= Leer billing del customer vinculado a la orden ======= */
+async function fetchCustomerBillingForOrder(order: OrderDoc) {
+  const { getFirestore, doc, getDoc, collection, query, where, limit, getDocs } = await getFirestoreMod();
+
+  // 1) Preferimos UID del creador de la orden
+  const uid = order?.createdBy?.uid;
+  if (uid) {
+    const snap = await getDoc(doc(getFirestore(), 'customers', uid));
+    if (snap.exists()) {
+      const d: any = snap.data() || {};
+      const b = d?.billing || {};
+      return { name: b?.name as (string | undefined), taxId: b?.taxId as (string | undefined) };
+    }
+  }
+
+  // 2) Fallback por email si no hay UID (para órdenes antiguas)
+  const email = order?.userEmail || order?.userEmail_lower || order?.createdBy?.email || null;
+  if (email) {
+    const q = query(
+      collection(getFirestore(), 'customers'),
+      where('email', '==', String(email)),
+      limit(1),
+    );
+    const qs = await getDocs(q);
+    const first = qs.docs[0];
+    if (first?.exists()) {
+      const d: any = first.data() || {};
+      const b = d?.billing || {};
+      return { name: b?.name as (string | undefined), taxId: b?.taxId as (string | undefined) };
+    }
+  }
+
+  return { name: undefined, taxId: undefined };
+}
+
 /* ============ Página (sin <html>/<body>) ============ */
 function ReceiptPage_Inner() {
   const { id } = useParams<{ id: string }>();
   const [order, setOrder] = useState<OrderDoc | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // ➕ estado para facturación
+  const [billingName, setBillingName] = useState<string | undefined>(undefined);
+  const [billingTaxId, setBillingTaxId] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     let alive = true;
@@ -280,6 +354,16 @@ function ReceiptPage_Inner() {
         if (!alive) return;
         if (!o) { setError('Orden no encontrada'); return; }
         setOrder(o);
+
+        // ➕ cargar facturación del customer (sin bloquear la impresión)
+        fetchCustomerBillingForOrder(o)
+          .then((b) => {
+            if (!alive) return;
+            setBillingName(b?.name);
+            setBillingTaxId(b?.taxId);
+          })
+          .catch(() => { /* silencioso */ });
+
         setTimeout(() => { try { window.print(); } catch {} }, 150);
       } catch (e: any) {
         if (!alive) return;
@@ -298,10 +382,15 @@ function ReceiptPage_Inner() {
   const lines = useMemo(() => (order ? preferredLines(order) : []), [order]);
   const totals = useMemo(() => (order ? computeOrderTotalsQ(order) : null), [order]);
 
+  // (existente)
   const address = order?.orderInfo?.address || order?.deliveryAddress || null;
   const phone   = order?.orderInfo?.phone || null;
   const table   = order?.orderInfo?.table || order?.tableNumber || null;
   const notes   = order?.orderInfo?.notes || order?.notes || null;
+
+  // (existente) nombre y dirección completa
+  const customerName = order?.orderInfo?.customerName || null;
+  const fullAddress  = fullAddressFrom(order);
 
   return (
     <>
@@ -335,9 +424,20 @@ function ReceiptPage_Inner() {
             <h1>{type === 'delivery' ? 'Delivery' : 'Dine-in'}</h1>
             <div className="muted">#{order.orderNumber || order.id} · {toDate(order.createdAt ?? new Date()).toLocaleString()}</div>
             {table ? <div className="muted">Mesa: {table}</div> : null}
-            {address ? <div className="muted">Entrega: {address}</div> : null}
+
+            {/* Cliente / entrega / teléfono (existente) */}
+            {customerName ? <div className="muted">Cliente: {customerName}</div> : null}
+            {fullAddress ? <div className="muted">Entrega: {fullAddress}</div> : (address ? <div className="muted">Entrega: {address}</div> : null)}
             {phone ? <div className="muted">Tel: {phone}</div> : null}
+
+            {/* ➕ Facturación (si existe en customers/{uid}) */}
+            {(billingName || billingTaxId) && <div className="hr"></div>}
+            {billingName ? <div className="muted">Factura a: {billingName}</div> : null}
+            {billingTaxId ? <div className="muted">NIT: {billingTaxId}</div> : null}
+
+            {/* Nota de la ORDEN, no de la dirección */}
             {notes ? <div className="muted">Nota: {notes}</div> : null}
+
             <div className="hr"></div>
 
             {lines.map((l, idx) => {
@@ -346,7 +446,7 @@ function ReceiptPage_Inner() {
 
               const groupsHtml: React.ReactNode[] = [];
 
-              // optionGroups (nuevo)
+              // optionGroups
               if (Array.isArray(l?.optionGroups)) {
                 for (const g of l.optionGroups) {
                   const its = Array.isArray(g?.items) ? g.items : [];
@@ -421,7 +521,6 @@ function ReceiptPage_Inner() {
     </>
   );
 }
-
 
 export default function ReceiptPage() {
   return (

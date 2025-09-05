@@ -13,6 +13,12 @@ type Addr = {
   notes?: string;
 };
 
+// ➕ Facturación
+type Billing = {
+  name?: string;
+  taxId?: string;
+};
+
 type CustomerDoc = {
   uid: string;
   email: string | null;
@@ -22,6 +28,8 @@ type CustomerDoc = {
     home?: Addr;
     office?: Addr;
   };
+  // ➕ Facturación
+  billing?: Billing;
   createdAt?: any;
   updatedAt?: any;
 };
@@ -49,7 +57,7 @@ export async function GET(req: NextRequest) {
     const snap = await ref.get();
 
     if (!snap.exists) {
-      // Crear doc inicial
+      // Crear doc inicial (sin cambios: billing es opcional)
       const initial: CustomerDoc = {
         uid,
         email: user.email ?? null,
@@ -84,6 +92,7 @@ export async function PUT(req: NextRequest) {
 
     // Campos permitidos
     const allowed: Partial<CustomerDoc> = {};
+
     if (typeof body.displayName === "string") allowed.displayName = body.displayName;
     if (typeof body.phone === "string") allowed.phone = body.phone;
 
@@ -92,6 +101,15 @@ export async function PUT(req: NextRequest) {
       if (body.addresses.home) nextAddrs.home = sanitizeAddr(body.addresses.home);
       if (body.addresses.office) nextAddrs.office = sanitizeAddr(body.addresses.office);
       allowed.addresses = nextAddrs;
+    }
+
+    // ➕ Guardar facturación (billing)
+    if (body?.billing && typeof body.billing === "object") {
+      const b = body.billing;
+      const nextBilling: Billing = {};
+      if (typeof b.name === "string") nextBilling.name = b.name;
+      if (typeof b.taxId === "string") nextBilling.taxId = b.taxId;
+      allowed.billing = nextBilling;
     }
 
     // Evitar cambios de email/uid desde aquí
