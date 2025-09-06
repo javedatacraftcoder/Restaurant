@@ -390,6 +390,8 @@ function useKitchenOrders(
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<any>(null);
+
+  // ➕ NUEVO: snapshot del mapa previo para el callback onChange
   const prevMapRef = useRef<Map<string, string>>(new Map());
 
   const fetchNow = async () => {
@@ -431,8 +433,11 @@ function useKitchenOrders(
       setLoading(false);
 
       const nextMap = new Map<string, string>(list.map((o) => [o.id, o.status]));
+
+      // 🔧 Estas eran las líneas “en rojo”: ahora compilan porque prevMapRef existe
       if (onChange) onChange(prevMapRef.current, nextMap);
       prevMapRef.current = nextMap;
+
     } catch (e: any) {
       setError(e?.message || 'Error al cargar');
       setLoading(false);
@@ -452,6 +457,7 @@ function useKitchenOrders(
 
   return { orders, loading, error, refresh: fetchNow } as const;
 }
+
 
 /* --------------------------------------------
    Sonido
@@ -593,6 +599,9 @@ function OrderCard({
   const tableVal = getDisplayTable(o);
   const notesVal = getDisplayNotes(o);
 
+  // ➕ NUEVO: detectar pickup para mostrar badge
+  const rawType = o?.orderInfo?.type?.toLowerCase?.();
+
   let elapsedLabel: string | null = null;
   let isElapsedAlert = false;
   if (timer?.startAtMs) {
@@ -617,6 +626,8 @@ function OrderCard({
             <span className={`badge ${isElapsedAlert ? 'bg-danger' : 'bg-dark-subtle text-dark'}`}>{elapsedLabel}</span>
           )}
           <span className="badge bg-outline-secondary text-dark">{typeVal}</span>
+          {/* ➕ Badge adicional para pickup */}
+          {rawType === 'pickup' && <span className="badge bg-info text-dark">pickup</span>}
           <BadgeStatus s={o.status} />
         </div>
       </div>

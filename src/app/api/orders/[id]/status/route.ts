@@ -1,90 +1,129 @@
 // src/app/api/orders/[id]/status/route.ts
-export const runtime = "nodejs";
+import { NextRequest, NextResponse } from 'next/server';
+import * as admin from 'firebase-admin';
 
-import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/firebase/admin";
-import { getUserFromRequest } from "@/lib/server/auth";
-import { normalizeStatus, canTransition } from "@/lib/server/orders";
-import type { OrderStatus } from "@/types/firestore";
+/** ---------- Bootstrap Admin SDK (idempotente) ---------- */
+function getAdminApp() {
+  if (!admin.apps.length) {
+    admin.initializeApp({
+      // Si ya inicializas con GOOGLE_APPLICATION_CREDENTIALS, esto es suficiente
+      credential: admin.credential.applicationDefault(),
+    });
+  }
+  return admin.app();
+}
+function getDb() { return getAdminApp().firestore(); }
 
-const json = (d: unknown, s = 200) => NextResponse.json(d, { status: s });
-
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> } // ⬅️ params ahora es Promise
-) {
+/** ---------- Helpers de Auth/Roles ---------- */
+async function getUserFromAuthHeader(req: NextRequest) {
+  const hdr = req.headers.get('authorization') || req.headers.get('Authorization');
+  if (!hdr || !hdr.toLowerCase().startsWith('bearer ')) return null;
+  const token = hdr.slice(7).trim();
   try {
-    // Autenticación (si tus middlewares ya validan roles, esto refuerza)
-    const user = await getUserFromRequest(req);
-    if (!user) return json({ error: "Unauthorized" }, 401);
+    const decoded = await admin.auth().verifyIdToken(token);
+    return decoded; // { uid, email, ...custom claims }
+  } catch {
+    return null;
+  }
+}
+function hasRole(claims: any, role: string) {
+  return !!(claims && (claims[role] || (Array.isArray(claims.roles) && claims.roles.includes(role))));
+}
+function canOperate(claims: any) {
+  return hasRole(claims, 'admin') || hasRole(claims, 'kitchen') || hasRole(claims, 'cashier') || hasRole(claims, 'delivery');
+}
 
-    const { id } = await params; // ⬅️ se espera params antes de usar id
-    if (!id) return json({ error: "Missing order id" }, 400);
+/** ---------- Flujos permitidos ---------- */
+const FLOW_DINE_IN = ['placed', 'kitchen_in_progress', 'kitchen_done', 'ready_to_close', 'closed'] as const;
+const FLOW_DELIVERY = ['placed', 'kitchen_in_progress', 'kitchen_done', 'assigned_to_courier', 'on_the_way', 'delivered', 'closed'] as const;
+type StatusSnake = (typeof FLOW_DINE_IN[number]) | (typeof FLOW_DELIVERY[number]) | 'cart' | 'cancelled';
 
-    const body = await req.json().catch(() => null);
-    const rawNext: string | undefined = body?.nextStatus;
-    if (!rawNext || typeof rawNext !== "string") {
-      return json({ error: "Missing nextStatus" }, 400);
+/** ✅ NUEVO: normalizar el tipo operativo (pickup → dine_in) */
+function normalizeOperationalType(order: any): 'dine_in' | 'delivery' {
+  const raw = String(order?.orderInfo?.type || order?.type || '').toLowerCase();
+  if (raw === 'delivery') return 'delivery';
+  // 'pickup' y cualquier otro caen a flujo de salón
+  return 'dine_in';
+}
+function flowFor(t: 'dine_in' | 'delivery') {
+  return t === 'delivery' ? FLOW_DELIVERY : FLOW_DINE_IN;
+}
+
+/** ---------- GET actual de orden (si necesitas en otras ramas) ---------- */
+async function readOrder(docId: string) {
+  const snap = await getDb().collection('orders').doc(docId).get();
+  if (!snap.exists) return null;
+  return { id: snap.id, ...snap.data() };
+}
+
+/** ---------- PATCH: cambiar estado ---------- */
+export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const user = await getUserFromAuthHeader(req);
+    if (!user || !canOperate(user)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Normaliza al enum que usa el sistema (p. ej. camel/snake/alias → snake case)
-    const nextStatus = normalizeStatus(rawNext) as OrderStatus | undefined;
-    if (!nextStatus) {
-      return json({ error: `Unknown status: ${rawNext}` }, 400);
-    }
+    const id = params.id;
+    if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
 
-    // Carga de la orden
-    const ref = db.collection("orders").doc(id);
-    const snap = await ref.get();
-    if (!snap.exists) return json({ error: "Order not found" }, 404);
+    let body: any;
+    try { body = await req.json(); } catch { body = {}; }
+    const nextStatus = String(body?.nextStatus || '').trim() as StatusSnake;
+    if (!nextStatus) return NextResponse.json({ error: 'Missing nextStatus' }, { status: 400 });
 
-    const data = snap.data() || {};
-    const currentStatus = normalizeStatus(data.status) as OrderStatus | undefined;
-    if (!currentStatus) return json({ error: "Order has no current status" }, 500);
+    const db = getDb();
+    const ref = db.collection('orders').doc(id);
 
-    // Tipo de la orden para la matriz de transición (no tocar subestado delivery aquí)
-    const type: "dine_in" | "takeaway" | "delivery" =
-      (data?.type as any) ||
-      (data?.orderInfo?.type === "dine-in" ? "dine_in" : data?.orderInfo?.type) ||
-      "dine_in";
+    // Usamos transacción para validar y escribir atomícamente
+    const result = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) throw new Error('Order not found');
+      const order: any = { id: snap.id, ...snap.data() };
 
-    // Si piden el mismo estado, es idempotente: devolvemos OK sin error
-    if (currentStatus === nextStatus) {
-      return json({ ok: true, order: { id: ref.id, ...data } });
-    }
+      const currentStatus = String(order.status || 'placed') as StatusSnake;
 
-    // Valida transición (la lógica vive en lib/server/orders)
-    if (!canTransition(currentStatus, nextStatus, type)) {
-      const pretty = (s: string) => String(s || "").replace(/_/g, " ");
-      return json(
-        {
-          error: `Invalid transition: ${pretty(currentStatus)} → ${pretty(nextStatus)} (type=${type})`,
-          invalid: true,
-          from: currentStatus,
-          to: nextStatus,
-          type,
-        },
-        400
-      );
-    }
+      // ✅ NUEVO: usar flujo operativo (pickup → dine_in)
+      const typeForFlow = normalizeOperationalType(order);
+      const allowed = flowFor(typeForFlow);
 
-    // Actualiza SOLO el estado principal (NO tocar orderInfo ni delivery aquí)
-    await ref.update({
-      status: nextStatus,
-      updatedAt: new Date(),
-      // Si manejas timeline/historial, puedes descomentar algo como:
-      // history: FieldValue.arrayUnion({
-      //   at: FieldValue.serverTimestamp(),
-      //   by: user.uid,
-      //   to: nextStatus,
-      // }),
+      // Validaciones de transición (permite 1 paso hacia adelante; opcional: 1 paso atrás)
+      const curIdx = allowed.indexOf(currentStatus as any);
+      const nxtIdx = allowed.indexOf(nextStatus as any);
+
+      // Permitir avanzar un paso o retroceder exactamente un paso (si lo usas en Kitchen)
+      const isForward = curIdx >= 0 && nxtIdx === curIdx + 1;
+      const isBackward = curIdx >= 0 && nxtIdx === curIdx - 1;
+
+      if (!isForward && !isBackward) {
+        throw new Error(`Invalid transition: ${currentStatus} → ${nextStatus} (type=${order?.orderInfo?.type || order?.type || 'unknown'})`);
+      }
+
+      // Status history (append)
+      const hist = Array.isArray(order.statusHistory) ? order.statusHistory.slice() : [];
+      hist.push({
+        at: new Date().toISOString(),
+        by: user.uid || null,
+        from: currentStatus,
+        to: nextStatus,
+      });
+
+      tx.update(ref, {
+        status: nextStatus,
+        statusHistory: hist,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      return { ok: true, id, from: currentStatus, to: nextStatus };
     });
 
-    // Devuelve la orden actualizada
-    const updated = await ref.get();
-    return json({ ok: true, order: { id: ref.id, ...updated.data() } });
+    return NextResponse.json(result, { status: 200 });
   } catch (e: any) {
-    console.error("[PATCH /api/orders/:id/status] error:", e);
-    return json({ error: e?.message ?? "Server error" }, 500);
+    return NextResponse.json({ error: e?.message || 'Error' }, { status: 400 });
   }
+}
+
+/** (Opcional) HEAD/OPTIONS si ya los exponías */
+export async function OPTIONS() {
+  return NextResponse.json({ ok: true });
 }

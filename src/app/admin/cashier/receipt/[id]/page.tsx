@@ -104,7 +104,12 @@ type OrderDoc = {
   items?: OrderItemLine[];
   lines?: OrderItemLine[];
   amounts?: Amounts;
-  totals?: { totalCents?: number; subtotalCents?: number; taxCents?: number; serviceFeeCents?: number; discountCents?: number };
+  totals?: {
+    totalCents?: number; subtotalCents?: number; taxCents?: number; serviceFeeCents?: number; discountCents?: number;
+    subtotal?: number; deliveryFee?: number; tip?: number; currency?: string;
+  };
+  orderTotal?: number;
+
   tableNumber?: string | null;
   deliveryAddress?: string | null;
   notes?: string | null;
@@ -112,7 +117,7 @@ type OrderDoc = {
 
   // checkout (nuevo)
   orderInfo?: {
-    type?: 'dine-in' | 'delivery';
+    type?: 'dine-in' | 'delivery' | 'pickup';
     table?: string;
     notes?: string;
     address?: string;
@@ -121,6 +126,7 @@ type OrderDoc = {
     addressLabel?: 'home' | 'office';
     addressInfo?: { line1?: string; city?: string; country?: string; zip?: string; notes?: string };
     addressNotes?: string;
+    deliveryOption?: { title: string; description?: string; price: number } | null;
   } | null;
 
   // 👇 importante para vincular al customer
@@ -224,7 +230,17 @@ function lineTotalQ(l: any): number {
 function preferredLines(o: OrderDoc): OrderItemLine[] {
   return (Array.isArray(o.items) && o.items.length ? o.items! : (Array.isArray(o.lines) ? o.lines! : [])) as OrderItemLine[];
 }
+
 function computeOrderTotalsQ(o: OrderDoc) {
+  // Checkout nuevo
+  if (o?.totals && (o.totals.subtotal !== undefined || o.totals.deliveryFee !== undefined || o.totals.tip !== undefined)) {
+    const subtotal = Number(o.totals.subtotal || 0);
+    const deliveryFee = Number((o.totals as any).deliveryFee || 0);
+    const tip = Number((o.totals as any).tip || 0);
+    const total = Number.isFinite(o.orderTotal) ? Number(o.orderTotal) : (subtotal + deliveryFee + tip);
+    return { subtotal, tax: 0, serviceFee: 0, discount: 0, tip, deliveryFee, total };
+  }
+  // amounts
   if (o?.amounts && Number.isFinite(o.amounts.total)) {
     return {
       subtotal: Number(o.amounts.subtotal || 0),
@@ -232,9 +248,11 @@ function computeOrderTotalsQ(o: OrderDoc) {
       serviceFee: Number(o.amounts.serviceFee || 0),
       discount: Number(o.amounts.discount || 0),
       tip: Number(o.amounts.tip || 0),
+      deliveryFee: 0,
       total: Number(o.amounts.total || 0),
     };
   }
+  // cents
   if (o?.totals && Number.isFinite(o.totals.totalCents)) {
     return {
       subtotal: centsToQ(o.totals.subtotalCents),
@@ -242,17 +260,19 @@ function computeOrderTotalsQ(o: OrderDoc) {
       serviceFee: centsToQ(o.totals.serviceFeeCents),
       discount: centsToQ(o.totals.discountCents),
       tip: Number(o.amounts?.tip || 0),
+      deliveryFee: 0,
       total: centsToQ(o.totals.totalCents) + Number(o.amounts?.tip || 0),
     };
   }
+  // fallback
   const lines = preferredLines(o);
   const subtotal = lines.reduce((acc, l) => acc + lineTotalQ(l), 0);
   const tip = Number(o.amounts?.tip || 0);
-  return { subtotal, tax: 0, serviceFee: 0, discount: 0, tip, total: subtotal + tip };
+  return { subtotal, tax: 0, serviceFee: 0, discount: 0, tip, deliveryFee: 0, total: subtotal + tip };
 }
 
 /* ======= Helpers unit/subtotal ======= */
-function safeLineTotalsQ(l: any, order?: OrderDoc, linesCount?: number) {
+function safeLineTotalsQ(l: any) {
   const qty = getLineQty(l);
   let baseUnit = baseUnitPriceQ(l);
   const addonsUnit = perUnitAddonsQ(l);
@@ -392,6 +412,23 @@ function ReceiptPage_Inner() {
   const customerName = order?.orderInfo?.customerName || null;
   const fullAddress  = fullAddressFrom(order);
 
+  // Envío mostrado para ticket
+  const deliveryFeeShown = useMemo(() => {
+    if (!order) return 0;
+    const dfFromTotals = Number(((order as any)?.totals?.deliveryFee) ?? 0);
+    if (Number.isFinite(dfFromTotals) && dfFromTotals) return dfFromTotals;
+    return Number(order.orderInfo?.deliveryOption?.price || 0);
+  }, [order]);
+
+  // Gran total mostrado
+  const grandTotalShown = useMemo(() => {
+    if (!order || !totals) return 0;
+    return Number.isFinite(order.orderTotal) ? Number(order.orderTotal) : Number(totals.total || 0);
+  }, [order, totals]);
+
+  // ➕ NUEVO: detectar pickup para mostrar identificador
+  const rawType = order?.orderInfo?.type?.toLowerCase?.();
+
   return (
     <>
       <style>{`
@@ -422,6 +459,9 @@ function ReceiptPage_Inner() {
         {order && totals && (
           <>
             <h1>{type === 'delivery' ? 'Delivery' : 'Dine-in'}</h1>
+            {/* ➕ Badge "Pickup" agregado sin cambiar el encabezado existente */}
+            {rawType === 'pickup' && <div className="muted" style={{ marginTop: 2 }}><span className="badge bg-dark-subtle text-dark">Pickup</span></div>}
+
             <div className="muted">#{order.orderNumber || order.id} · {toDate(order.createdAt ?? new Date()).toLocaleString()}</div>
             {table ? <div className="muted">Mesa: {table}</div> : null}
 
@@ -441,7 +481,7 @@ function ReceiptPage_Inner() {
             <div className="hr"></div>
 
             {lines.map((l, idx) => {
-              const { baseUnit, addonsUnit, lineTotal, qty } = safeLineTotalsQ(l, order, lines.length);
+              const { baseUnit, addonsUnit, lineTotal, qty } = safeLineTotalsQ(l);
               const name = getLineName(l);
 
               const groupsHtml: React.ReactNode[] = [];
@@ -507,11 +547,23 @@ function ReceiptPage_Inner() {
 
             <div className="hr"></div>
             <div className="row"><div>Subtotal</div><div>{fmtCurrency(totals.subtotal)}</div></div>
+
+            {/* ➕ Envío si es delivery */}
+            {type === 'delivery' && (
+              <div className="row">
+                <div>Envío{ order?.orderInfo?.deliveryOption?.title ? ` — ${order.orderInfo.deliveryOption.title}` : '' }</div>
+                <div>{fmtCurrency(deliveryFeeShown)}</div>
+              </div>
+            )}
+
             {totals.tax ? <div className="row"><div>Impuestos</div><div>{fmtCurrency(totals.tax)}</div></div> : null}
             {totals.serviceFee ? <div className="row"><div>Servicio</div><div>{fmtCurrency(totals.serviceFee)}</div></div> : null}
             {totals.discount ? <div className="row"><div>Descuento</div><div>-{fmtCurrency(totals.discount)}</div></div> : null}
-            {totals.tip ? <div className="row"><div>Propina</div><div>{fmtCurrency(totals.tip)}</div></div> : null}
-            <div className="row tot"><div>Total</div><div>{fmtCurrency(totals.total)}</div></div>
+
+            {/* Propina solo si aplica (normalmente dine-in/pickup) */}
+            {Number(totals.tip || 0) > 0 && <div className="row"><div>Propina</div><div>{fmtCurrency(totals.tip)}</div></div>}
+
+            <div className="row tot"><div>Gran total</div><div>{fmtCurrency(grandTotalShown)}</div></div>
 
             <div className="hr"></div>
             <div className="center muted">¡Gracias por su compra!</div>

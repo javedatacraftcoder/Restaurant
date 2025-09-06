@@ -1,3 +1,5 @@
+// src/lib/newcart/types.ts
+
 export type Addon = { name: string; price: number };
 export type OptionGroupItem = { id: string; name: string; priceDelta: number };
 export type OptionGroup = {

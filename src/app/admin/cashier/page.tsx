@@ -1,5 +1,4 @@
 // src/app/admin/cashier/page.tsx
-
 'use client';
 
 import { OnlyCashier } from "@/components/Only";
@@ -169,14 +168,32 @@ type OrderDoc = {
   items?: OrderItemLine[];
   lines?: OrderItemLine[];
   amounts?: Amounts;
-  totals?: { totalCents?: number; subtotalCents?: number; taxCents?: number; serviceFeeCents?: number; discountCents?: number };
+
+  // EXTENSIÓN: totals puede traer breakdown en cents ó en Q (checkout nuevo)
+  totals?: {
+    totalCents?: number; subtotalCents?: number; taxCents?: number; serviceFeeCents?: number; discountCents?: number;
+    subtotal?: number; deliveryFee?: number; tip?: number; currency?: string;
+  };
+
+  // EXTENSIÓN: gran total guardado por checkout nuevo
+  orderTotal?: number;
+
   tableNumber?: string | null;
   deliveryAddress?: string | null;
   notes?: string | null;
   createdAt?: any;
 
   // Además puede venir orderInfo desde Checkout
-  orderInfo?: { type?: 'dine-in' | 'delivery'; table?: string; notes?: string; address?: string; phone?: string } | null;
+  orderInfo?: {
+    type?: 'dine-in' | 'delivery' | 'pickup';
+    table?: string;
+    notes?: string;
+    address?: string;
+    phone?: string;
+    customerName?: string;
+    // NUEVO: opción de envío (checkout)
+    deliveryOption?: { title: string; description?: string; price: number } | null;
+  } | null;
 };
 
 const TitleMap: Record<StatusSnake, string> = {
@@ -358,17 +375,34 @@ function lineTotalQ(l: any): number {
 function preferredLines(o: OrderDoc): OrderItemLine[] {
   return (Array.isArray(o.items) && o.items.length ? o.items! : (Array.isArray(o.lines) ? o.lines! : [])) as OrderItemLine[];
 }
+
+/** 
+ * 🔄 Totales: prioriza el esquema NUEVO (orderTotal + totals{subtotal,deliveryFee,tip}),
+ * luego amounts/totals en cents, y finalmente suma de líneas.
+ */
 function computeOrderTotalsQ(o: OrderDoc) {
-  // 1) amounts directo
-  if (o?.amounts && Number.isFinite(o.amounts.total)) return {
-    subtotal: Number(o.amounts.subtotal || 0),
-    tax: Number(o.amounts.tax || 0),
-    serviceFee: Number(o.amounts.serviceFee || 0),
-    discount: Number(o.amounts.discount || 0),
-    tip: Number(o.amounts.tip || 0),
-    total: Number(o.amounts.total || 0),
-  };
-  // 2) cents → Q
+  // 0) Esquema nuevo (checkout)
+  if (o?.totals && (o.totals.subtotal !== undefined || o.totals.deliveryFee !== undefined || o.totals.tip !== undefined)) {
+    const subtotal = Number(o.totals.subtotal || 0);
+    const deliveryFee = Number((o.totals as any).deliveryFee || 0);
+    const tip = Number((o.totals as any).tip || 0);
+    const total = Number.isFinite(o.orderTotal) ? Number(o.orderTotal) : (subtotal + deliveryFee + tip);
+    return { subtotal, tax: 0, serviceFee: 0, discount: 0, tip, deliveryFee, total };
+  }
+
+  // 1) amounts (antiguo)
+  if (o?.amounts && Number.isFinite(o.amounts.total)) {
+    return {
+      subtotal: Number(o.amounts.subtotal || 0),
+      tax: Number(o.amounts.tax || 0),
+      serviceFee: Number(o.amounts.serviceFee || 0),
+      discount: Number(o.amounts.discount || 0),
+      tip: Number(o.amounts.tip || 0),
+      deliveryFee: 0,
+      total: Number(o.amounts.total || 0),
+    };
+  }
+  // 2) cents
   if (o?.totals && Number.isFinite(o.totals.totalCents)) {
     return {
       subtotal: centsToQ(o.totals.subtotalCents),
@@ -376,6 +410,7 @@ function computeOrderTotalsQ(o: OrderDoc) {
       serviceFee: centsToQ(o.totals.serviceFeeCents),
       discount: centsToQ(o.totals.discountCents),
       tip: Number(o.amounts?.tip || 0),
+      deliveryFee: 0,
       total: centsToQ(o.totals.totalCents) + Number(o.amounts?.tip || 0),
     };
   }
@@ -383,11 +418,11 @@ function computeOrderTotalsQ(o: OrderDoc) {
   const lines = preferredLines(o);
   const subtotal = lines.reduce((acc, l) => acc + lineTotalQ(l), 0);
   const tip = Number(o.amounts?.tip || 0);
-  return { subtotal, tax: 0, serviceFee: 0, discount: 0, tip, total: subtotal + tip };
+  return { subtotal, tax: 0, serviceFee: 0, discount: 0, tip, deliveryFee: 0, total: subtotal + tip };
 }
 
 /* ======= Helpers para mostrar precio unitario/subtotal línea ======= */
-function safeLineTotalsQ(l: any, order?: OrderDoc, linesCount?: number) {
+function safeLineTotalsQ(l: any) {
   const qty = getLineQty(l);
   let baseUnit = baseUnitPriceQ(l);
   const addonsUnit = perUnitAddonsQ(l);
@@ -429,7 +464,7 @@ function useCashierOrders(enabled: boolean, pollMs = 5000) {
       setError(null);
       if (!enabled) { setLoading(false); return; }
       const token = await getIdTokenSafe(false);
-      if (!token) { setLoading(false); setError('Debes iniciar sesión.'); return; }
+      if (!token) { setLoading:false; setError('Debes iniciar sesión.'); return; }
 
       const url = `/api/orders?statusIn=${encodeURIComponent(STATUS_IN)}&typeIn=${encodeURIComponent(TYPE_IN)}&limit=100`;
       const res = await apiFetch(url);
@@ -496,12 +531,25 @@ function OrderCard({
     : (o.type || (o.deliveryAddress ? 'delivery' : 'dine_in'));
   const lines = preferredLines(o);
 
+  // 🆕 Mostrar etiqueta 'pickup' si aplica (agrupación sigue igual)
+  const rawType = o.orderInfo?.type?.toLowerCase?.();
+  const uiType = rawType === 'pickup' ? 'pickup' : type;
+
+  // Envío mostrado: primero totals.deliveryFee, luego deliveryOption.price
+  const deliveryFeeShown =
+    type === 'delivery'
+      ? (Number.isFinite((totals as any)?.deliveryFee) ? Number((totals as any).deliveryFee) : Number(o.orderInfo?.deliveryOption?.price || 0))
+      : 0;
+
+  // Gran total mostrado: primero orderTotal, luego totals.total
+  const grandTotalShown = Number.isFinite(o.orderTotal) ? Number(o.orderTotal) : Number(totals.total || 0);
+
   return (
     <div className="card shadow-sm">
       <div className="card-header d-flex align-items-center justify-content-between">
         <div className="d-flex flex-column">
           <div className="fw-semibold">#{o.orderNumber || o.id}</div>
-          {(type === 'dine_in' && (o.orderInfo?.table || o.tableNumber)) && (
+          {(type !== 'delivery' && (o.orderInfo?.table || o.tableNumber)) && (
             <div className="fw-semibold">Mesa {o.orderInfo?.table || o.tableNumber}</div>
           )}
           <small className="text-muted">
@@ -509,7 +557,7 @@ function OrderCard({
           </small>
         </div>
         <div className="d-flex gap-2 align-items-center">
-          <span className="badge bg-outline-secondary text-dark">{type}</span>
+          <span className="badge bg-outline-secondary text-dark">{uiType}</span>
           <BadgeStatus s={o.status} />
         </div>
       </div>
@@ -523,7 +571,7 @@ function OrderCard({
         {/* Ítems y addons (con precios por línea) */}
         <div className="mb-2">
           {lines.map((l, idx) => {
-            const { baseUnit, addonsUnit, lineTotal, qty } = safeLineTotalsQ(l, o, lines.length);
+            const { baseUnit, addonsUnit, lineTotal, qty } = safeLineTotalsQ(l);
             const name = getLineName(l);
 
             const groupRows: React.ReactNode[] = [];
@@ -600,10 +648,40 @@ function OrderCard({
           })}
         </div>
 
-        {/* Totales */}
-        <div className="d-flex justify-content-between align-items-center">
+        {/* ➕ Desglose (nuevo) — igual a Checkout */}
+        <div className="mt-2">
+          <div className="d-flex justify-content-between">
+            <div>Subtotal</div>
+            <div className="fw-semibold">{fmtCurrency(totals.subtotal)}</div>
+          </div>
+
+          {type === 'delivery' && (
+            <div className="d-flex justify-content-between">
+              <div>
+                Envío{ o.orderInfo?.deliveryOption?.title ? ` — ${o.orderInfo.deliveryOption.title}` : '' }
+              </div>
+              <div className="fw-semibold">{fmtCurrency(deliveryFeeShown)}</div>
+            </div>
+          )}
+
+          {type !== 'delivery' && Number(totals.tip || 0) > 0 && (
+            <div className="d-flex justify-content-between">
+              <div>Propina</div>
+              <div className="fw-semibold">{fmtCurrency(totals.tip)}</div>
+            </div>
+          )}
+
+          <hr />
+          <div className="d-flex justify-content-between">
+            <div className="fw-semibold">Gran total</div>
+            <div className="fw-bold">{fmtCurrency(grandTotalShown)}</div>
+          </div>
+        </div>
+
+        {/* (Existente) línea compacta — se conserva */}
+        <div className="d-flex justify-content-between align-items-center mt-2">
           <div className="small">
-            Total: <span className="fw-semibold">{fmtCurrency(totals.total)}</span>
+            Total: <span className="fw-semibold">{fmtCurrency(grandTotalShown)}</span>
             {totals.tip ? <span className="text-muted"> · propina {fmtCurrency(totals.tip)}</span> : null}
           </div>
 
@@ -647,7 +725,7 @@ function CashierPage_Inner() {
     }
   };
 
-  // separar por tipo para columnas
+  // separar por tipo para columnas (pickup cae en dine_in)
   const dineIn = orders.filter(o => {
     const t = (o.orderInfo?.type?.toLowerCase?.() === 'delivery') ? 'delivery' : (o.type || (o.deliveryAddress ? 'delivery' : 'dine_in'));
     return t === 'dine_in';

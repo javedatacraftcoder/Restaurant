@@ -1,0 +1,285 @@
+// src/app/admin/delivery-options/page.tsx
+'use client';
+
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  getFirestore,
+  collection,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
+  serverTimestamp,
+  onSnapshot,
+  query,
+  orderBy,
+} from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
+
+type DeliveryOption = {
+  id: string;
+  title: string;
+  description?: string;
+  price: number;       // GTQ
+  isActive: boolean;
+  sortOrder?: number;
+  createdAt?: any;
+  updatedAt?: any;
+};
+
+function fmtQ(n?: number) {
+  const v = Number.isFinite(Number(n)) ? Number(n) : 0;
+  try {
+    return new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(v);
+  } catch {
+    return `Q ${v.toFixed(2)}`;
+  }
+}
+
+export default function AdminDeliveryOptionsPage() {
+  const db = getFirestore();
+  const [list, setList] = useState<DeliveryOption[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [price, setPrice] = useState<number>(0);
+  const [isActive, setIsActive] = useState<boolean>(true);
+  const [sortOrder, setSortOrder] = useState<number>(0);
+
+  useEffect(() => {
+    const qRef = query(collection(db, 'deliveryOptions'), orderBy('sortOrder', 'asc'));
+    const unsub = onSnapshot(qRef, (snap) => {
+      const arr: DeliveryOption[] = snap.docs.map((d) => {
+        const raw = d.data() as any;
+        return {
+          id: d.id,
+          title: String(raw.title ?? ''),
+          description: raw.description ? String(raw.description) : undefined,
+          price: Number(raw.price ?? 0),
+          isActive: Boolean(raw.isActive ?? true),
+          sortOrder: Number.isFinite(raw.sortOrder) ? Number(raw.sortOrder) : undefined,
+          createdAt: raw.createdAt,
+          updatedAt: raw.updatedAt,
+        };
+      });
+      setList(arr);
+      setLoading(false);
+    });
+    return () => unsub();
+  }, [db]);
+
+  async function onCreate(e: React.FormEvent) {
+    e.preventDefault();
+    try {
+      await addDoc(collection(db, 'deliveryOptions'), {
+        title: title.trim(),
+        description: description.trim() || '',
+        price: Number(price || 0),
+        isActive: Boolean(isActive),
+        sortOrder: Number(sortOrder || 0),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      setTitle('');
+      setDescription('');
+      setPrice(0);
+      setIsActive(true);
+      setSortOrder(0);
+      alert('Opción creada');
+    } catch (e) {
+      console.error(e);
+      alert('No se pudo crear la opción');
+    }
+  }
+
+  async function onUpdate(it: DeliveryOption) {
+    try {
+      await updateDoc(doc(db, 'deliveryOptions', it.id), {
+        title: it.title.trim(),
+        description: it.description?.trim() || '',
+        price: Number(it.price || 0),
+        isActive: Boolean(it.isActive),
+        sortOrder: Number(it.sortOrder || 0),
+        updatedAt: serverTimestamp(),
+      });
+      alert('Opción actualizada');
+    } catch (e) {
+      console.error(e);
+      alert('No se pudo actualizar');
+    }
+  }
+
+  async function onDelete(id: string) {
+    if (!confirm('¿Eliminar esta opción de envío?')) return;
+    try {
+      await deleteDoc(doc(db, 'deliveryOptions', id));
+      alert('Eliminado');
+    } catch (e) {
+      console.error(e);
+      alert('No se pudo eliminar');
+    }
+  }
+
+  return (
+    <div className="container py-4">
+      <h1 className="h4 mb-3">Opciones de Envío</h1>
+
+      {/* Crear nueva */}
+      <div className="card border-0 shadow-sm mb-4">
+        <div className="card-header">
+          <div className="fw-semibold">Crear opción</div>
+        </div>
+        <form className="card-body" onSubmit={onCreate}>
+          <div className="row g-3">
+            <div className="col-md-4">
+              <label className="form-label">Título</label>
+              <input className="form-control" value={title} onChange={(e) => setTitle(e.target.value)} required />
+            </div>
+            <div className="col-md-4">
+              <label className="form-label">Descripción</label>
+              <input className="form-control" value={description} onChange={(e) => setDescription(e.target.value)} />
+            </div>
+            <div className="col-md-2">
+              <label className="form-label">Precio</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                className="form-control"
+                value={price}
+                onChange={(e) => setPrice(Number(e.target.value))}
+                required
+              />
+            </div>
+            <div className="col-md-1">
+              <label className="form-label">Activo</label>
+              <div className="form-check mt-2">
+                <input
+                  type="checkbox"
+                  className="form-check-input"
+                  checked={isActive}
+                  onChange={(e) => setIsActive(e.target.checked)}
+                />
+              </div>
+            </div>
+            <div className="col-md-1">
+              <label className="form-label">Orden</label>
+              <input
+                type="number"
+                className="form-control"
+                value={sortOrder}
+                onChange={(e) => setSortOrder(Number(e.target.value))}
+              />
+            </div>
+          </div>
+          <div className="mt-3">
+            <button className="btn btn-primary" type="submit">
+              Guardar
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {/* Listado y edición */}
+      <div className="card border-0 shadow-sm">
+        <div className="card-header">
+          <div className="fw-semibold">Listado</div>
+        </div>
+        <div className="card-body">
+          {loading ? (
+            <div>Cargando…</div>
+          ) : list.length === 0 ? (
+            <div className="text-muted">Sin registros.</div>
+          ) : (
+            <div className="table-responsive">
+              <table className="table align-middle">
+                <thead>
+                  <tr>
+                    <th style={{ width: 220 }}>Título</th>
+                    <th>Descripción</th>
+                    <th style={{ width: 120 }}>Precio</th>
+                    <th style={{ width: 80 }}>Activo</th>
+                    <th style={{ width: 100 }}>Orden</th>
+                    <th style={{ width: 180 }} className="text-end">
+                      Acciones
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {list.map((it, idx) => (
+                    <tr key={it.id}>
+                      <td>
+                        <input
+                          className="form-control"
+                          value={it.title}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setList((arr) => arr.map((x, i) => (i === idx ? { ...x, title: v } : x)));
+                          }}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          className="form-control"
+                          value={it.description || ''}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setList((arr) => arr.map((x, i) => (i === idx ? { ...x, description: v } : x)));
+                          }}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          className="form-control"
+                          value={it.price}
+                          onChange={(e) => {
+                            const v = Number(e.target.value);
+                            setList((arr) => arr.map((x, i) => (i === idx ? { ...x, price: Number.isFinite(v) ? v : 0 } : x)));
+                          }}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="checkbox"
+                          className="form-check-input"
+                          checked={!!it.isActive}
+                          onChange={(e) => {
+                            const v = e.target.checked;
+                            setList((arr) => arr.map((x, i) => (i === idx ? { ...x, isActive: v } : x)));
+                          }}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          className="form-control"
+                          value={it.sortOrder ?? 0}
+                          onChange={(e) => {
+                            const v = Number(e.target.value);
+                            setList((arr) => arr.map((x, i) => (i === idx ? { ...x, sortOrder: Number.isFinite(v) ? v : 0 } : x)));
+                          }}
+                        />
+                      </td>
+                      <td className="text-end">
+                        <button className="btn btn-sm btn-outline-primary me-2" onClick={() => onUpdate(it)}>
+                          Guardar
+                        </button>
+                        <button className="btn btn-sm btn-outline-danger" onClick={() => onDelete(it.id)}>
+                          Eliminar
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
