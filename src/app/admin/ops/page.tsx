@@ -24,7 +24,15 @@ function useOrdersForOps(db: ReturnType<typeof getFirestore>) {
     const unsub = onSnapshot(q, (snap) => {
       const list: OpsOrder[] = snap.docs.map((d) => {
         const data = d.data() as any;
-        return {
+
+        // 🆕 Derivar bandera de pago PayPal (AGREGADO, no rompe el tipo)
+        const ok = (s: any) => ['paid','captured','completed','succeeded','approved'].includes(String(s || '').toLowerCase());
+        const paidByPaypal =
+          (data?.payment?.provider === 'paypal' && ok(data?.payment?.status)) ||
+          (Array.isArray(data?.payments) && data.payments.some((p: any) => p?.provider === 'paypal' && ok(p?.status))) ||
+          (String(data?.paymentProvider || '').toLowerCase() === 'paypal' && ok(data?.paymentStatus));
+
+        return ({
           id: d.id,
           number: data?.number,
           status: data?.status,
@@ -33,7 +41,10 @@ function useOrdersForOps(db: ReturnType<typeof getFirestore>) {
           orderInfo: data?.orderInfo,
           createdAt: data?.createdAt,
           updatedAt: data?.updatedAt,
-        };
+
+          // Campo extra solo para la UI de esta página:
+          paidByPaypal,
+        } as any);
       });
       setRows(list);
     });
@@ -132,7 +143,15 @@ export default function AdminOpsPage() {
         <div className="row g-3">
           {filtered.map((ord) => (
             <div className="col-12 col-md-6 col-xl-4" key={ord.id}>
-              <OrderCardOps db={db} order={ord} />
+              {/* 🆕 Wrapper con badge superpuesto si pagó con PayPal */}
+              <div className="position-relative">
+                {(ord as any).paidByPaypal && (
+                  <span className="badge bg-info text-dark position-absolute" style={{ right: 8, top: 8, zIndex: 2 }}>
+                    PayPal
+                  </span>
+                )}
+                <OrderCardOps db={db} order={ord} />
+              </div>
             </div>
           ))}
         </div>

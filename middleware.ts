@@ -1,5 +1,17 @@
 // middleware.ts (reforzado: admin & delivery)
 import { NextResponse, type NextRequest } from "next/server";
+import { addPaypalToCsp } from '@/lib/security/csp'; // ajusta el alias si no usas "@/"
+
+// --- 👇 AGREGADO: helper que fusiona la CSP existente con orígenes de PayPal ---
+function withPaypalCsp(res: NextResponse) {
+  try {
+    const currentCsp = res.headers.get('Content-Security-Policy') || '';
+    res.headers.set('Content-Security-Policy', addPaypalToCsp(currentCsp));
+  } catch {
+    // no-op: nunca romper la respuesta por CSP
+  }
+  return res;
+}
 
 // --- Ajusta aquí si tus cookies tienen nombres distintos ---
 const SESSION_COOKIE_KEYS = ["session", "idToken", "auth"]; // cualquiera de estas indica sesión
@@ -31,11 +43,13 @@ function isPath(pathname: string, prefix: string) {
   return pathname === prefix || pathname.startsWith(prefix + "/");
 }
 
+// --- 👇 MODIFICADO (solo agrega wrapper): ahora la redirección incluye CSP PayPal ---
 function redirectToLogin(req: NextRequest) {
   const url = req.nextUrl.clone();
   url.pathname = "/login";
   url.searchParams.set("next", req.nextUrl.pathname + (req.nextUrl.search || ""));
-  return NextResponse.redirect(url);
+  const res = NextResponse.redirect(url);
+  return withPaypalCsp(res);
 }
 
 export function middleware(req: NextRequest) {
@@ -54,19 +68,21 @@ export function middleware(req: NextRequest) {
     pathname.startsWith("/logout") ||
     pathname.startsWith("/api/auth")
   ) {
-    return NextResponse.next();
+    // 👇 AGREGADO: aplicar CSP PayPal también en respuestas "next"
+    return withPaypalCsp(NextResponse.next());
   }
 
   const wantsAdmin = isPath(pathname, "/admin");
   const wantsDelivery = isPath(pathname, "/delivery");
 
   if (!wantsAdmin && !wantsDelivery) {
-    return NextResponse.next();
+    // 👇 AGREGADO
+    return withPaypalCsp(NextResponse.next());
   }
 
   // --- Requiere sesión ---
   if (!hasSessionCookie(req)) {
-    return redirectToLogin(req);
+    return redirectToLogin(req); // ya incluye CSP PayPal
   }
 
   const role = getRole(req);
@@ -75,41 +91,47 @@ export function middleware(req: NextRequest) {
   if (wantsDelivery) {
     // Solo delivery (o admin como override) pueden entrar a /delivery
     if (role === "delivery" || role === "admin") {
-      return NextResponse.next();
+      // 👇 AGREGADO
+      return withPaypalCsp(NextResponse.next());
     }
     // Sesión pero sin rol válido para delivery -> home
     const url = req.nextUrl.clone();
     url.pathname = "/";
-    return NextResponse.redirect(url);
+    const res = NextResponse.redirect(url);
+    return withPaypalCsp(res);
   }
 
   if (wantsAdmin) {
     // Admin total acceso
-    if (role === "admin") return NextResponse.next();
+    if (role === "admin") return withPaypalCsp(NextResponse.next());
 
     // Kitchen solo /admin/kitchen
     if (role === "kitchen") {
-      if (isPath(pathname, "/admin/kitchen")) return NextResponse.next();
+      if (isPath(pathname, "/admin/kitchen")) return withPaypalCsp(NextResponse.next());
       const url = req.nextUrl.clone();
       url.pathname = "/";
-      return NextResponse.redirect(url);
+      const res = NextResponse.redirect(url);
+      return withPaypalCsp(res);
     }
 
     // Cashier solo /admin/cashier
     if (role === "cashier") {
-      if (isPath(pathname, "/admin/cashier")) return NextResponse.next();
+      if (isPath(pathname, "/admin/cashier")) return withPaypalCsp(NextResponse.next());
       const url = req.nextUrl.clone();
       url.pathname = "/";
-      return NextResponse.redirect(url);
+      const res = NextResponse.redirect(url);
+      return withPaypalCsp(res);
     }
 
     // Otros roles (incluido delivery) no entran a /admin
     const url = req.nextUrl.clone();
     url.pathname = "/";
-    return NextResponse.redirect(url);
+    const res = NextResponse.redirect(url);
+    return withPaypalCsp(res);
   }
 
-  return NextResponse.next();
+  // 👇 AGREGADO
+  return withPaypalCsp(NextResponse.next());
 }
 
 export const config = {

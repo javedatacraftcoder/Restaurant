@@ -13,6 +13,8 @@
     "set-admin": "tsx scripts/setAdminRole.ts"
   },
   "dependencies": {
+    "@stripe/react-stripe-js": "^4.0.0",
+    "@stripe/stripe-js": "^7.9.0",
     "@upstash/ratelimit": "^2.0.6",
     "@upstash/redis": "^1.35.3",
     "bootstrap": "^5.3.7",
@@ -20,9 +22,10 @@
     "date-fns": "^4.1.0",
     "firebase": "^12.1.0",
     "firebase-admin": "^13.4.0",
-    "next": "15.1.6",
+    "next": "^15.5.2",
     "react": "19.1.0",
     "react-dom": "19.1.0",
+    "stripe": "^18.5.0",
     "zod": "^4.0.17"
   },
   "devDependencies": {

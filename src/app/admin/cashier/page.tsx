@@ -194,6 +194,22 @@ type OrderDoc = {
     // NUEVO: opción de envío (checkout)
     deliveryOption?: { title: string; description?: string; price: number } | null;
   } | null;
+
+  // 🆕 Campos opcionales de pago (AGREGADO para badge PayPal)
+  payment?: {
+    provider?: string;   // 'paypal' | 'cash' | 'stripe'...
+    status?: string;     // 'paid' | 'captured' | 'completed' | ...
+    id?: string;
+    amount?: number;
+    currency?: string;
+  } | null;
+  payments?: Array<{
+    provider?: string;
+    status?: string;
+    id?: string;
+    amount?: number;
+    currency?: string;
+  }>;
 };
 
 const TitleMap: Record<StatusSnake, string> = {
@@ -442,6 +458,17 @@ function safeLineTotalsQ(l: any) {
 }
 
 /* ===================================================
+   🆕 Detector de pago PayPal (AGREGADO)
+=================================================== */
+function isPaypalPaid(o: any): boolean {
+  const ok = (s: any) => ['paid','captured','completed','succeeded','approved'].includes(String(s || '').toLowerCase());
+  if (o?.payment?.provider === 'paypal' && ok(o?.payment?.status)) return true;
+  if (Array.isArray(o?.payments) && o.payments.some((p: any) => p?.provider === 'paypal' && ok(p?.status))) return true;
+  if (String(o?.paymentProvider || '').toLowerCase() === 'paypal' && ok(o?.paymentStatus)) return true;
+  return false;
+}
+
+/* ===================================================
    Data fetching de órdenes (solo kitchen_done → …)
 =================================================== */
 const STATUS_IN = [
@@ -545,7 +572,14 @@ function OrderCard({
   const grandTotalShown = Number.isFinite(o.orderTotal) ? Number(o.orderTotal) : Number(totals.total || 0);
 
   return (
-    <div className="card shadow-sm">
+    <div className="card shadow-sm position-relative">
+      {/* 🆕 Badge PayPal (AGREGADO) */}
+      {isPaypalPaid(o) && (
+        <span className="badge bg-info text-dark position-absolute" style={{ right: 8, top: 8, zIndex: 2 }}>
+          PayPal
+        </span>
+      )}
+
       <div className="card-header d-flex align-items-center justify-content-between">
         <div className="d-flex flex-column">
           <div className="fw-semibold">#{o.orderNumber || o.id}</div>
