@@ -19,17 +19,10 @@ import {
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 
-// Stripe (cliente)
-import { loadStripe } from '@stripe/stripe-js';
-import { Elements, CardElement, useElements, useStripe } from '@stripe/react-stripe-js';
-
 type PickupInfo = { type: 'pickup'; phone: string; notes?: string };
 type DeliveryOption = { id: string; title: string; description?: string; price: number; isActive?: boolean; sortOrder?: number; };
 type Addr = { line1?: string; city?: string; country?: string; zip?: string; notes?: string };
-type PayMethod = 'cash' | 'stripe' | 'paypal';
-
-const STRIPE_PK = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
-const stripePromise = STRIPE_PK ? loadStripe(STRIPE_PK) : null;
+type PayMethod = 'cash' | 'paypal';
 
 function fmtQ(n?: number) {
   const v = Number.isFinite(Number(n)) ? Number(n) : 0;
@@ -48,7 +41,7 @@ function undefToNullDeep<T>(value: T): T {
   return (value === undefined ? (null as any) : value) as T;
 }
 
-/** ------- Hook compartido con lógica de checkout (sin Stripe hooks) ------- */
+/** ------- Hook compartido con lógica de checkout (sin Stripe) ------- */
 function useCheckoutState() {
   const cart = useNewCart();
   const subtotal = useMemo(() => cart.computeGrandTotal(), [cart, cart.items]);
@@ -305,16 +298,14 @@ function useCheckoutState() {
   } as const;
 }
 
-/** ------- UI compartida (botones/inputs y resumen) ------- */
+/** ------- UI (efectivo + PayPal, sin Stripe) ------- */
 function CheckoutUI(props: {
   state: ReturnType<typeof useCheckoutState>['state'],
   actions: ReturnType<typeof useCheckoutState>['actions'],
   onSubmitCash: () => Promise<void>,
-  onSubmitStripe?: () => Promise<void>, // opcional
-  paypalActiveHint?: string,             // texto si falta config
-  stripeActiveHint?: string,             // texto si falta config
+  paypalActiveHint?: string,
 }) {
-  const { state, actions, onSubmitCash, onSubmitStripe, paypalActiveHint, stripeActiveHint } = props;
+  const { state, actions, onSubmitCash, paypalActiveHint } = props;
   const {
     mode, table, notes, address, phone, customerName,
     homeAddr, officeAddr, addressLabel, deliveryOptions, selectedDeliveryOptionId,
@@ -328,14 +319,13 @@ function CheckoutUI(props: {
 
   const disableSubmit =
     saving ||
-    // carrito vacío lo valida el padre antes
     (mode === 'dine-in' ? !table.trim() :
      mode === 'delivery' ? !(address && phone && selectedDeliveryOptionId) :
      !phone);
 
   return (
     <div className="container py-4">
-      <h1 className="h4 mb-3">Checkout (tarjetas listo)</h1>
+      <h1 className="h4 mb-3">Checkout</h1>
 
       <div className="row g-4">
         <div className="col-12 col-lg-7">
@@ -455,12 +445,6 @@ function CheckoutUI(props: {
                   </label>
 
                   <label className="d-flex align-items-center gap-2">
-                    <input type="radio" name="pm" className="form-check-input" checked={payMethod==='stripe'} onChange={() => setPayMethod('stripe')} />
-                    <span>Tarjeta (Stripe)</span>
-                    {stripeActiveHint && <span className="small text-muted ms-2">{stripeActiveHint}</span>}
-                  </label>
-
-                  <label className="d-flex align-items-center gap-2">
                     <input type="radio" name="pm" className="form-check-input" checked={payMethod==='paypal'} onChange={() => setPayMethod('paypal')} />
                     <span>PayPal</span>
                     {paypalActiveHint && <span className="small text-muted ms-2">{paypalActiveHint}</span>}
@@ -468,17 +452,7 @@ function CheckoutUI(props: {
                 </div>
               </div>
 
-              {/* Stripe CardElement si se usa Stripe */}
-              {payMethod === 'stripe' && onSubmitStripe && (
-                <div className="mb-3">
-                  <label className="form-label">Tarjeta</label>
-                  <div className="form-control" style={{ paddingTop: 10 }}>
-                    <CardElement options={{ hidePostalCode: true }} />
-                  </div>
-                </div>
-              )}
-
-              {/* PayPal Buttons: el contenedor siempre está si el método es PayPal; lo llena el efecto del padre */}
+              {/* PayPal Buttons */}
               {payMethod === 'paypal' && (
                 <div className="mb-3">
                   <div id="paypal-buttons-container" />
@@ -494,10 +468,6 @@ function CheckoutUI(props: {
                   disabled={disableSubmit}
                   onClick={() => {
                     if (payMethod === 'cash') return onSubmitCash();
-                    if (payMethod === 'stripe') {
-                      if (onSubmitStripe) return onSubmitStripe();
-                      return alert('Configura Stripe para pagar con tarjeta.');
-                    }
                     if (payMethod === 'paypal') {
                       alert('Usa el botón PayPal para continuar.');
                     }
@@ -537,9 +507,6 @@ function CheckoutUI(props: {
                 </div>
               )}
 
-              {/* Ítems */}
-              {/* (idéntico al que ya tenías) */}
-
               {/* Totales */}
               <div className="mt-3">
                 <div className="d-flex justify-content-between"><div>Subtotal</div><div className="fw-semibold">{fmtQ(subtotal)}</div></div>
@@ -570,7 +537,7 @@ function CheckoutUI(props: {
   );
 }
 
-/** ------- Variante SIN Stripe hooks (efectivo + PayPal) ------- */
+/** ------- Variante (efectivo + PayPal) ------- */
 function CheckoutCoreNoStripe() {
   const { state, actions, helpers } = useCheckoutState();
   const { cart, db, router, buildOrderPayload } = helpers;
@@ -703,203 +670,12 @@ function CheckoutCoreNoStripe() {
       state={state}
       actions={actions}
       onSubmitCash={onSubmitCash}
-      stripeActiveHint="(Configura NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)"
       paypalActiveHint={!process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ? '(Configura NEXT_PUBLIC_PAYPAL_CLIENT_ID)' : undefined}
     />
   );
 }
 
-/** ------- Variante CON Stripe hooks (dentro de <Elements>) ------- */
-function CheckoutCoreStripe() {
-  const { state, actions, helpers } = useCheckoutState();
-  const { cart, buildOrderPayload, router } = helpers;
-
-  const stripe = useStripe();
-  const elements = useElements();
-
-  // Efectivo
-  const onSubmitCash = async () => {
-    const payload = await buildOrderPayload();
-    (payload as any).payment = {
-      provider: 'cash',
-      status: 'pending',
-      amount: payload.orderTotal,
-      currency: (payload as any).totals?.currency || 'GTQ',
-      createdAt: serverTimestamp(),
-    };
-    try {
-      actions.setSaving(true);
-      const ref = await addDoc(collection(helpers.db, 'orders'), payload);
-      cart.clear();
-      router.push('/cart-new');
-      alert('¡Orden creada (efectivo)! ID: ' + ref.id);
-    } catch (e) {
-      console.error(e);
-      alert('No se pudo crear la orden.');
-    } finally {
-      actions.setSaving(false);
-    }
-  };
-
-  //Stripe
-  const onSubmitStripe = async () => {
-    if (!stripe || !elements) {
-      alert('Stripe no está listo todavía. Intenta de nuevo.');
-      return;
-    }
-    const card = elements.getElement(CardElement);
-    if (!card) { alert('No hay CardElement.'); return; }
-
-    const draft = await buildOrderPayload();
-
-    try {
-      actions.setSaving(true);
-      const res = await fetch('/api/pay/stripe/create-intent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderDraft: draft }),
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => null);
-        throw new Error(j?.error || 'No se pudo crear el PaymentIntent.');
-      }
-      const { clientSecret } = await res.json();
-      const confirm = await stripe.confirmCardPayment(clientSecret, { payment_method: { card } });
-      if (confirm.error) {
-        alert(`Pago rechazado: ${confirm.error.message}`);
-        return;
-      }
-      // El webhook creará la orden final en Firestore
-      cart.clear();
-      router.push('/cart-new');
-      alert('Pago procesado. La orden se confirmará en breve.');
-    } catch (e: any) {
-      console.error(e);
-      alert(e?.message || 'Error procesando pago.');
-    } finally {
-      actions.setSaving(false);
-    }
-  };
-
-  // PayPal (igual que en NoStripe)
-  const [paypalReady, setPaypalReady] = useState(false);
-  const paypalButtonsRef = useRef<any>(null);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const cid = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID;
-    if (!cid) return;
-    if ((window as any).paypal) { setPaypalReady(true); return; }
-    const s = document.createElement('script');
-    const currency = process.env.NEXT_PUBLIC_PAY_CURRENCY || 'GTQ';
-    s.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(cid)}&currency=${encodeURIComponent(currency)}`;
-    s.async = true;
-    s.onload = () => setPaypalReady(true);
-    s.onerror = () => console.warn('No se pudo cargar PayPal SDK.');
-    document.body.appendChild(s);
-  }, []);
-
-  useEffect(() => {
-    if (state.payMethod !== 'paypal') return;
-    if (!paypalReady) return;
-    const paypal = (window as any).paypal;
-    if (!paypal?.Buttons) return;
-
-    let destroyed = false;
-    const renderButtons = async () => {
-      const el = document.getElementById('paypal-buttons-container');
-      if (!el) return;
-
-      // Cierra instancia previa antes de re-render
-      if (paypalButtonsRef.current?.close) {
-        try { await paypalButtonsRef.current.close(); } catch {}
-        paypalButtonsRef.current = null;
-      }
-
-      const btns = paypal.Buttons({
-        createOrder: async () => {
-          const draft = await buildOrderPayload();
-          const res = await fetch('/api/pay/paypal/create-order', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ orderDraft: draft }),
-          });
-          if (!res.ok) {
-            const j = await res.json().catch(() => null);
-            throw new Error(j?.error || 'No se pudo crear orden PayPal.');
-          }
-          const { paypalOrderId } = await res.json();
-          return paypalOrderId;
-        },
-        onApprove: async (data: any) => {
-          try {
-            const res = await fetch('/api/pay/paypal/capture', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ paypalOrderId: data.orderID }),
-            });
-            if (!res.ok) {
-              const j = await res.json().catch(() => null);
-              throw new Error(j?.error || 'No se pudo capturar PayPal.');
-            }
-
-            // Cierra el botón ANTES de navegar
-            if (paypalButtonsRef.current?.close) {
-              try { await paypalButtonsRef.current.close(); } catch {}
-              paypalButtonsRef.current = null;
-            }
-
-            cart.clear();
-            router.push('/cart-new');
-            alert('Pago PayPal capturado. La orden se confirmará en breve.');
-          } catch (e: any) {
-            alert(e?.message || 'Error capturando PayPal.');
-          }
-        },
-        onError: (err: any) => {
-          console.error('PayPal error:', err);
-          alert('Error en PayPal.');
-        },
-        style: { layout: 'vertical', shape: 'rect', label: 'paypal' },
-      });
-
-      if (!destroyed) {
-        paypalButtonsRef.current = btns;
-        await btns.render('#paypal-buttons-container');
-      }
-    };
-
-    renderButtons();
-    return () => {
-      destroyed = true;
-      if (paypalButtonsRef.current?.close) {
-        try { paypalButtonsRef.current.close(); } catch {}
-        paypalButtonsRef.current = null;
-      }
-    };
-  }, [state.payMethod, paypalReady, buildOrderPayload, cart, router]);
-
-  return (
-    <CheckoutUI
-      state={state}
-      actions={actions}
-      onSubmitCash={onSubmitCash}
-      onSubmitStripe={onSubmitStripe}
-      stripeActiveHint={undefined}
-      paypalActiveHint={!process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ? '(Configura NEXT_PUBLIC_PAYPAL_CLIENT_ID)' : undefined}
-    />
-  );
-}
-
-/** ------- Export por defecto: elige variante según haya PK de Stripe ------- */
+/** ------- Export por defecto (solo efectivo + PayPal) ------- */
 export default function CheckoutCardsPage() {
-  if (stripePromise) {
-    return (
-      <Elements stripe={stripePromise}>
-        <CheckoutCoreStripe />
-      </Elements>
-    );
-  }
-  // Sin Stripe PK: no renders hooks de Stripe, y no sale el error de contexto
   return <CheckoutCoreNoStripe />;
 }
