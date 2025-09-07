@@ -1,3 +1,4 @@
+// src/app/adming/roles/page.tsx
 'use client';
 
 import { OnlyAdmin } from "@/components/Only";

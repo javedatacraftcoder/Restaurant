@@ -1,15 +1,20 @@
 // src/lib/firebase/client.ts
 import { initializeApp, getApps, getApp } from "firebase/app";
 import {
+  initializeAuth,
   getAuth,
   GoogleAuthProvider,
+  indexedDBLocalPersistence,
   browserLocalPersistence,
-  setPersistence,
+  inMemoryPersistence,
+  browserPopupRedirectResolver,
+  setPersistence,               // 👈 añade esto
+  type Auth,
 } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN!, // incluye localhost en Authorized domains
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN!,
   projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID!,
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET!,
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID!,
@@ -18,13 +23,34 @@ const firebaseConfig = {
 
 export const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-export const auth = getAuth(app);
+let _auth: Auth;
+if (typeof window !== "undefined") {
+  try {
+    _auth = getAuth(app);
+  } catch {
+    _auth = initializeAuth(app, {
+      persistence: [
+        indexedDBLocalPersistence,
+        browserLocalPersistence,
+        inMemoryPersistence,
+      ],
+      popupRedirectResolver: browserPopupRedirectResolver,
+    });
+  }
+  _auth.useDeviceLanguage?.();
+} else {
+  _auth = getAuth(app);
+}
 
-// Persistencia explícita (evita rarezas del popup en dev)
-setPersistence(auth, browserLocalPersistence);
+export const auth = _auth;
 
-// Proveedor de Google
 export const googleProvider = new GoogleAuthProvider();
-// Scopes opcionales:
-// googleProvider.addScope("profile");
-// googleProvider.addScope("email");
+googleProvider.addScope("email");
+googleProvider.addScope("profile");
+googleProvider.setCustomParameters({ prompt: "select_account" });
+
+// 👇 Helper: asegura persistencia LOCAL antes de redirect y de leer el resultado
+export async function ensureLocalPersistence() {
+  if (typeof window === "undefined") return;
+  await setPersistence(auth, browserLocalPersistence);
+}

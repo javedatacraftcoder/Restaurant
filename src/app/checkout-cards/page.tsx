@@ -65,7 +65,7 @@ function useCheckoutState() {
   const router = useRouter();
   const db = getFirestore();
 
-  // Cargar datos del customer
+  // Cargar datos del customer (direcciones y teléfono) — COPIADO DEL CHECKOUT VIEJO
   useEffect(() => {
     const run = async () => {
       try {
@@ -115,7 +115,7 @@ function useCheckoutState() {
     setAddress(src?.line1 ? String(src.line1) : '');
   }
 
-  // Cargar opciones de envío
+  // Cargar opciones de envío (idéntico al viejo)
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
@@ -216,6 +216,7 @@ function useCheckoutState() {
     const auth = getAuth();
     const u = auth.currentUser;
 
+    // 👇 Bloque de dirección COPIADO del viejo (snapshot + label + notes)
     let orderInfo: any = meta;
     if (mode === 'delivery') {
       const selectedAddr = addressLabel === 'home' ? homeAddr
@@ -279,7 +280,7 @@ function useCheckoutState() {
   }, [
     address, addressLabel, customerName, deliveryFee, deliveryOptions,
     grandTotal, homeAddr, mode, notes, officeAddr, phone, selectedDeliveryOptionId,
-    subtotal, table, tip, // cart.items se usa en map; depende de referencia estable de cart
+    subtotal, table, tip, // cart.items se usa en map
     // eslint-disable-next-line react-hooks/exhaustive-deps
   ]);
 
@@ -294,7 +295,7 @@ function useCheckoutState() {
       setSelectedDeliveryOptionId, setTip, setTipEdited, setSaving, setPayMethod,
       onChangeAddressLabel,
     },
-    helpers: { buildOrderPayload, cart, db, router },
+  helpers: { buildOrderPayload, cart, db, router },
   } as const;
 }
 

@@ -26,15 +26,57 @@ export default function LoginPage() {
 }
 
 // --------- componente real ----------
-import { FormEvent, useEffect, useRef, useState, useMemo } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import {
-  signInWithEmailAndPassword,
-  signInWithPopup,
-  signInWithRedirect,
-} from "firebase/auth";
-import { auth, googleProvider } from "@/lib/firebase/client";
+import { signInWithEmailAndPassword, getIdTokenResult } from "firebase/auth";
+import { auth } from "@/lib/firebase/client";
 import { useAuth } from "@/app/providers";
+import { pickRouteByRole } from "@/lib/role-routes"; // 👈 agregado
+
+// Helpers
+type AppRole = "admin" | "kitchen" | "cashier" | "waiter" | "delivery" | "customer";
+
+function computeAppRole(claims: Record<string, any> | null | undefined): AppRole {
+  if (!claims) return "customer";
+  if (claims.admin) return "admin";
+  if (claims.kitchen) return "kitchen";
+  if (claims.cashier) return "cashier";
+  if (claims.waiter) return "waiter";
+  if (claims.delivery) return "delivery";
+  const r = String(claims.role || "").toLowerCase();
+  if (r === "admin" || r === "kitchen" || r === "cashier" || r === "waiter" || r === "delivery") {
+    return r as AppRole;
+  }
+  return "customer";
+}
+
+function setCookie(name: string, value: string) {
+  const base = `${name}=${encodeURIComponent(value)}; Path=/; SameSite=Lax`;
+  const extra = typeof window !== "undefined" && window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = base + extra;
+}
+
+async function syncRoleCookiesAndRedirect(params: URLSearchParams, router: ReturnType<typeof useRouter>) {
+  const u = auth.currentUser;
+  if (!u) return;
+
+  // Lee claims del ID token actual
+  const tok = await getIdTokenResult(u, true);
+  const role = computeAppRole(tok.claims);
+
+  // Cookies que usa tu middleware
+  setCookie("session", "1");
+  setCookie("appRole", role);
+
+  // Destino:
+  // - si no tiene rol → respeta ?next= o /app
+  // - si tiene rol → usa mapeo fino de pickRouteByRole
+  const requested = params.get("next") || "/app";
+  const pathByRole = pickRouteByRole({}, tok.claims as any);
+  const dest = role === "customer" ? requested : pathByRole;
+
+  router.replace(dest);
+}
 
 function LoginInner() {
   const router = useRouter();
@@ -47,16 +89,19 @@ function LoginInner() {
   const [err, setErr] = useState<string | null>(null);
   const inFlightRef = useRef(false);
 
-  const forceRedirect = useMemo(
-    () => process.env.NEXT_PUBLIC_AUTH_USE_REDIRECT === "true",
-    []
-  );
-
+  // Si ya hay sesión al entrar a /login, sincroniza cookies+rol y redirige
   useEffect(() => {
-    if (!loading && user) {
-      const next = params.get("next") || "/";
-      router.replace(next);
-    }
+    (async () => {
+      if (!loading && user) {
+        try {
+          await syncRoleCookiesAndRedirect(params, router);
+        } catch {
+          // fallback mínimo si algo falla leyendo claims
+          const requested = params.get("next") || "/app";
+          router.replace(requested);
+        }
+      }
+    })();
   }, [loading, user, params, router]);
 
   async function onSubmit(e: FormEvent) {
@@ -67,8 +112,7 @@ function LoginInner() {
     inFlightRef.current = true;
     try {
       await signInWithEmailAndPassword(auth, email.trim(), password);
-      const next = params.get("next") || "/";
-      router.replace(next);
+      await syncRoleCookiesAndRedirect(params, router);
     } catch (e: any) {
       setErr(e?.message || "No se pudo iniciar sesión.");
     } finally {
@@ -77,40 +121,9 @@ function LoginInner() {
     }
   }
 
-  async function loginGoogle() {
-    if (busy || inFlightRef.current) return;
-    setErr(null);
-    setBusy(true);
-    inFlightRef.current = true;
-    try {
-      if (forceRedirect) {
-        await signInWithRedirect(auth, googleProvider);
-        return;
-      }
-      await signInWithPopup(auth, googleProvider);
-      const next = params.get("next") || "/";
-      router.replace(next);
-    } catch (e: any) {
-      const code = e?.code || "";
-      const shouldFallback =
-        code === "auth/popup-closed-by-user" ||
-        code === "auth/cancelled-popup-request" ||
-        code === "auth/popup-blocked";
-      if (shouldFallback) {
-        try {
-          await signInWithRedirect(auth, googleProvider);
-          return;
-        } catch (er: any) {
-          setErr(er?.message || "No se pudo iniciar con Google (redirect).");
-        }
-      } else {
-        setErr(e?.message || "No se pudo iniciar con Google.");
-      }
-    } finally {
-      inFlightRef.current = false;
-      setBusy(false);
-    }
-  }
+  // Google solo para clientes (no afecta roles/admin)
+  const nextParam = encodeURIComponent(params.get("next") || "/app");
+  const hrefGoogle = `/auth/google/start?next=${nextParam}`;
 
   return (
     <main className="container py-4" style={{ maxWidth: 480 }}>
@@ -150,20 +163,10 @@ function LoginInner() {
 
       <div className="text-center my-3">— o —</div>
 
-      <button
-        type="button"
-        onClick={loginGoogle}
-        className="btn btn-outline-secondary w-100"
-        disabled={busy}
-      >
-        {busy
-          ? forceRedirect
-            ? "Redirigiendo a Google..."
-            : "Abriendo Google..."
-          : forceRedirect
-          ? "Entrar con Google (redirect)"
-          : "Entrar con Google"}
-      </button>
+      {/* Google: solo clientes */}
+      <a href={hrefGoogle} className="btn btn-outline-secondary w-100">
+        Login con Google
+      </a>
 
       <p className="text-center mt-3 mb-0">
         ¿No tienes cuenta?{" "}

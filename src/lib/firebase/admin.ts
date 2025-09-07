@@ -1,4 +1,5 @@
 // src/lib/firebase/admin.ts
+import "server-only";
 import * as admin from 'firebase-admin';
 
 /**
