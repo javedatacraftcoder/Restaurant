@@ -2,54 +2,20 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import AutoRedirect from '@/components/AutoRedirect';
+import HomeNavbar from '@/components/HomeNavbar';
 
 export const metadata = {
-  title: 'Restaurante',
+  title: 'OrderCraft',
   description: 'Ordena tus platillos favoritos',
 };
 
 export default function HomePage() {
   return (
     <>
-      {/* Mantengo tu auto-redirect */}
       <AutoRedirect />
 
-      {/* NAVBAR */}
-      <nav className="navbar navbar-expand-md navbar-light bg-light border-bottom">
-        <div className="container">
-          <Link className="navbar-brand d-flex align-items-center gap-2" href="/">
-            <Image src="/logo-mark.svg" alt="Logo" width={28} height={28} />
-            <span className="fw-semibold">Restaurante</span>
-          </Link>
-
-          <button
-            className="navbar-toggler"
-            type="button"
-            data-bs-toggle="collapse"
-            data-bs-target="#mainNav"
-            aria-controls="mainNav"
-            aria-expanded="false"
-            aria-label="Toggle navigation"
-          >
-            <span className="navbar-toggler-icon"></span>
-          </button>
-
-          <div className="collapse navbar-collapse" id="mainNav">
-            <ul className="navbar-nav me-auto mb-2 mb-md-0">
-              <li className="nav-item">
-                <Link className="nav-link" href="/menu">Menú</Link>
-              </li>
-              <li className="nav-item">
-                <Link className="nav-link" href="/promos">Promociones</Link>
-              </li>
-            </ul>
-            <div className="d-flex gap-2">
-              <Link className="btn btn-outline-primary btn-sm" href="/login">Sign in</Link>
-              <Link className="btn btn-primary btn-sm" href="/account">Login</Link>
-            </div>
-          </div>
-        </div>
-      </nav>
+      {/* Navbar propio del Home controlado por React (no depende de Bootstrap JS) */}
+      <HomeNavbar />
 
       {/* HERO */}
       <header className="bg-white">
@@ -68,7 +34,6 @@ export default function HomePage() {
 
             <div className="col-12 col-md-6">
               <div className="position-relative rounded-4 overflow-hidden shadow-sm">
-                {/* hero principal (usa tus .png existentes) */}
                 <Image
                   src="/hero-1.png"
                   alt="Plato principal del restaurante"
@@ -79,8 +44,6 @@ export default function HomePage() {
                   style={{ objectFit: 'cover', maxHeight: 420 }}
                   priority
                 />
-                {/* hero secundario superpuesto */}
-                
               </div>
             </div>
           </div>

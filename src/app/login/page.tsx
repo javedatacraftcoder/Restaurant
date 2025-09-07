@@ -2,6 +2,7 @@
 "use client";
 
 import { Suspense } from "react";
+import AuthNavbar from "@/components/AuthNavbar";
 
 export const dynamic = "force-dynamic";
 
@@ -14,15 +15,17 @@ function Fallback() {
 }
 
 export default function LoginPage() {
-  // Envolvemos el componente que usa useSearchParams en Suspense
   return (
-    <Suspense fallback={<Fallback />}>
-      <LoginInner />
-    </Suspense>
+    <>
+      <AuthNavbar />
+      <Suspense fallback={<Fallback />}>
+        <LoginInner />
+      </Suspense>
+    </>
   );
 }
 
-// --------- componente real que usa useSearchParams ----------
+// --------- componente real ----------
 import { FormEvent, useEffect, useRef, useState, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -42,17 +45,13 @@ function LoginInner() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-
-  // Evita dobles llamadas (popups duplicados)
   const inFlightRef = useRef(false);
 
-  // Switch opcional: forzar redirect (útil si popup falla en tu navegador)
   const forceRedirect = useMemo(
     () => process.env.NEXT_PUBLIC_AUTH_USE_REDIRECT === "true",
     []
   );
 
-  // Si ya hay sesión, nos vamos (desde "/" tu AutoRedirect manda por rol)
   useEffect(() => {
     if (!loading && user) {
       const next = params.get("next") || "/";
@@ -83,14 +82,11 @@ function LoginInner() {
     setErr(null);
     setBusy(true);
     inFlightRef.current = true;
-
     try {
       if (forceRedirect) {
         await signInWithRedirect(auth, googleProvider);
-        return; // continúa al volver del redirect
+        return;
       }
-
-      // Camino rápido: popup
       await signInWithPopup(auth, googleProvider);
       const next = params.get("next") || "/";
       router.replace(next);
@@ -100,7 +96,6 @@ function LoginInner() {
         code === "auth/popup-closed-by-user" ||
         code === "auth/cancelled-popup-request" ||
         code === "auth/popup-blocked";
-
       if (shouldFallback) {
         try {
           await signInWithRedirect(auth, googleProvider);
@@ -120,7 +115,6 @@ function LoginInner() {
   return (
     <main className="container py-4" style={{ maxWidth: 480 }}>
       <h1 className="h3 mb-3 text-center">Iniciar sesión</h1>
-
       <form onSubmit={onSubmit} className="card p-3 border-0 shadow-sm">
         <div className="mb-3">
           <label className="form-label">Correo</label>
@@ -135,7 +129,6 @@ function LoginInner() {
             disabled={busy}
           />
         </div>
-
         <div className="mb-3">
           <label className="form-label">Contraseña</label>
           <input
@@ -149,11 +142,9 @@ function LoginInner() {
             disabled={busy}
           />
         </div>
-
         <button className="btn btn-primary w-100" disabled={busy}>
           {busy ? "Entrando..." : "Entrar"}
         </button>
-
         {err && <p className="text-danger mt-3 mb-0">{err}</p>}
       </form>
 
@@ -166,13 +157,19 @@ function LoginInner() {
         disabled={busy}
       >
         {busy
-          ? (forceRedirect ? "Redirigiendo a Google..." : "Abriendo Google...")
-          : (forceRedirect ? "Entrar con Google (redirect)" : "Entrar con Google")}
+          ? forceRedirect
+            ? "Redirigiendo a Google..."
+            : "Abriendo Google..."
+          : forceRedirect
+          ? "Entrar con Google (redirect)"
+          : "Entrar con Google"}
       </button>
 
       <p className="text-center mt-3 mb-0">
         ¿No tienes cuenta?{" "}
-        <a href="/accounts" className="link-primary">Regístrate</a>
+        <a href="/accounts" className="link-primary">
+          Regístrate
+        </a>
       </p>
     </main>
   );

@@ -6,7 +6,7 @@ import './globals.css';
 import { NewCartProvider } from '@/lib/newcart/context';
 
 export const metadata: Metadata = {
-  title: 'Restaurante',
+  title: 'OrderCraft',
   description: 'App de restaurante',
 };
 
