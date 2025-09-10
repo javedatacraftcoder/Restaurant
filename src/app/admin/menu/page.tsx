@@ -227,6 +227,7 @@ function AdminMenuPage_Inner() {
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
   const [groups, setGroups] = useState<OptionGroup[]>([]);
   const [items, setItems] = useState<MenuItem[]>([]);
+  const [optionItems, setOptionItems] = useState<OptionItem[]>([]); // suscripción a option-items
 
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -258,10 +259,10 @@ function AdminMenuPage_Inner() {
   const [imageMeta, setImageMeta] = useState<{ url?: string | null; path?: string | null }>({});
   const [itemDescription, setItemDescription] = useState<string>('');
 
-  // ---- NUEVO: estado UI para crear grupos de opciones inline ----
+  // ---- UI para crear grupos inline (opcional) ----
   const [showOGCreator, setShowOGCreator] = useState(false);
 
-  // ---- NUEVO: estado del formulario de grupo ----
+  // ---- formulario de grupo (creación) ----
   const [ogName, setOgName] = useState('');
   const [ogType, setOgType] = useState<'single' | 'multi'>('single');
   const [ogRequired, setOgRequired] = useState(false);
@@ -270,7 +271,7 @@ function AdminMenuPage_Inner() {
   const [ogActive, setOgActive] = useState(true);
   const [ogSortOrder, setOgSortOrder] = useState<number | ''>('');
 
-  // ---- NUEVO: estado del listado de option-items a crear con el grupo ----
+  // ---- option-items al crear un grupo ----
   const [oiRows, setOiRows] = useState<Array<{
     name: string;
     priceDelta: string;
@@ -279,37 +280,162 @@ function AdminMenuPage_Inner() {
     sortOrder: string;
   }>>([]);
 
-  const resetItemForm = () => {
-    setItemEditingId(null);
-    setItemName('');
-    setItemPrice('');
-    setItemCatId('');
-    setItemSubId('');
-    setItemActive(true);
-    setItemOptionGroupIds([]);
-    setAddons([]);
-    setImageFile(null);
-    setImagePreview(null);
-    setImageMeta({});
-    setItemDescription('');
+  // ---- Editor de Option-Items de grupos existentes (SECCIÓN INDEPENDIENTE) ----
+  const [editGroupId, setEditGroupId] = useState<string>(''); // dropdown para elegir grupo a editar
+  const optionItemsOfEditGroup = useMemo(
+    () => optionItems.filter((oi) => editGroupId && oi.groupId === editGroupId),
+    [optionItems, editGroupId]
+  );
+
+  const [editRows, setEditRows] = useState<Array<{
+    id?: string;
+    groupId: string;
+    name: string;
+    priceDelta?: number;
+    isDefault?: boolean;
+    active?: boolean;
+    sortOrder?: number;
+    _dirty?: boolean;
+    _isNew?: boolean;
+  }>>([]);
+
+  // min/max visibles para el grupo seleccionado
+  const [editGroupMin, setEditGroupMin] = useState<number | ''>('');
+  const [editGroupMax, setEditGroupMax] = useState<number | ''>('');
+
+  // Sincroniza filas editables y límites cuando cambia el grupo
+  useEffect(() => {
+    if (!editGroupId) {
+      setEditRows([]);
+      setEditGroupMin('');
+      setEditGroupMax('');
+      return;
+    }
+    const rows = optionItemsOfEditGroup
+      .sort((a, b) => (Number(a.sortOrder || 0) - Number(b.sortOrder || 0)) || String(a.name||'').localeCompare(String(b.name||'')))
+      .map((oi) => ({
+        id: oi.id,
+        groupId: oi.groupId,
+        name: oi.name || '',
+        priceDelta: Number(oi.priceDelta || 0),
+        isDefault: !!oi.isDefault,
+        active: oi.active !== false,
+        sortOrder: typeof oi.sortOrder === 'number' ? oi.sortOrder : undefined,
+        _dirty: false,
+        _isNew: false,
+      }));
+    setEditRows(rows);
+
+    const g = groups.find(x => x.id === editGroupId);
+    setEditGroupMin(typeof g?.min === 'number' ? g!.min : '');
+    setEditGroupMax(typeof g?.max === 'number' ? g!.max : '');
+  }, [editGroupId, optionItemsOfEditGroup, groups]);
+
+  const markRow = (idx: number, patch: Partial<typeof editRows[number]>) => {
+    setEditRows((rows) => {
+      const copy = [...rows];
+      copy[idx] = { ...copy[idx], ...patch, _dirty: true };
+      return copy;
+    });
   };
 
-  const resetOGForm = () => {
-    setOgName('');
-    setOgType('single');
-    setOgRequired(false);
-    setOgMin('');
-    setOgMax('');
-    setOgActive(true);
-    setOgSortOrder('');
-    setOiRows([]);
+  const addNewEditRow = () => {
+    if (!editGroupId) { alert('Selecciona un grupo'); return; }
+    setEditRows((rows) => [
+      ...rows,
+      {
+        groupId: editGroupId,
+        name: '',
+        priceDelta: 0,
+        isDefault: false,
+        active: true,
+        sortOrder: undefined,
+        _dirty: true,
+        _isNew: true,
+      }
+    ]);
+  };
+
+  const saveEditRow = async (idx: number) => {
+    const r = editRows[idx];
+    const payload: Partial<OptionItem> = {
+      groupId: r.groupId,
+      name: (r.name || '').trim(),
+      priceDelta: Number(r.priceDelta || 0),
+      isDefault: !!r.isDefault,
+      active: r.active !== false,
+      sortOrder: typeof r.sortOrder === 'number' ? r.sortOrder : undefined,
+    };
+    if (!payload.name) { alert('Nombre requerido'); return; }
+
+    try {
+      if (r._isNew) {
+        const newId = await createDoc('option-items', payload);
+        setEditRows((rows) => {
+          const copy = [...rows];
+          copy[idx] = { ...r, id: newId, _dirty: false, _isNew: false };
+          return copy;
+        });
+      } else {
+        if (!r.id) { alert('Falta ID de la opción'); return; }
+        await updateDocById('option-items', r.id, payload);
+        setEditRows((rows) => {
+          const copy = [...rows];
+          copy[idx] = { ...r, _dirty: false, _isNew: false };
+          return copy;
+        });
+      }
+    } catch (e: any) {
+      alert(e?.message || 'No se pudo guardar la opción');
+    }
+  };
+
+  const deleteEditRow = async (idx: number) => {
+    const r = editRows[idx];
+    if (r._isNew && !r.id) {
+      setEditRows((rows) => rows.filter((_, i) => i !== idx));
+      return;
+    }
+    if (!r.id) return;
+    if (!confirm('¿Eliminar esta opción?')) return;
+    try {
+      await deleteDocById('option-items', r.id);
+      setEditRows((rows) => rows.filter((_, i) => i !== idx));
+    } catch (e: any) {
+      alert(e?.message || 'No se pudo eliminar la opción');
+    }
+  };
+
+  const saveGroupConstraints = async () => {
+    const g = groups.find(x => x.id === editGroupId);
+    if (!g) return;
+
+    let min = editGroupMin === '' ? undefined : Number(editGroupMin);
+    let max = editGroupMax === '' ? undefined : Number(editGroupMax);
+
+    if (typeof min === 'number' && min < 0) min = 0;
+    if (typeof min === 'number' && typeof max === 'number' && min > max) {
+      alert('min no puede ser mayor que max');
+      return;
+    }
+    if (g.type === 'single') {
+      if (typeof max === 'number' && max !== 1) max = 1;
+      if (g.required && (min ?? 0) < 1) min = 1;
+    }
+
+    try {
+      await updateDocById('option-groups', g.id, { min, max });
+      alert('Límites guardados.');
+    } catch (e: any) {
+      alert(e?.message || 'No se pudo guardar min/max');
+    }
   };
 
   /* =============================
      Suscripciones en tiempo real
      ============================= */
   useEffect(() => {
-    let unsubCats: any, unsubSubs: any, unsubGrps: any, unsubItems: any;
+    let unsubCats: any, unsubSubs: any, unsubGrps: any, unsubItems: any, unsubOptionItems: any;
 
     (async () => {
       if (!(user && isAdmin)) {
@@ -384,6 +510,16 @@ function AdminMenuPage_Inner() {
             setItems(rows);
           }
         );
+
+        // Option items
+        unsubOptionItems = onSnapshot(
+          collection(db, 'option-items'),
+          (snap) => {
+            const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() } as any));
+            setOptionItems(rows);
+          }
+        );
+
       } catch (e: any) {
         setErr(e?.message || 'Error cargando datos');
       } finally {
@@ -396,6 +532,7 @@ function AdminMenuPage_Inner() {
       try { unsubSubs && unsubSubs(); } catch {}
       try { unsubGrps && unsubGrps(); } catch {}
       try { unsubItems && unsubItems(); } catch {}
+      try { unsubOptionItems && unsubOptionItems(); } catch {}
     };
   }, [user, isAdmin]);
 
@@ -521,7 +658,6 @@ function AdminMenuPage_Inner() {
     }
   };
 
-  // Subir imagen subcategoría
   const onUploadSubcategoryImage = async (subId: string, file: File | null) => {
     if (!file) return;
     try {
@@ -545,10 +681,14 @@ function AdminMenuPage_Inner() {
     () => subcategories.filter((s) => !itemCatId || s.categoryId === itemCatId),
     [subcategories, itemCatId]
   );
-  const filteredSubcats = useMemo(
-    () => subcategories.filter((s) => !filterCat || s.categoryId === filterCat),
-    [subcategories, filterCat]
-  );
+
+  const itemsFiltered = useMemo(() => {
+    return items.filter((mi) => {
+      if (filterCat && mi.categoryId !== filterCat) return false;
+      if (filterSub && mi.subcategoryId !== filterSub) return false;
+      return true;
+    });
+  }, [items, filterCat, filterSub]);
 
   const onPickImage = (f: File | null) => {
     setImageFile(f);
@@ -593,7 +733,20 @@ function AdminMenuPage_Inner() {
     try {
       await deleteDocById('menuItems', id);
       if (imgPath) await deleteImageByPath(imgPath);
-      if (itemEditingId === id) resetItemForm();
+      if (itemEditingId === id) {
+        setItemEditingId(null);
+        setItemName('');
+        setItemPrice('');
+        setItemCatId('');
+        setItemSubId('');
+        setItemActive(true);
+        setItemOptionGroupIds([]);
+        setAddons([]);
+        setImageFile(null);
+        setImagePreview(null);
+        setImageMeta({});
+        setItemDescription('');
+      }
     } catch (e: any) {
       alert(e?.message || 'No se pudo eliminar plato');
     }
@@ -635,97 +788,32 @@ function AdminMenuPage_Inner() {
         await updateDocById('menuItems', id, { imageUrl: up.url, imagePath: up.path });
       }
 
-      resetItemForm();
+      // reset
+      setItemEditingId(null);
+      setItemName('');
+      setItemPrice('');
+      setItemCatId('');
+      setItemSubId('');
+      setItemActive(true);
+      setItemOptionGroupIds([]);
+      setAddons([]);
+      setImageFile(null);
+      setImagePreview(null);
+      setImageMeta({});
+      setItemDescription('');
+
       alert('Plato guardado.');
     } catch (e: any) {
       alert(e?.message || 'No se pudo guardar plato');
     }
   };
 
-  // Listado de platos filtrado
-  const itemsFiltered = useMemo(() => {
-    return items.filter((mi) => {
-      if (filterCat && mi.categoryId !== filterCat) return false;
-      if (filterSub && mi.subcategoryId !== filterSub) return false;
-      return true;
-    });
-  }, [items, filterCat, filterSub]);
-
   /* =============================
-     NUEVO: Crear Option Group + Option Items
+     UI helpers
      ============================= */
-  const addOiRow = () => {
-    setOiRows((rows) => [
-      ...rows,
-      { name: '', priceDelta: '', isDefault: false, active: true, sortOrder: '' },
-    ]);
-  };
-  const changeOiRow = (idx: number, field: keyof (typeof oiRows)[number], value: string | boolean) => {
-    setOiRows((rows) => {
-      const copy = rows.slice();
-      const r = { ...copy[idx] } as any;
-      r[field] = value;
-      copy[idx] = r;
-      return copy;
-    });
-  };
-  const removeOiRow = (idx: number) => {
-    setOiRows((rows) => rows.filter((_, i) => i !== idx));
-  };
-
-  const createOptionGroupWithItems = async () => {
-    try {
-      const name = ogName.trim();
-      if (!name) { alert('Nombre de grupo requerido'); return; }
-
-      // Normalizar min/max según type/required
-      let min = (ogMin === '' ? undefined : Number(ogMin));
-      let max = (ogMax === '' ? undefined : Number(ogMax));
-      if (ogType === 'single') {
-        max = 1;
-        if (ogRequired) min = 1; else min = (min ?? 0);
-      } else {
-        if (typeof min === 'number' && min < 0) min = 0;
-        if (typeof max === 'number' && max < 1) max = 1;
-        if (typeof min === 'number' && typeof max === 'number' && min > max) {
-          alert('min no puede ser mayor que max');
-          return;
-        }
-      }
-
-      const groupPayload: Partial<OptionGroup> = {
-        name,
-        type: ogType,
-        required: ogRequired,
-        min,
-        max,
-        active: ogActive,
-        sortOrder: (ogSortOrder === '' ? undefined : Number(ogSortOrder)),
-      };
-
-      const groupId = await createDoc('option-groups', groupPayload);
-
-      // Crear cada option-item
-      const rowsValid = oiRows.filter(r => r.name.trim());
-      for (const r of rowsValid) {
-        const itemPayload: Partial<OptionItem> = {
-          groupId,
-          name: r.name.trim(),
-          priceDelta: r.priceDelta === '' ? 0 : Number(r.priceDelta),
-          isDefault: !!r.isDefault,
-          active: !!r.active,
-          sortOrder: r.sortOrder === '' ? undefined : Number(r.sortOrder),
-        };
-        await createDoc('option-items', itemPayload);
-      }
-
-      // Mostrar feedback y limpiar
-      resetOGForm();
-      setShowOGCreator(false);
-      alert('Grupo y opciones creados. Ya puedes marcar el grupo en el plato.');
-    } catch (e: any) {
-      alert(e?.message || 'No se pudo crear el grupo/opciones');
-    }
+  const scrollToGroups = () => {
+    const el = document.getElementById('option-groups-editor');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   /* =========================================================================
@@ -766,24 +854,25 @@ function AdminMenuPage_Inner() {
               <hr />
               <div className="list-group">
                 {categories.map((c) => (
-                  <div key={c.id} className="list-group-item d-flex justify-content-between align-items-center">
-                    <div className="d-flex align-items-center gap-2">
-                      <div style={{ width: 48, height: 48, background: '#f8f9fa', borderRadius: 6, overflow: 'hidden' }}>
+                  <div key={c.id} className="list-group-item d-flex justify-content-between align-items-start gap-3 flex-wrap">
+                    <div className="d-flex align-items-center gap-2 flex-grow-1 me-2" style={{ minWidth: 0 }}>
+                      <div style={{ width: 48, height: 48, background: '#f8f9fa', borderRadius: 6, overflow: 'hidden', flex: '0 0 auto' }}>
                         {c.imageUrl ? (
                           <img src={c.imageUrl} alt={c.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         ) : (
                           <div className="d-flex h-100 w-100 align-items-center justify-content-center text-muted" style={{ fontSize: 10 }}>Sin img</div>
                         )}
                       </div>
-                      <div>
-                        <div className="fw-semibold">{c.name}</div>
-                        <div className="text-muted small">
+                      <div className="text-truncate">
+                        <div className="fw-semibold text-truncate">{c.name}</div>
+                        <div className="text-muted small text-truncate">
                           slug: {c.slug || '—'} · orden: {c.sortOrder ?? '—'} · activo: {String(c.isActive ?? true)}
                         </div>
                       </div>
                     </div>
-                    <div className="btn-group btn-group-sm">
-                      <label className="btn btn-outline-primary">
+                    {/* Botones en columna */}
+                    <div className="d-flex flex-column gap-2 align-items-stretch" style={{ minWidth: 140 }}>
+                      <label className="btn btn-outline-primary btn-sm w-100 m-0">
                         Imagen
                         <input
                           type="file"
@@ -796,8 +885,8 @@ function AdminMenuPage_Inner() {
                           }}
                         />
                       </label>
-                      <button className="btn btn-outline-secondary" onClick={() => onEditCategory(c)}>Editar</button>
-                      <button className="btn btn-outline-danger" onClick={() => onDeleteCategory(c.id)}>Eliminar</button>
+                      <button className="btn btn-outline-secondary btn-sm w-100" onClick={() => onEditCategory(c)}>Editar</button>
+                      <button className="btn btn-outline-danger btn-sm w-100" onClick={() => onDeleteCategory(c.id)}>Eliminar</button>
                     </div>
                   </div>
                 ))}
@@ -840,38 +929,37 @@ function AdminMenuPage_Inner() {
                 {subcategories.map((s) => {
                   const catName = categories.find((c) => c.id === s.categoryId)?.name || '—';
                   return (
-                    <div key={s.id} className="list-group-item">
-                      <div className="d-flex justify-content-between align-items-center">
-                        <div className="d-flex align-items-center gap-2">
-                          <div style={{ width: 44, height: 44, background: '#f8f9fa', borderRadius: 6, overflow: 'hidden' }}>
-                            {s.imageUrl ? (
-                              <img src={s.imageUrl} alt={s.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                            ) : (
-                              <div className="d-flex h-100 w-100 align-items-center justify-content-center text-muted" style={{ fontSize: 10 }}>Sin img</div>
-                            )}
-                          </div>
-                          <div>
-                            <div className="fw-semibold">{s.name}</div>
-                            <div className="text-muted small">Categoría: {catName} · orden: {s.sortOrder ?? '—'}</div>
-                          </div>
+                    <div key={s.id} className="list-group-item d-flex justify-content-between align-items-start gap-3 flex-wrap">
+                      <div className="d-flex align-items-center gap-2 flex-grow-1 me-2" style={{ minWidth: 0 }}>
+                        <div style={{ width: 44, height: 44, background: '#f8f9fa', borderRadius: 6, overflow: 'hidden', flex: '0 0 auto' }}>
+                          {s.imageUrl ? (
+                            <img src={s.imageUrl} alt={s.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          ) : (
+                            <div className="d-flex h-100 w-100 align-items-center justify-content-center text-muted" style={{ fontSize: 10 }}>Sin img</div>
+                          )}
                         </div>
-                        <div className="btn-group btn-group-sm">
-                          <label className="btn btn-outline-primary">
-                            Imagen
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="d-none"
-                              onChange={(e) => {
-                                const f = e.target.files?.[0] || null;
-                                onUploadSubcategoryImage(s.id, f);
-                                e.currentTarget.value = "";
-                              }}
-                            />
-                          </label>
-                          <button className="btn btn-outline-secondary" onClick={() => onEditSubcategory(s)}>Editar</button>
-                          <button className="btn btn-outline-danger" onClick={() => onDeleteSubcategory(s.id)}>Eliminar</button>
+                        <div className="text-truncate">
+                          <div className="fw-semibold text-truncate">{s.name}</div>
+                          <div className="text-muted small text-truncate">Categoría: {catName} · orden: {s.sortOrder ?? '—'}</div>
                         </div>
+                      </div>
+                      {/* Botones en columna */}
+                      <div className="d-flex flex-column gap-2 align-items-stretch" style={{ minWidth: 140 }}>
+                        <label className="btn btn-outline-primary btn-sm w-100 m-0">
+                          Imagen
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="d-none"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0] || null;
+                              onUploadSubcategoryImage(s.id, f);
+                              e.currentTarget.value = "";
+                            }}
+                          />
+                        </label>
+                        <button className="btn btn-outline-secondary btn-sm w-100" onClick={() => onEditSubcategory(s)}>Editar</button>
+                        <button className="btn btn-outline-danger btn-sm w-100" onClick={() => onDeleteSubcategory(s.id)}>Eliminar</button>
                       </div>
                     </div>
                   );
@@ -885,7 +973,12 @@ function AdminMenuPage_Inner() {
         {/* ===================== Columna 3: Crear / Editar Plato ===================== */}
         <div className="col-12 col-lg-6">
           <div className="card">
-            <div className="card-header">{itemEditingId ? 'Editar plato' : 'Crear plato'}</div>
+            <div className="card-header d-flex align-items-center justify-content-between">
+              <span>{itemEditingId ? 'Editar plato' : 'Crear plato'}</span>
+              <button type="button" className="btn btn-sm btn-outline-secondary" onClick={scrollToGroups}>
+                Editar grupos
+              </button>
+            </div>
             <div className="card-body">
               <div className="row g-3">
                 <div className="col-12 col-md-6">
@@ -899,9 +992,7 @@ function AdminMenuPage_Inner() {
                   <label className="form-label">Subcategoría</label>
                   <select className="form-select" value={itemSubId} onChange={(e) => setItemSubId(e.target.value)} disabled={!itemCatId}>
                     <option value="">{itemCatId ? 'Selecciona subcategoría…' : 'Selecciona una categoría primero'}</option>
-                    {subcategories
-                      .filter((s) => !itemCatId || s.categoryId === itemCatId)
-                      .map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    {subcategories.filter((s) => !itemCatId || s.categoryId === itemCatId).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
                 </div>
 
@@ -924,7 +1015,6 @@ function AdminMenuPage_Inner() {
                   <label className="form-label">Grupos de opciones (option-groups)</label>
                   <div className="d-flex align-items-center justify-content-between mb-2">
                     <small className="text-muted">Marca los grupos aplicables a este plato.</small>
-                    {/* NUEVO botón para mostrar creador inline */}
                     <button
                       type="button"
                       className="btn btn-sm btn-outline-primary"
@@ -960,7 +1050,7 @@ function AdminMenuPage_Inner() {
                   </div>
                 </div>
 
-                {/* ===================== NUEVO: Creador inline de Option-Group + Option-Items ===================== */}
+                {/* Creador inline de Option-Group + Option-Items */}
                 {showOGCreator && (
                   <div className="col-12">
                     <div className="border rounded p-3">
@@ -1026,7 +1116,12 @@ function AdminMenuPage_Inner() {
                       <hr className="my-3" />
                       <div className="d-flex align-items-center justify-content-between mb-2">
                         <strong>Opciones de este grupo</strong>
-                        <button className="btn btn-sm btn-outline-primary" onClick={addOiRow}>+ Agregar opción</button>
+                        <button
+                          className="btn btn-sm btn-outline-primary"
+                          onClick={() => setOiRows((rows) => [...rows, { name: '', priceDelta: '', isDefault: false, active: true, sortOrder: '' }])}
+                        >
+                          + Agregar opción
+                        </button>
                       </div>
 
                       {oiRows.length === 0 && <div className="text-muted small">Aún no has agregado opciones.</div>}
@@ -1035,47 +1130,122 @@ function AdminMenuPage_Inner() {
                         <div key={idx} className="row g-2 align-items-end mb-2">
                           <div className="col-12 col-md-4">
                             <label className="form-label">Nombre</label>
-                            <input className="form-control form-control-sm" value={r.name} onChange={(e) => changeOiRow(idx, 'name', e.target.value)} />
+                            <input className="form-control" value={r.name} onChange={(e) => {
+                              const val = e.target.value;
+                              setOiRows((rows) => rows.map((x, i) => i === idx ? { ...x, name: val } : x));
+                            }} />
                           </div>
                           <div className="col-6 col-md-2">
                             <label className="form-label">Δ Precio</label>
                             <input
                               type="number"
                               step="0.01"
-                              className="form-control form-control-sm"
+                              className="form-control"
                               value={r.priceDelta}
-                              onChange={(e) => changeOiRow(idx, 'priceDelta', e.target.value)}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setOiRows((rows) => rows.map((x, i) => i === idx ? { ...x, priceDelta: val } : x));
+                              }}
                             />
                           </div>
                           <div className="col-6 col-md-2">
                             <label className="form-label">Orden</label>
                             <input
                               type="number"
-                              className="form-control form-control-sm"
+                              className="form-control"
                               value={r.sortOrder}
-                              onChange={(e) => changeOiRow(idx, 'sortOrder', e.target.value)}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setOiRows((rows) => rows.map((x, i) => i === idx ? { ...x, sortOrder: val } : x));
+                              }}
                             />
                           </div>
                           <div className="col-6 col-md-2">
                             <div className="form-check">
-                              <input className="form-check-input" type="checkbox" id={`oiDef_${idx}`} checked={r.isDefault} onChange={(e) => changeOiRow(idx, 'isDefault', e.target.checked)} />
+                              <input className="form-check-input" type="checkbox" id={`oiDef_${idx}`} checked={r.isDefault} onChange={(e) => {
+                                const val = e.target.checked;
+                                setOiRows((rows) => rows.map((x, i) => i === idx ? { ...x, isDefault: val } : x));
+                              }} />
                               <label className="form-check-label" htmlFor={`oiDef_${idx}`}>Default</label>
                             </div>
                           </div>
                           <div className="col-6 col-md-2">
                             <div className="form-check">
-                              <input className="form-check-input" type="checkbox" id={`oiAct_${idx}`} checked={r.active} onChange={(e) => changeOiRow(idx, 'active', e.target.checked)} />
+                              <input className="form-check-input" type="checkbox" id={`oiAct_${idx}`} checked={r.active} onChange={(e) => {
+                                const val = e.target.checked;
+                                setOiRows((rows) => rows.map((x, i) => i === idx ? { ...x, active: val } : x));
+                              }} />
                               <label className="form-check-label" htmlFor={`oiAct_${idx}`}>Activo</label>
                             </div>
                           </div>
                           <div className="col-12 text-end">
-                            <button className="btn btn-outline-danger btn-sm" onClick={() => removeOiRow(idx)}>Eliminar</button>
+                            <button className="btn btn-outline-danger btn-sm" onClick={() => {
+                              setOiRows((rows) => rows.filter((_, i) => i !== idx));
+                            }}>Eliminar</button>
                           </div>
                         </div>
                       ))}
 
                       <div className="text-end mt-3">
-                        <button className="btn btn-primary" onClick={createOptionGroupWithItems}>
+                        <button
+                          className="btn btn-primary"
+                          onClick={async () => {
+                            try {
+                              const name = ogName.trim();
+                              if (!name) { alert('Nombre de grupo requerido'); return; }
+
+                              // Normalizar min/max según type/required
+                              let min = (ogMin === '' ? undefined : Number(ogMin));
+                              let max = (ogMax === '' ? undefined : Number(ogMax));
+                              if (ogType === 'single') {
+                                max = 1;
+                                if (ogRequired) min = 1; else min = (min ?? 0);
+                              } else {
+                                if (typeof min === 'number' && min < 0) min = 0;
+                                if (typeof max === 'number' && max < 1) max = 1;
+                                if (typeof min === 'number' && typeof max === 'number' && min > max) {
+                                  alert('min no puede ser mayor que max');
+                                  return;
+                                }
+                              }
+
+                              const groupPayload: Partial<OptionGroup> = {
+                                name,
+                                type: ogType,
+                                required: ogRequired,
+                                min,
+                                max,
+                                active: ogActive,
+                                sortOrder: (ogSortOrder === '' ? undefined : Number(ogSortOrder)),
+                              };
+
+                              const groupId = await createDoc('option-groups', groupPayload);
+
+                              // Crear cada option-item
+                              const rowsValid = oiRows.filter(r => r.name.trim());
+                              for (const r of rowsValid) {
+                                const itemPayload: Partial<OptionItem> = {
+                                  groupId,
+                                  name: r.name.trim(),
+                                  priceDelta: r.priceDelta === '' ? 0 : Number(r.priceDelta),
+                                  isDefault: !!r.isDefault,
+                                  active: !!r.active,
+                                  sortOrder: r.sortOrder === '' ? undefined : Number(r.sortOrder),
+                                };
+                                await createDoc('option-items', itemPayload);
+                              }
+
+                              // limpiar
+                              setOgName(''); setOgType('single'); setOgRequired(false);
+                              setOgMin(''); setOgMax(''); setOgActive(true); setOgSortOrder('');
+                              setOiRows([]);
+                              setShowOGCreator(false);
+                              alert('Grupo y opciones creados.');
+                            } catch (e: any) {
+                              alert(e?.message || 'No se pudo crear el grupo/opciones');
+                            }
+                          }}
+                        >
                           Crear grupo + opciones
                         </button>
                       </div>
@@ -1105,10 +1275,10 @@ function AdminMenuPage_Inner() {
                   {addons.map((a, idx) => (
                     <div key={idx} className="row g-2 align-items-center mb-1">
                       <div className="col-7">
-                        <input className="form-control form-control-sm" placeholder="Nombre" value={a.name} onChange={(e) => onChangeAddon(idx, 'name', e.target.value)} />
+                        <input className="form-control" placeholder="Nombre" value={a.name} onChange={(e) => onChangeAddon(idx, 'name', e.target.value)} />
                       </div>
                       <div className="col-3">
-                        <input type="number" step="0.01" className="form-control form-control-sm" placeholder="Precio" value={a.price} onChange={(e) => onChangeAddon(idx, 'price', e.target.value)} />
+                        <input type="number" step="0.01" className="form-control" placeholder="Precio" value={a.price} onChange={(e) => onChangeAddon(idx, 'price', e.target.value)} />
                       </div>
                       <div className="col-2 text-end">
                         <button type="button" className="btn btn-outline-danger btn-sm" onClick={() => onRemoveAddon(idx)}>Eliminar</button>
@@ -1122,10 +1292,7 @@ function AdminMenuPage_Inner() {
                   <ImagePicker
                     imagePreview={imagePreview}
                     imageMetaUrl={(imageMeta as any)?.url || null}
-                    onPick={(f) => {
-                      setImageFile(f);
-                      setImagePreview(f ? URL.createObjectURL(f) : null);
-                    }}
+                    onPick={onPickImage}
                   />
                 </div>
                 <div className="col-12 col-md-4 d-flex align-items-end">
@@ -1134,11 +1301,160 @@ function AdminMenuPage_Inner() {
                       {itemEditingId ? 'Guardar cambios' : 'Crear plato'}
                     </button>
                     {itemEditingId && (
-                      <button className="btn btn-outline-secondary" onClick={resetItemForm}>Cancelar</button>
+                      <button className="btn btn-outline-secondary" onClick={() => {
+                        setItemEditingId(null);
+                        setItemName('');
+                        setItemPrice('');
+                        setItemCatId('');
+                        setItemSubId('');
+                        setItemActive(true);
+                        setItemOptionGroupIds([]);
+                        setAddons([]);
+                        setImageFile(null);
+                        setImagePreview(null);
+                        setImageMeta({});
+                        setItemDescription('');
+                      }}>Cancelar</button>
                     )}
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* ===================== Sección independiente: Option-Groups ===================== */}
+          <div id="option-groups-editor" className="card mt-3">
+            <div className="card-header d-flex align-items-center justify-content-between">
+              <span>Option-Groups — editar items y límites</span>
+              <div className="d-flex align-items-center gap-2">
+                <label className="form-label m-0 small">Selecciona grupo:</label>
+                <select
+                  className="form-select form-select-sm"
+                  style={{ minWidth: 260 }}
+                  value={editGroupId}
+                  onChange={(e) => setEditGroupId(e.target.value)}
+                >
+                  <option value="">— Elegir —</option>
+                  {groups.map((g) => (
+                    <option key={g.id} value={g.id}>{g.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="card-body">
+              {!editGroupId && (
+                <div className="text-muted small">Selecciona un grupo para ver y editar sus opciones.</div>
+              )}
+
+              {!!editGroupId && (
+                <>
+                  {/* Controles de min / max del grupo */}
+                  <div className="row g-2 align-items-end mb-3">
+                    <div className="col-6 col-md-2">
+                      <label className="form-label">Min</label>
+                      <input
+                        type="number"
+                        className="form-control form-control-sm"
+                        value={editGroupMin}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setEditGroupMin(v === '' ? '' : Number(v));
+                        }}
+                      />
+                    </div>
+                    <div className="col-6 col-md-2">
+                      <label className="form-label">Max</label>
+                      <input
+                        type="number"
+                        className="form-control form-control-sm"
+                        value={editGroupMax}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setEditGroupMax(v === '' ? '' : Number(v));
+                        }}
+                      />
+                    </div>
+                    <div className="col-12 col-md-3">
+                      <button type="button" className="btn btn-sm btn-primary w-100" onClick={saveGroupConstraints}>
+                        Guardar límites
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Editor de Option-Items del grupo seleccionado */}
+                  <div className="d-flex align-items-center justify-content-between mb-2">
+                    <small className="text-muted">Agrega, edita o elimina opciones. Los cambios se guardan por fila.</small>
+                    <button className="btn btn-sm btn-outline-primary" onClick={addNewEditRow}>+ Agregar opción</button>
+                  </div>
+
+                  {editRows.length === 0 && <div className="text-muted small">Este grupo no tiene opciones.</div>}
+
+                  {editRows.map((r, idx) => (
+                    <div key={r.id || `new_${idx}`} className="row g-2 align-items-end mb-2">
+                      <div className="col-12 col-md-4">
+                        <label className="form-label">Nombre</label>
+                        <input
+                          className="form-control form-control-sm"
+                          value={r.name}
+                          onChange={(e) => markRow(idx, { name: e.target.value })}
+                        />
+                      </div>
+                      <div className="col-6 col-md-2">
+                        <label className="form-label">Δ Precio</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          className="form-control form-control-sm"
+                          value={r.priceDelta ?? 0}
+                          onChange={(e) => markRow(idx, { priceDelta: Number(e.target.value || 0) })}
+                        />
+                      </div>
+                      <div className="col-6 col-md-2">
+                        <label className="form-label">Orden</label>
+                        <input
+                          type="number"
+                          className="form-control form-control-sm"
+                          value={typeof r.sortOrder === 'number' ? r.sortOrder : ''}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? undefined : Number(e.target.value);
+                            markRow(idx, { sortOrder: val });
+                          }}
+                        />
+                      </div>
+                      <div className="col-6 col-md-2">
+                        <div className="form-check">
+                          <input
+                            className="form-check-input"
+                            type="checkbox"
+                            id={`edDef_${r.id || idx}`}
+                            checked={!!r.isDefault}
+                            onChange={(e) => markRow(idx, { isDefault: e.target.checked })}
+                          />
+                          <label className="form-check-label" htmlFor={`edDef_${r.id || idx}`}>Default</label>
+                        </div>
+                      </div>
+                      <div className="col-6 col-md-2">
+                        <div className="form-check">
+                          <input
+                            className="form-check-input"
+                            type="checkbox"
+                            id={`edAct_${r.id || idx}`}
+                            checked={r.active !== false}
+                            onChange={(e) => markRow(idx, { active: e.target.checked })}
+                          />
+                          <label className="form-check-label" htmlFor={`edAct_${r.id || idx}`}>Activo</label>
+                        </div>
+                      </div>
+
+                      <div className="col-12 d-flex justify-content-end gap-2">
+                        <button className="btn btn-outline-danger btn-sm" onClick={() => deleteEditRow(idx)}>Eliminar</button>
+                        <button className="btn btn-primary btn-sm" disabled={!r._dirty} onClick={() => saveEditRow(idx)}>Guardar</button>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
             </div>
           </div>
 
