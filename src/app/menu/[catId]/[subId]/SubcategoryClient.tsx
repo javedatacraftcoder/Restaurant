@@ -69,6 +69,9 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
   const [items, setItems] = useState<MenuItem[]>([]);
   const [addingId, setAddingId] = useState<string | null>(null);
 
+  // 👇 Mensaje pequeño “Agregado”
+  const [flash, setFlash] = useState<{ id: string; name: string } | null>(null);
+
   // carrito NUEVO
   const newCart = (() => {
     try { return useNewCart(); } catch { return null as any; }
@@ -330,6 +333,10 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
           totalPrice: payload.totalPrice,
         });
       }
+      // 👇 Dispara el mensaje “Agregado”
+      setFlash({ id: mi.id, name: mi.name });
+      window.clearTimeout((window as any).__flashTimer);
+      (window as any).__flashTimer = window.setTimeout(() => setFlash(null), 1500);
     } finally {
       setAddingId(null);
     }
@@ -554,6 +561,19 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
             <div className="alert alert-light border">No hay platillos aún en esta subcategoría.</div>
           </div>
         )}
+      </div>
+
+      {/* Toast “Agregado” */}
+      <div
+        className={`position-fixed bottom-0 start-50 translate-middle-x mb-3 ${flash ? "" : "d-none"}`}
+        style={{ zIndex: 1080 }}
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        <div className="alert alert-success py-2 px-3 shadow-sm border-0 d-flex align-items-center gap-2">
+          <span role="img" aria-label="check">✅</span>
+          <span>Agregado</span>
+        </div>
       </div>
     </div>
   );

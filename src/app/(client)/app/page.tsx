@@ -51,7 +51,7 @@ export default function AppHome() {
 
               <hr className="my-4" />
 
-              <h3 className="h6 text-body-secondary mb-2">¿Primera vez aquí?</h3>
+              <h3 className="h6 text-body-secondary mb-2">Promociones</h3>
               <p className="small text-body-secondary mb-0">
                 Explora el menú y agrega lo que quieras al carrito. El diseño es 100% responsive.
               </p>
