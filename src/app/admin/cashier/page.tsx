@@ -172,7 +172,7 @@ type OrderDoc = {
   // EXTENSIÓN: totals puede traer breakdown en cents ó en Q (checkout nuevo)
   totals?: {
     totalCents?: number; subtotalCents?: number; taxCents?: number; serviceFeeCents?: number; discountCents?: number;
-    subtotal?: number; deliveryFee?: number; tip?: number; currency?: string;
+    subtotal?: number; deliveryFee?: number; tip?: number; currency?: string; discount?: number;
   };
 
   // EXTENSIÓN: gran total guardado por checkout nuevo
@@ -393,17 +393,19 @@ function preferredLines(o: OrderDoc): OrderItemLine[] {
 }
 
 /** 
- * 🔄 Totales: prioriza el esquema NUEVO (orderTotal + totals{subtotal,deliveryFee,tip}),
+ * 🔄 Totales: prioriza el esquema NUEVO (orderTotal + totals{subtotal,deliveryFee,tip,discount}),
  * luego amounts/totals en cents, y finalmente suma de líneas.
  */
 function computeOrderTotalsQ(o: OrderDoc) {
   // 0) Esquema nuevo (checkout)
-  if (o?.totals && (o.totals.subtotal !== undefined || o.totals.deliveryFee !== undefined || o.totals.tip !== undefined)) {
+  if (o?.totals && (o.totals.subtotal !== undefined || (o.totals as any).deliveryFee !== undefined || (o.totals as any).tip !== undefined)) {
     const subtotal = Number(o.totals.subtotal || 0);
     const deliveryFee = Number((o.totals as any).deliveryFee || 0);
     const tip = Number((o.totals as any).tip || 0);
-    const total = Number.isFinite(o.orderTotal) ? Number(o.orderTotal) : (subtotal + deliveryFee + tip);
-    return { subtotal, tax: 0, serviceFee: 0, discount: 0, tip, deliveryFee, total };
+    const discount = Number((o.totals as any).discount || 0);
+    // Si no viene orderTotal, calculamos restando descuento:
+    const total = Number.isFinite(o.orderTotal) ? Number(o.orderTotal) : (subtotal + deliveryFee + tip - discount);
+    return { subtotal, tax: 0, serviceFee: 0, discount, tip, deliveryFee, total };
   }
 
   // 1) amounts (antiguo)
@@ -568,6 +570,32 @@ function OrderCard({
       ? (Number.isFinite((totals as any)?.deliveryFee) ? Number((totals as any).deliveryFee) : Number(o.orderInfo?.deliveryOption?.price || 0))
       : 0;
 
+  // 🔎 NUEVO: descuento mostrado (de totals.discount o de appliedPromotions)
+  const discountShown = (() => {
+    const d = Number(((o as any)?.totals?.discount) ?? 0);
+    if (Number.isFinite(d) && d > 0) return d;
+    const promos = (o as any)?.appliedPromotions;
+    if (Array.isArray(promos) && promos.length) {
+      return promos.reduce((acc: number, p: any) => {
+        const a = Number(p?.discountTotal);
+        if (Number.isFinite(a)) return acc + a;
+        const c = Number(p?.discountTotalCents);
+        return acc + (Number.isFinite(c) ? c / 100 : 0);
+      }, 0);
+    }
+    return 0;
+  })();
+
+  // 🏷️ NUEVO: etiqueta/código de promoción
+  const promoLabel = (() => {
+    const promos = (o as any)?.appliedPromotions;
+    if (Array.isArray(promos) && promos.length) {
+      const names = promos.map((p: any) => p?.code || p?.name).filter(Boolean);
+      if (names.length) return names.join(', ');
+    }
+    return (o as any)?.promotionCode || null;
+  })();
+
   // Gran total mostrado: primero orderTotal, luego totals.total
   const grandTotalShown = Number.isFinite(o.orderTotal) ? Number(o.orderTotal) : Number(totals.total || 0);
 
@@ -688,6 +716,14 @@ function OrderCard({
             <div>Subtotal</div>
             <div className="fw-semibold">{fmtCurrency(totals.subtotal)}</div>
           </div>
+
+          {/* NUEVO: línea de descuento con nombre/código */}
+          {discountShown > 0 && (
+            <div className="d-flex justify-content-between text-success">
+              <div>Descuento{promoLabel ? ` (${promoLabel})` : ''}</div>
+              <div className="fw-semibold">- {fmtCurrency(discountShown)}</div>
+            </div>
+          )}
 
           {type === 'delivery' && (
             <div className="d-flex justify-content-between">

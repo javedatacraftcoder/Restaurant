@@ -1,7 +1,7 @@
 // src/app/(client)/checkout-new/page.tsx
 'use client';
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { useNewCart } from '@/lib/newcart/context';
 import type { DineInInfo, DeliveryInfo } from '@/lib/newcart/types';
 import { useRouter } from 'next/navigation';
@@ -63,6 +63,20 @@ type Addr = {
   notes?: string;
 };
 
+/** ---------- NUEVO: tipos y estado para promoción ---------- */
+type AppliedPromo = {
+  promoId: string;
+  code: string;
+  discountTotalCents: number;
+  discountByLine: Array<{
+    lineId: string;
+    menuItemId: string;
+    discountCents: number;
+    eligible: boolean;
+    lineSubtotalCents: number;
+  }>;
+};
+
 export default function CheckoutNewPage() {
   const cart = useNewCart();
 
@@ -98,6 +112,13 @@ export default function CheckoutNewPage() {
 
   const router = useRouter();
   const db = getFirestore();
+
+  // ---------- NUEVO: estado de promoción ----------
+  const [promoCode, setPromoCode] = useState('');
+  const [promoApplying, setPromoApplying] = useState(false);
+  const [promoError, setPromoError] = useState<string | null>(null);
+  const [promo, setPromo] = useState<AppliedPromo | null>(null);
+  const promoDiscountGTQ = useMemo(() => (promo?.discountTotalCents ?? 0) / 100, [promo]);
 
   // Cargar datos del cliente para prellenar teléfono y direcciones (igual que el viejo)
   useEffect(() => {
@@ -243,10 +264,64 @@ export default function CheckoutNewPage() {
     return Number(opt?.price || 0);
   }, [mode, deliveryOptions, selectedDeliveryOptionId]);
 
+  // ---------- NUEVO: gran total con descuento aplicado ----------
   const grandTotal = useMemo(() => {
     const t = (mode === 'delivery' ? 0 : tip) || 0;
-    return subtotal + deliveryFee + t;
-  }, [subtotal, deliveryFee, tip, mode]);
+    return subtotal + deliveryFee + t - promoDiscountGTQ;
+  }, [subtotal, deliveryFee, tip, mode, promoDiscountGTQ]);
+
+  // ---------- NUEVO: aplicar/quitar promoción ----------
+  const applyPromo = useCallback(async () => {
+    setPromoError(null);
+    const code = (promoCode || '').trim().toUpperCase();
+    if (!code) { setPromoError('Ingresa un código.'); return; }
+    setPromoApplying(true);
+    try {
+      const auth = getAuth();
+      const u = auth.currentUser;
+
+      const lines = cart.items.map((ln: any, idx: number) => ({
+        lineId: String(idx),
+        menuItemId: ln.menuItemId,
+        totalPriceCents: Math.round(cart.computeLineTotal(ln) * 100),
+      }));
+
+      const res = await fetch('/api/cart/apply-promo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code,
+          orderType: mode,         // 'dine-in' | 'delivery' | 'pickup'
+          userUid: u?.uid || null,
+          lines,
+        }),
+      });
+      const j = await res.json();
+      if (!res.ok || !j?.ok) {
+        setPromo(null);
+        setPromoError(j?.reason || 'Código inválido.');
+        return;
+      }
+      setPromo({
+        promoId: j.promoId,
+        code: j.code,
+        discountTotalCents: j.discountTotalCents,
+        discountByLine: j.discountByLine || [],
+      });
+      setPromoError(null);
+    } catch (e: any) {
+      setPromo(null);
+      setPromoError('No se pudo validar el código.');
+    } finally {
+      setPromoApplying(false);
+    }
+  }, [promoCode, cart.items, mode, cart]);
+
+  const clearPromo = useCallback(() => {
+    setPromo(null);
+    setPromoCode('');
+    setPromoError(null);
+  }, []);
 
   async function onSubmit() {
     // Meta por tipo
@@ -302,6 +377,15 @@ export default function CheckoutNewPage() {
     // ✅ aplicar helper SOLO a orderInfo para evitar "undefined"
     const cleanOrderInfo = undefToNullDeep(orderInfo);
 
+    // ---------- NUEVO: snapshot de promo para la orden ----------
+    const appliedPromotions = promo ? [{
+      promoId: promo.promoId,
+      code: promo.code,
+      discountTotalCents: promo.discountTotalCents,
+      discountTotal: (promo.discountTotalCents / 100),
+      byLine: promo.discountByLine,
+    }] : [];
+
     const orderPayload = {
       items: cart.items.map((ln) => ({
         menuItemId: ln.menuItemId,
@@ -318,7 +402,7 @@ export default function CheckoutNewPage() {
         lineTotal: cart.computeLineTotal(ln),
       })),
 
-      // 🔁 orderTotal ahora es el GRAN TOTAL (subtotal + envío + propina)
+      // 🔁 orderTotal ahora es el GRAN TOTAL (subtotal + envío + propina - descuento)
       orderTotal: grandTotal,
 
       // Estructura original (respetada) + nuevos campos solo cuando aplica
@@ -329,8 +413,13 @@ export default function CheckoutNewPage() {
         subtotal,
         deliveryFee,
         tip: mode === 'delivery' ? 0 : tip,
+        discount: promoDiscountGTQ,               // 👈 NUEVO
         currency: 'GTQ',
       },
+
+      // NUEVO: snapshot de promociones aplicadas
+      appliedPromotions,                          // 👈 NUEVO
+      promotionCode: promo?.code || null,         // 👈 NUEVO (atalajo)
 
       status: 'placed',
       createdAt: serverTimestamp(),
@@ -344,6 +433,24 @@ export default function CheckoutNewPage() {
       setSaving(true);
       const ref = await addDoc(collection(db, 'orders'), orderPayload);
       console.log('[CHECKOUT] Orden guardada en orders con id:', ref.id);
+
+      // ---------- NUEVO: consumir límite global de la promoción (idempotente por orderId) ----------
+      if (promo?.promoId) {
+        try {
+          await fetch('/api/promotions/consume', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              promoId: promo.promoId,
+              code: promo.code,
+              orderId: ref.id,
+              userUid: uid || null,
+            }),
+          });
+        } catch (e) {
+          console.warn('[promotions/consume] no crítico:', e);
+        }
+      }
 
       cart.clear();
       router.push('/cart-new'); // o '/menu'
@@ -553,6 +660,35 @@ export default function CheckoutNewPage() {
                   </div>
                 </>
               )}
+
+              {/* ---------- NUEVO: Campo de CÓDIGO PROMO ---------- */}
+              <div className="mb-3">
+                <label className="form-label fw-semibold">Código de promoción</label>
+                <div className="d-flex gap-2">
+                  <input
+                    className="form-control"
+                    placeholder="Ej. POSTRES10"
+                    value={promoCode}
+                    onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
+                    disabled={promoApplying || saving}
+                  />
+                  {!promo ? (
+                    <button className="btn btn-outline-primary" onClick={applyPromo} disabled={promoApplying || saving}>
+                      {promoApplying ? 'Aplicando…' : 'Aplicar'}
+                    </button>
+                  ) : (
+                    <button className="btn btn-outline-secondary" onClick={clearPromo} disabled={saving}>
+                      Quitar
+                    </button>
+                  )}
+                </div>
+                {promo && (
+                  <div className="text-success small mt-1">✓ Código aplicado: <strong>{promo.code}</strong></div>
+                )}
+                {promoError && (
+                  <div className="text-danger small mt-1">{promoError}</div>
+                )}
+              </div>
             </div>
 
             <div className="card-footer">
@@ -651,6 +787,14 @@ export default function CheckoutNewPage() {
                   <div className="fw-semibold">{fmtQ(subtotal)}</div>
                 </div>
 
+                {/* ---------- NUEVO: línea de descuento si hay promo ---------- */}
+                {promo && (
+                  <div className="d-flex justify-content-between text-success">
+                    <div>Descuento ({promo.code})</div>
+                    <div className="fw-semibold">- {fmtQ(promoDiscountGTQ)}</div>
+                  </div>
+                )}
+
                 {mode === 'delivery' && (
                   <div className="d-flex justify-content-between">
                     <div>Envío</div>
@@ -690,7 +834,7 @@ export default function CheckoutNewPage() {
             </div>
 
             <div className="card-footer d-flex justify-content-between">
-              <div>Se cobrará en caja o pasarela seleccionada más adelante.</div>
+              <div>Incluye descuento aplicado{promo ? ` (${promo.code})` : ''}.</div>
               <div className="fw-semibold">{/* redundante, ya mostramos arriba */}</div>
             </div>
           </div>

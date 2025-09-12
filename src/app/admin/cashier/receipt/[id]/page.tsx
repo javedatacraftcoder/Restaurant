@@ -106,7 +106,7 @@ type OrderDoc = {
   amounts?: Amounts;
   totals?: {
     totalCents?: number; subtotalCents?: number; taxCents?: number; serviceFeeCents?: number; discountCents?: number;
-    subtotal?: number; deliveryFee?: number; tip?: number; currency?: string;
+    subtotal?: number; deliveryFee?: number; tip?: number; currency?: string; discount?: number;
   };
   orderTotal?: number;
 
@@ -232,13 +232,14 @@ function preferredLines(o: OrderDoc): OrderItemLine[] {
 }
 
 function computeOrderTotalsQ(o: OrderDoc) {
-  // Checkout nuevo
-  if (o?.totals && (o.totals.subtotal !== undefined || o.totals.deliveryFee !== undefined || o.totals.tip !== undefined)) {
+  // Checkout nuevo (ahora considera discount)
+  if (o?.totals && (o.totals.subtotal !== undefined || (o.totals as any).deliveryFee !== undefined || (o.totals as any).tip !== undefined)) {
     const subtotal = Number(o.totals.subtotal || 0);
     const deliveryFee = Number((o.totals as any).deliveryFee || 0);
     const tip = Number((o.totals as any).tip || 0);
-    const total = Number.isFinite(o.orderTotal) ? Number(o.orderTotal) : (subtotal + deliveryFee + tip);
-    return { subtotal, tax: 0, serviceFee: 0, discount: 0, tip, deliveryFee, total };
+    const discount = Number((o.totals as any).discount || 0);
+    const total = Number.isFinite(o.orderTotal) ? Number(o.orderTotal) : (subtotal + deliveryFee + tip - discount);
+    return { subtotal, tax: 0, serviceFee: 0, discount, tip, deliveryFee, total };
   }
   // amounts
   if (o?.amounts && Number.isFinite(o.amounts.total)) {
@@ -426,6 +427,16 @@ function ReceiptPage_Inner() {
     return Number.isFinite(order.orderTotal) ? Number(order.orderTotal) : Number(totals.total || 0);
   }, [order, totals]);
 
+  // ➕ NUEVO: etiqueta de promoción para el ticket
+  const promoLabel = useMemo(() => {
+    const promos = (order as any)?.appliedPromotions;
+    if (Array.isArray(promos) && promos.length) {
+      const names = promos.map((p: any) => p?.code || p?.name).filter(Boolean);
+      if (names.length) return names.join(', ');
+    }
+    return (order as any)?.promotionCode || null;
+  }, [order]);
+
   // ➕ NUEVO: detectar pickup para mostrar identificador
   const rawType = order?.orderInfo?.type?.toLowerCase?.();
 
@@ -556,9 +567,16 @@ function ReceiptPage_Inner() {
               </div>
             )}
 
+            {/* ➕ Descuento con nombre/código */}
+            {Number(totals.discount || 0) > 0 && (
+              <div className="row">
+                <div>Descuento{promoLabel ? ` (${promoLabel})` : ''}</div>
+                <div>-{fmtCurrency(totals.discount)}</div>
+              </div>
+            )}
+
             {totals.tax ? <div className="row"><div>Impuestos</div><div>{fmtCurrency(totals.tax)}</div></div> : null}
             {totals.serviceFee ? <div className="row"><div>Servicio</div><div>{fmtCurrency(totals.serviceFee)}</div></div> : null}
-            {totals.discount ? <div className="row"><div>Descuento</div><div>-{fmtCurrency(totals.discount)}</div></div> : null}
 
             {/* Propina solo si aplica (normalmente dine-in/pickup) */}
             {Number(totals.tip || 0) > 0 && <div className="row"><div>Propina</div><div>{fmtCurrency(totals.tip)}</div></div>}

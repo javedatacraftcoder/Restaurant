@@ -24,6 +24,14 @@ type DeliveryOption = { id: string; title: string; description?: string; price: 
 type Addr = { line1?: string; city?: string; country?: string; zip?: string; notes?: string };
 type PayMethod = 'cash' | 'paypal';
 
+// --- NUEVO: tipos de promo en el cliente ---
+type AppliedPromo = {
+  promoId: string;
+  code: string;
+  discountTotalCents: number;
+  discountByLine: Array<{ lineId: string; menuItemId: string; discountCents: number; eligible: boolean; lineSubtotalCents: number; }>;
+};
+
 function fmtQ(n?: number) {
   const v = Number.isFinite(Number(n)) ? Number(n) : 0;
   try { return new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(v); }
@@ -61,6 +69,13 @@ function useCheckoutState() {
   const [tipEdited, setTipEdited] = useState<boolean>(false);
   const [saving, setSaving] = useState(false);
   const [payMethod, setPayMethod] = useState<PayMethod>('cash');
+
+  // --- NUEVO: estado para promociones ---
+  const [promoCode, setPromoCode] = useState('');
+  const [promoApplying, setPromoApplying] = useState(false);
+  const [promoError, setPromoError] = useState<string | null>(null);
+  const [promo, setPromo] = useState<AppliedPromo | null>(null);
+  const promoDiscountGTQ = useMemo(() => (promo?.discountTotalCents ?? 0) / 100, [promo]);
 
   const router = useRouter();
   const db = getFirestore();
@@ -200,10 +215,64 @@ function useCheckoutState() {
     return Number(opt?.price || 0);
   }, [mode, deliveryOptions, selectedDeliveryOptionId]);
 
+  // --- NUEVO: aplicar descuento de promoción al gran total ---
   const grandTotal = useMemo(() => {
     const t = (mode === 'delivery' ? 0 : tip) || 0;
-    return subtotal + deliveryFee + t;
-  }, [subtotal, deliveryFee, tip, mode]);
+    return subtotal + deliveryFee + t - promoDiscountGTQ;
+  }, [subtotal, deliveryFee, tip, mode, promoDiscountGTQ]);
+
+  // --- NUEVO: aplicar/quitar código ---
+  const applyPromo = useCallback(async () => {
+    setPromoError(null);
+    const code = (promoCode || '').trim().toUpperCase();
+    if (!code) { setPromoError('Ingresa un código.'); return; }
+    setPromoApplying(true);
+    try {
+      const auth = getAuth();
+      const u = auth.currentUser;
+
+      const lines = cart.items.map((ln: any, idx: number) => ({
+        lineId: String(idx),
+        menuItemId: ln.menuItemId,
+        totalPriceCents: Math.round(cart.computeLineTotal(ln) * 100),
+      }));
+
+      const res = await fetch('/api/cart/apply-promo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code,
+          orderType: mode,         // 'dine-in' | 'delivery' | 'pickup'
+          userUid: u?.uid || null,
+          lines,
+        }),
+      });
+      const j = await res.json();
+      if (!res.ok || !j?.ok) {
+        setPromo(null);
+        setPromoError(j?.reason || 'Código inválido.');
+        return;
+      }
+      setPromo({
+        promoId: j.promoId,
+        code: j.code,
+        discountTotalCents: j.discountTotalCents,
+        discountByLine: j.discountByLine || [],
+      });
+      setPromoError(null);
+    } catch (e: any) {
+      setPromo(null);
+      setPromoError('No se pudo validar el código.');
+    } finally {
+      setPromoApplying(false);
+    }
+  }, [promoCode, cart.items, mode, cart]);
+
+  const clearPromo = useCallback(() => {
+    setPromo(null);
+    setPromoCode('');
+    setPromoError(null);
+  }, []);
 
   const buildOrderPayload = useCallback(async () => {
     const meta: DineInInfo | DeliveryInfo | PickupInfo =
@@ -246,6 +315,15 @@ function useCheckoutState() {
     }
     const cleanOrderInfo = undefToNullDeep(orderInfo);
 
+    // --- NUEVO: snapshot de promociones aplicadas ---
+    const appliedPromotions = promo ? [{
+      promoId: promo.promoId,
+      code: promo.code,
+      discountTotalCents: promo.discountTotalCents,
+      discountTotal: (promo.discountTotalCents / 100),
+      byLine: promo.discountByLine,
+    }] : [];
+
     return {
       items: cart.items.map((ln) => ({
         menuItemId: ln.menuItemId,
@@ -267,8 +345,11 @@ function useCheckoutState() {
         subtotal,
         deliveryFee,
         tip: mode === 'delivery' ? 0 : tip,
+        discount: promoDiscountGTQ,               // <-- NUEVO
         currency: process.env.NEXT_PUBLIC_PAY_CURRENCY || 'GTQ',
       },
+      appliedPromotions,                          // <-- NUEVO
+      promotionCode: promo?.code || null,         // <-- NUEVO
       status: 'placed',
       createdAt: serverTimestamp(),
       ...(u ? {
@@ -280,22 +361,23 @@ function useCheckoutState() {
   }, [
     address, addressLabel, customerName, deliveryFee, deliveryOptions,
     grandTotal, homeAddr, mode, notes, officeAddr, phone, selectedDeliveryOptionId,
-    subtotal, table, tip, // cart.items se usa en map
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    subtotal, table, tip, promoDiscountGTQ, promo,
+    // cart.items se usa en map
   ]);
 
   return {
     state: {
       mode, table, notes, address, phone, customerName,
       homeAddr, officeAddr, addressLabel, deliveryOptions, selectedDeliveryOptionId,
-      tip, tipEdited, saving, payMethod, hasDropdown, subtotal, deliveryFee, grandTotal
+      tip, tipEdited, saving, payMethod, hasDropdown, subtotal, deliveryFee, grandTotal,
+      promoCode, promoApplying, promoError, promo,
     },
     actions: {
       setMode, setTable, setNotes, setAddress, setPhone, setAddressLabel,
       setSelectedDeliveryOptionId, setTip, setTipEdited, setSaving, setPayMethod,
-      onChangeAddressLabel,
+      onChangeAddressLabel, setPromoCode, applyPromo, clearPromo,
     },
-  helpers: { buildOrderPayload, cart, db, router },
+    helpers: { buildOrderPayload, cart, db, router },
   } as const;
 }
 
@@ -310,12 +392,13 @@ function CheckoutUI(props: {
   const {
     mode, table, notes, address, phone, customerName,
     homeAddr, officeAddr, addressLabel, deliveryOptions, selectedDeliveryOptionId,
-    tip, tipEdited, saving, payMethod, hasDropdown, subtotal, deliveryFee, grandTotal
+    tip, tipEdited, saving, payMethod, hasDropdown, subtotal, deliveryFee, grandTotal,
+    promoCode, promoApplying, promoError, promo,
   } = state;
   const {
     setMode, setTable, setNotes, setAddress, setPhone, setAddressLabel,
     setSelectedDeliveryOptionId, setTip, setTipEdited, setSaving, setPayMethod,
-    onChangeAddressLabel,
+    onChangeAddressLabel, setPromoCode, applyPromo, clearPromo,
   } = actions;
 
   const disableSubmit =
@@ -436,6 +519,35 @@ function CheckoutUI(props: {
                 </>
               )}
 
+              {/* --- NUEVO: Código de promoción --- */}
+              <div className="mb-3">
+                <label className="form-label fw-semibold">Código de promoción</label>
+                <div className="d-flex gap-2">
+                  <input
+                    className="form-control"
+                    placeholder="Ej. POSTRES10"
+                    value={promoCode}
+                    onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
+                    disabled={promoApplying || saving}
+                  />
+                  {!promo ? (
+                    <button className="btn btn-outline-primary" onClick={applyPromo} disabled={promoApplying || saving}>
+                      {promoApplying ? 'Aplicando…' : 'Aplicar'}
+                    </button>
+                  ) : (
+                    <button className="btn btn-outline-secondary" onClick={clearPromo} disabled={saving}>
+                      Quitar
+                    </button>
+                  )}
+                </div>
+                {promo && (
+                  <div className="text-success small mt-1">✓ Código aplicado: <strong>{promo.code}</strong></div>
+                )}
+                {promoError && (
+                  <div className="text-danger small mt-1">{promoError}</div>
+                )}
+              </div>
+
               {/* MÉTODO DE PAGO */}
               <div className="mb-3">
                 <label className="form-label fw-semibold">Método de pago</label>
@@ -511,6 +623,10 @@ function CheckoutUI(props: {
               {/* Totales */}
               <div className="mt-3">
                 <div className="d-flex justify-content-between"><div>Subtotal</div><div className="fw-semibold">{fmtQ(subtotal)}</div></div>
+
+                {/* NUEVO: línea de descuento si hay promo */}
+                {promo && <div className="d-flex justify-content-between text-success"><div>Descuento ({promo.code})</div><div className="fw-semibold">- {fmtQ((promo.discountTotalCents||0)/100)}</div></div>}
+
                 {mode === 'delivery' && (<div className="d-flex justify-content-between"><div>Envío</div><div className="fw-semibold">{fmtQ(deliveryFee)}</div></div>)}
                 {mode !== 'delivery' && (
                   <div className="d-flex align-items-center justify-content-between gap-2 mt-2">
@@ -528,7 +644,7 @@ function CheckoutUI(props: {
               </div>
             </div>
             <div className="card-footer d-flex justify-content-between">
-              <div className="small text-muted">Total según método seleccionado.</div>
+              <div className="small text-muted">Total según método seleccionado{promo ? ` (incluye ${promo.code})` : ''}.</div>
               <div />
             </div>
           </div>
@@ -556,6 +672,18 @@ function CheckoutCoreNoStripe() {
     try {
       actions.setSaving(true);
       const ref = await addDoc(collection(db, 'orders'), payload);
+
+      // NUEVO: consumir límite global de la promo (idempotente por orderId)
+      if (state.promo?.promoId) {
+        try {
+          await fetch('/api/promotions/consume', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ promoId: state.promo.promoId, code: state.promo.code, orderId: ref.id }),
+          });
+        } catch {}
+      }
+
       cart.clear();
       router.push('/cart-new');
       alert('¡Orden creada (efectivo)! ID: ' + ref.id);
@@ -605,7 +733,7 @@ function CheckoutCoreNoStripe() {
 
       const btns = paypal.Buttons({
         createOrder: async () => {
-          const draft = await helpers.buildOrderPayload();
+          const draft = await helpers.buildOrderPayload(); // <-- incluye descuento y promo
           const res = await fetch('/api/pay/paypal/create-order', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -628,6 +756,21 @@ function CheckoutCoreNoStripe() {
             if (!res.ok) {
               const j = await res.json().catch(() => null);
               throw new Error(j?.error || 'No se pudo capturar PayPal.');
+            }
+
+            // NUEVO: intentar leer { orderId } para consumir promo
+            let captured: any = null;
+            try { captured = await res.json(); } catch {}
+            const orderId = captured?.orderId;
+
+            if (state.promo?.promoId && orderId) {
+              try {
+                await fetch('/api/promotions/consume', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ promoId: state.promo.promoId, code: state.promo.code, orderId }),
+                });
+              } catch {}
             }
 
             // Cierra el botón ANTES de navegar
@@ -664,7 +807,7 @@ function CheckoutCoreNoStripe() {
         paypalButtonsRef.current = null;
       }
     };
-  }, [state.payMethod, paypalReady, helpers]);
+  }, [state.payMethod, paypalReady, helpers, state.promo]);
 
   return (
     <CheckoutUI
