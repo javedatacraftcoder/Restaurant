@@ -3,10 +3,11 @@ import Link from 'next/link';
 import Image from 'next/image';
 import AutoRedirect from '@/components/AutoRedirect';
 import HomeNavbar from '@/components/HomeNavbar';
+import type { Metadata } from 'next';
 
-export const metadata = {
+export const metadata: Metadata = {
   title: 'OrderCraft',
-  description: 'Ordena tus platillos favoritos',
+  description: 'Order your favorite dishes',
 };
 
 export default function HomePage() {
@@ -22,13 +23,13 @@ export default function HomePage() {
         <div className="container py-4 py-md-5">
           <div className="row g-4 align-items-center">
             <div className="col-12 col-md-6">
-              <h1 className="display-6 fw-semibold mb-2">Sabores que inspiran</h1>
+              <h1 className="display-6 fw-semibold mb-2">Flavors that inspire</h1>
               <p className="lead text-body-secondary mb-4">
-                Pide tus platillos favoritos con un par de toques. Entrega rápida, ingredientes frescos.
+                Order your favorite dishes with just a few touches. Fast delivery, fresh ingredients.
               </p>
               <div className="d-flex flex-wrap gap-2">
-                <Link href="/menu" className="btn btn-primary btn-lg">Ver menú</Link>
-                <Link href="/promos" className="btn btn-outline-secondary btn-lg">Promociones</Link>
+                <Link href="/menu" className="btn btn-primary btn-lg">View the Menu</Link>
+                <Link href="/promos" className="btn btn-outline-secondary btn-lg">Promotions</Link>
               </div>
             </div>
 
@@ -53,7 +54,7 @@ export default function HomePage() {
       {/* DESTACADOS */}
       <section className="bg-body-tertiary py-5">
         <div className="container">
-          <h2 className="h4 fw-semibold mb-3">Destacados</h2>
+          <h2 className="h4 fw-semibold mb-3">Featured</h2>
           <div className="row g-3 g-md-4">
             {[
               { src: '/featured-1.png', title: 'Entradas' },
@@ -90,11 +91,11 @@ export default function HomePage() {
           <div className="row g-4 align-items-center">
             <div className="col-12 col-lg-7">
               <div className="p-4 p-md-5 rounded-4 border bg-white">
-                <h2 className="h4 fw-semibold">Promociones de temporada</h2>
+                <h2 className="h4 fw-semibold">Seasonal promotions</h2>
                 <p className="text-body-secondary mb-4">
-                  Descubre combos, descuentos y nuevas recetas por tiempo limitado.
+                  Discover combos, discounts, and new recipes for a limited time.
                 </p>
-                <Link href="/promos" className="btn btn-outline-primary">Ver promos</Link>
+                <Link href="/promos" className="btn btn-outline-primary">Promotions</Link>
               </div>
             </div>
             <div className="col-12 col-lg-5">
@@ -128,13 +129,13 @@ export default function HomePage() {
               />
             </div>
             <div className="col-12 col-md-6">
-              <h2 className="h4 fw-semibold">Hecho con pasión</h2>
+              <h2 className="h4 fw-semibold">Made with passion</h2>
               <p className="text-body-secondary">
-                Cocinamos con ingredientes frescos y locales. Ordena en línea y recibe en minutos.
+                We cook with fresh, local ingredients. Order online and receive in minutes.
               </p>
               <div className="d-flex gap-2">
-                <Link href="/menu" className="btn btn-primary">Ordenar ahora</Link>
-                <Link href="/app" className="btn btn-light border">Área de cliente</Link>
+                <Link href="/menu" className="btn btn-primary">Order Now</Link>
+                <Link href="/app" className="btn btn-light border">Client Area</Link>
               </div>
             </div>
           </div>
@@ -148,8 +149,8 @@ export default function HomePage() {
             created by <span className="fw-semibold">datacraftcoders</span>
           </div>
           <div className="d-flex gap-3 small">
-            <Link href="/menu" className="link-secondary text-decoration-none">Menú</Link>
-            <Link href="/promos" className="link-secondary text-decoration-none">Promociones</Link>
+            <Link href="/menu" className="link-secondary text-decoration-none">Menu</Link>
+            <Link href="/promos" className="link-secondary text-decoration-none">Promotions</Link>
             <Link href="/login" className="link-secondary text-decoration-none">Sign in</Link>
             <Link href="/account" className="link-secondary text-decoration-none">Login</Link>
           </div>

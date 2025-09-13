@@ -20,7 +20,7 @@ export default function LogoutPage() {
   return (
     <>
       <AuthNavbar />
-      <main style={{ padding: 24 }}>Cerrando sesión…</main>
+      <main style={{ padding: 24 }}>Signing out…</main>
     </>
   );
 }

@@ -52,8 +52,8 @@ export default function CategoryClient({ catId }: { catId: string }) {
   return (
     <div className="container py-4">
       <div className="d-flex align-items-center justify-content-between mb-3">
-        <h1 className="h4 m-0">{category?.name ?? "Categoría"}</h1>
-        <Link href="/menu" className="btn btn-sm btn-outline-secondary">← Volver</Link>
+        <h1 className="h4 m-0">{category?.name ?? "Category"}</h1>
+        <Link href="/menu" className="btn btn-sm btn-outline-secondary">← Back</Link>
       </div>
 
       <div className="row g-4">
@@ -72,7 +72,7 @@ export default function CategoryClient({ catId }: { catId: string }) {
                     />
                   ) : (
                     <div className="d-flex align-items-center justify-content-center bg-light text-muted">
-                      Sin imagen
+                      No image
                     </div>
                   )}
                 </div>
@@ -89,7 +89,7 @@ export default function CategoryClient({ catId }: { catId: string }) {
         {subcats.length === 0 && (
           <div className="col-12">
             <div className="alert alert-light border">
-              Aún no hay subcategorías en esta categoría.
+              There are no subcategories in this category yet.
             </div>
           </div>
         )}

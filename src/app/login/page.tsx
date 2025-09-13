@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 function Fallback() {
   return (
     <main className="container py-4" style={{ maxWidth: 480 }}>
-      <h1 className="h4 text-center">Cargando…</h1>
+      <h1 className="h4 text-center">Loading...</h1>
     </main>
   );
 }
@@ -114,7 +114,7 @@ function LoginInner() {
       await signInWithEmailAndPassword(auth, email.trim(), password);
       await syncRoleCookiesAndRedirect(params, router);
     } catch (e: any) {
-      setErr(e?.message || "No se pudo iniciar sesión.");
+      setErr(e?.message || "Could not log in.");
     } finally {
       inFlightRef.current = false;
       setBusy(false);
@@ -130,12 +130,12 @@ function LoginInner() {
       <h1 className="h3 mb-3 text-center">Iniciar sesión</h1>
       <form onSubmit={onSubmit} className="card p-3 border-0 shadow-sm">
         <div className="mb-3">
-          <label className="form-label">Correo</label>
+          <label className="form-label">Email</label>
           <input
             className="form-control"
             type="email"
             autoComplete="email"
-            placeholder="tu@correo.com"
+            placeholder="youremail@correo.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
@@ -143,7 +143,7 @@ function LoginInner() {
           />
         </div>
         <div className="mb-3">
-          <label className="form-label">Contraseña</label>
+          <label className="form-label">Password</label>
           <input
             className="form-control"
             type="password"
@@ -156,7 +156,7 @@ function LoginInner() {
           />
         </div>
         <button className="btn btn-primary w-100" disabled={busy}>
-          {busy ? "Entrando..." : "Entrar"}
+          {busy ? "Loging in..." : "Login"}
         </button>
         {err && <p className="text-danger mt-3 mb-0">{err}</p>}
       </form>
@@ -165,13 +165,13 @@ function LoginInner() {
 
       {/* Google: solo clientes */}
       <a href={hrefGoogle} className="btn btn-outline-secondary w-100">
-        Login con Google
+        Login with Google
       </a>
 
       <p className="text-center mt-3 mb-0">
-        ¿No tienes cuenta?{" "}
+        Don't have an account?{" "}
         <a href="/accounts" className="link-primary">
-          Regístrate
+          Sign up
         </a>
       </p>
     </main>

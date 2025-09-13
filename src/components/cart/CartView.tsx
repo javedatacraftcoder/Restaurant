@@ -54,7 +54,7 @@ type CartLineNormalized = {
 
 function fmtQ(n?: number) {
   const v = Number.isFinite(Number(n)) ? Number(n) : 0;
-  try { return new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(v); }
+  try { return new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'USD' }).format(v); }
   catch { return `Q ${v.toFixed(2)}`; }
 }
 
@@ -148,7 +148,7 @@ export default function CartView() {
 
       <div className="card-body">
         {lines.length === 0 && (
-          <div className="text-muted">Tu carrito está vacío.</div>
+          <div className="text-muted">Your cart is empty.</div>
         )}
 
         <div className="d-flex flex-column gap-3">
@@ -192,7 +192,7 @@ export default function CartView() {
 
                   {hasRemove && (
                     <button className="btn btn-sm btn-outline-danger" onClick={() => cart.remove(ln.menuItemId)}>
-                      Quitar
+                      Remove
                     </button>
                   )}
                 </div>
@@ -239,7 +239,7 @@ export default function CartView() {
 
       {/* Pie con total general */}
       <div className="card-footer d-flex justify-content-between align-items-center">
-        <div className="fw-semibold">Total a pagar</div>
+        <div className="fw-semibold">Total to pay</div>
         <div className="fw-bold fs-5">{fmtQ(grandTotal)}</div>
       </div>
     </div>

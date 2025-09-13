@@ -55,7 +55,7 @@ export default function OrdersPage() {
       const data = await res.json();
       setOrders((data.items ?? []) as OrderRow[]);
     } catch (e: any) {
-      setErr(e?.message ?? 'Error al cargar tus pedidos');
+      setErr(e?.message ?? 'Error loading your orders');
     } finally {
       setLoading(false);
     }
@@ -96,32 +96,32 @@ export default function OrdersPage() {
             <option value="cancelled">cancelled</option>
           </select>
           <button className="btn btn-outline-primary btn-sm" onClick={load} disabled={loading || !idToken}>
-            {loading ? 'Actualizando…' : 'Actualizar'}
+            {loading ? 'Updating…' : 'Update'}
           </button>
         </div>
       </div>
 
       {!idToken && (
         <p>
-          Debes <a href="/login">iniciar sesión</a> para ver tus pedidos.
+          You must <a href="/login">sign in</a> to view your orders.
         </p>
       )}
 
       {idToken && (
         <>
           {err && <p style={{ color: 'crimson' }}>{err}</p>}
-          {loading && !orders.length && <p>Cargando…</p>}
+          {loading && !orders.length && <p>Loading…</p>}
 
           <div className="table-responsive">
             <table className="table table-sm align-middle">
               <thead>
                 <tr>
                   <th>ID</th>
-                  <th>Tipo</th>
-                  <th>Estado</th>
+                  <th>Type</th>
+                  <th>Status</th>
                   <th>Total</th>
-                  <th>Creado</th>
-                  <th>Actualizado</th>
+                  <th>Created</th>
+                  <th>Updated</th>
                 </tr>
               </thead>
               <tbody>
@@ -140,7 +140,7 @@ export default function OrdersPage() {
                 {filtered.length === 0 && !loading && (
                   <tr>
                     <td colSpan={6} className="text-center py-4">
-                      {filter ? 'No hay pedidos con ese estado.' : 'Aún no tienes pedidos.'}
+                      {filter ? 'There are no orders with that status' : 'You have no orders.'}
                     </td>
                   </tr>
                 )}

@@ -369,8 +369,8 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
           <h1 className="h4 m-0">{subcategory?.name ?? "Subcategoría"}</h1>
         </div>
         <div className="d-flex gap-2">
-          <Link href={`/menu/${catId}`} className="btn btn-sm btn-outline-secondary">← Subcategorías</Link>
-          <Link href="/menu" className="btn btn-sm btn-outline-secondary">Inicio menú</Link>
+          <Link href={`/menu/${catId}`} className="btn btn-sm btn-outline-secondary">← Subcategories</Link>
+          <Link href="/menu" className="btn btn-sm btn-outline-secondary">Home menu</Link>
         </div>
       </div>
 
@@ -393,7 +393,7 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
                     />
                   ) : (
                     <div className="d-flex align-items-center justify-content-center bg-light text-muted">
-                      Sin imagen
+                      No image
                     </div>
                   )}
                 </div>
@@ -410,7 +410,7 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
                   )}
 
                   {isDisabled(it) && (
-                    <div className="badge text-bg-warning mb-2 align-self-start">No disponible</div>
+                    <div className="badge text-bg-warning mb-2 align-self-start">Not available</div>
                   )}
 
                   <div className="d-flex gap-2 mt-auto">
@@ -419,7 +419,7 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
                       className="btn btn-outline-primary"
                       onClick={() => onToggleOptions(it)}
                     >
-                      {expanded ? "Ocultar opciones" : "Opciones"}
+                      {expanded ? "Hide options" : "Options"}
                     </button>
                   </div>
 
@@ -467,14 +467,14 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
                                       <div>
                                         <div className="fw-semibold">{g.name}</div>
                                         <div className="text-muted small">
-                                          {g.type === "single" ? "Una opción" : "Múltiples opciones"}
-                                          {g.required ? " · requerido" : ""}
+                                          {g.type === "single" ? "One option" : "Multiple options"}
+                                          {g.required ? " · required" : ""}
                                           {typeof g.min === "number" ? ` · min ${g.min}` : ""}
                                           {typeof g.max === "number" ? ` · max ${g.max}` : ""}
                                         </div>
                                       </div>
                                       {g.type === "multi" && (
-                                        <div className="text-muted small">Seleccionadas: {count}</div>
+                                        <div className="text-muted small">Selected: {count}</div>
                                       )}
                                     </div>
 
@@ -527,7 +527,7 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
 
                                     {invalid && (
                                       <div className="text-danger small mt-2">
-                                        Selección inválida para este grupo.
+                                        Invalid selection for this group.
                                       </div>
                                     )}
                                   </div>
@@ -545,7 +545,7 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
                           disabled={isDisabled(it) || addingId === it.id || (itemGroups[it.id] || []).some(g => groupIsInvalid(it, g))}
                           onClick={() => onAddToCart(it)}
                         >
-                          {addingId === it.id ? "Agregando…" : "Agregar al carrito"}
+                          {addingId === it.id ? "Adding…" : "Add to cart"}
                         </button>
                       </div>
                     </div>
@@ -558,7 +558,7 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
 
         {items.length === 0 && (
           <div className="col-12">
-            <div className="alert alert-light border">No hay platillos aún en esta subcategoría.</div>
+            <div className="alert alert-light border">There are no items in this subcategory yet.</div>
           </div>
         )}
       </div>
@@ -572,7 +572,7 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
       >
         <div className="alert alert-success py-2 px-3 shadow-sm border-0 d-flex align-items-center gap-2">
           <span role="img" aria-label="check">✅</span>
-          <span>Agregado</span>
+          <span>Added</span>
         </div>
       </div>
     </div>

@@ -30,7 +30,7 @@ export default function MenuHomePage() {
 
   return (
     <div className="container py-4">
-      <h1 className="h3 mb-3">Destacados</h1>
+      <h1 className="h3 mb-3">Featured</h1>
       <div className="row g-4">
         {categories.map((cat) => {
           const href = `/menu/${cat.id}`; // navegamos por ID
@@ -50,7 +50,7 @@ export default function MenuHomePage() {
                       />
                     ) : (
                       <div className="d-flex align-items-center justify-content-center bg-light text-muted">
-                        Sin imagen
+                        No image
                       </div>
                     )}
                   </div>
@@ -67,7 +67,7 @@ export default function MenuHomePage() {
 
         {categories.length === 0 && (
           <div className="col-12">
-            <div className="alert alert-light border">Aún no hay categorías.</div>
+            <div className="alert alert-light border">There are no categories yet.</div>
           </div>
         )}
       </div>

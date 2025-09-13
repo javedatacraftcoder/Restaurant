@@ -34,7 +34,7 @@ type AppliedPromo = {
 
 function fmtQ(n?: number) {
   const v = Number.isFinite(Number(n)) ? Number(n) : 0;
-  try { return new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(v); }
+  try { return new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'USD' }).format(v); }
   catch { return `Q ${v.toFixed(2)}`; }
 }
 
@@ -225,7 +225,7 @@ function useCheckoutState() {
   const applyPromo = useCallback(async () => {
     setPromoError(null);
     const code = (promoCode || '').trim().toUpperCase();
-    if (!code) { setPromoError('Ingresa un código.'); return; }
+    if (!code) { setPromoError('Enter the coupon.'); return; }
     setPromoApplying(true);
     try {
       const auth = getAuth();
@@ -250,7 +250,7 @@ function useCheckoutState() {
       const j = await res.json();
       if (!res.ok || !j?.ok) {
         setPromo(null);
-        setPromoError(j?.reason || 'Código inválido.');
+        setPromoError(j?.reason || 'Invalid coupon.');
         return;
       }
       setPromo({
@@ -262,7 +262,7 @@ function useCheckoutState() {
       setPromoError(null);
     } catch (e: any) {
       setPromo(null);
-      setPromoError('No se pudo validar el código.');
+      setPromoError('The coupon could not be validated.');
     } finally {
       setPromoApplying(false);
     }
@@ -346,7 +346,7 @@ function useCheckoutState() {
         deliveryFee,
         tip: mode === 'delivery' ? 0 : tip,
         discount: promoDiscountGTQ,               // <-- NUEVO
-        currency: process.env.NEXT_PUBLIC_PAY_CURRENCY || 'GTQ',
+        currency: process.env.NEXT_PUBLIC_PAY_CURRENCY || 'USD',
       },
       appliedPromotions,                          // <-- NUEVO
       promotionCode: promo?.code || null,         // <-- NUEVO
@@ -414,7 +414,7 @@ function CheckoutUI(props: {
       <div className="row g-4">
         <div className="col-12 col-lg-7">
           <div className="card border-0 shadow-sm">
-            <div className="card-header"><div className="fw-semibold">Detalles</div></div>
+            <div className="card-header"><div className="fw-semibold">Details</div></div>
             <div className="card-body">
               {/* Tipo de pedido */}
               <div className="mb-3">
@@ -429,12 +429,12 @@ function CheckoutUI(props: {
               {mode === 'dine-in' && (
                 <>
                   <div className="mb-3">
-                    <label className="form-label">Mesa</label>
-                    <input className="form-control" value={table} onChange={(e) => setTable(e.target.value)} placeholder="Ej. Mesa 5" disabled={saving} />
+                    <label className="form-label">Table</label>
+                    <input className="form-control" value={table} onChange={(e) => setTable(e.target.value)} placeholder="Ex. Mesa 5" disabled={saving} />
                   </div>
                   <div className="mb-3">
-                    <label className="form-label">Notas (opcional)</label>
-                    <textarea className="form-control" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Instrucciones adicionales" disabled={saving} />
+                    <label className="form-label">Notes (optional)</label>
+                    <textarea className="form-control" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Additional instructions" disabled={saving} />
                   </div>
                 </>
               )}
@@ -442,7 +442,7 @@ function CheckoutUI(props: {
               {mode === 'delivery' && (
                 <>
                   <div className="mb-3">
-                    <label className="form-label">Dirección</label>
+                    <label className="form-label">Address</label>
                     {hasDropdown ? (
                       <>
                         <select className="form-select" value={addressLabel || ''} onChange={(e) => onChangeAddressLabel(e.target.value as 'home' | 'office')} disabled={saving}>
@@ -453,34 +453,34 @@ function CheckoutUI(props: {
                           <div className="form-text">
                             {addressLabel === 'home' ? (
                               <>
-                                {homeAddr?.city ? `Ciudad: ${homeAddr.city}. ` : ''}
+                                {homeAddr?.city ? `City: ${homeAddr.city}. ` : ''}
                                 {homeAddr?.zip ? `ZIP: ${homeAddr.zip}. ` : ''}
-                                {homeAddr?.notes ? `Notas: ${homeAddr.notes}.` : ''}
+                                {homeAddr?.notes ? `Notes: ${homeAddr.notes}.` : ''}
                               </>
                             ) : (
                               <>
-                                {officeAddr?.city ? `Ciudad: ${officeAddr.city}. ` : ''}
+                                {officeAddr?.city ? `City: ${officeAddr.city}. ` : ''}
                                 {officeAddr?.zip ? `ZIP: ${officeAddr.zip}. ` : ''}
-                                {officeAddr?.notes ? `Notas: ${officeAddr.notes}.` : ''}
+                                {officeAddr?.notes ? `Notes: ${officeAddr.notes}.` : ''}
                               </>
                             )}
                           </div>
                         )}
                       </>
                     ) : (
-                      <input className="form-control" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Ej. 5a avenida 10-11..." disabled={saving} />
+                      <input className="form-control" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Ex. 5a avenida 10-11..." disabled={saving} />
                     )}
                   </div>
 
                   <div className="mb-3">
-                    <label className="form-label">Teléfono</label>
-                    <input className="form-control" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Ej. 5555-5555" disabled={saving} />
+                    <label className="form-label">Phone</label>
+                    <input className="form-control" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Ex. 5555-5555" disabled={saving} />
                   </div>
 
                   <div className="mb-3">
-                    <label className="form-label">Opciones de envío</label>
+                    <label className="form-label">Delivery options</label>
                     {deliveryOptions.length === 0 ? (
-                      <div className="form-text">No hay opciones de envío disponibles.</div>
+                      <div className="form-text">No shipping options available.</div>
                     ) : (
                       <div className="d-flex flex-column gap-2">
                         {deliveryOptions.map((opt) => (
@@ -500,8 +500,8 @@ function CheckoutUI(props: {
                   </div>
 
                   <div className="mb-3">
-                    <label className="form-label">Notas (opcional)</label>
-                    <textarea className="form-control" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Instrucciones adicionales" disabled={saving} />
+                    <label className="form-label">Notes (optional)</label>
+                    <textarea className="form-control" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Additional instructions" disabled={saving} />
                   </div>
                 </>
               )}
@@ -509,39 +509,39 @@ function CheckoutUI(props: {
               {mode === 'pickup' && (
                 <>
                   <div className="mb-3">
-                    <label className="form-label">Teléfono</label>
-                    <input className="form-control" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Ej. 5555-5555" disabled={saving} />
+                    <label className="form-label">Phone</label>
+                    <input className="form-control" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Ex. 5555-5555" disabled={saving} />
                   </div>
                   <div className="mb-3">
-                    <label className="form-label">Notas (opcional)</label>
-                    <textarea className="form-control" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Instrucciones adicionales" disabled={saving} />
+                    <label className="form-label">Notes (optional)</label>
+                    <textarea className="form-control" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Additional instructions" disabled={saving} />
                   </div>
                 </>
               )}
 
               {/* --- NUEVO: Código de promoción --- */}
               <div className="mb-3">
-                <label className="form-label fw-semibold">Código de promoción</label>
+                <label className="form-label fw-semibold">Promotion coupon</label>
                 <div className="d-flex gap-2">
                   <input
                     className="form-control"
-                    placeholder="Ej. POSTRES10"
+                    placeholder="Ex. DESSERT10"
                     value={promoCode}
                     onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
                     disabled={promoApplying || saving}
                   />
                   {!promo ? (
                     <button className="btn btn-outline-primary" onClick={applyPromo} disabled={promoApplying || saving}>
-                      {promoApplying ? 'Aplicando…' : 'Aplicar'}
+                      {promoApplying ? 'Applying...' : 'Apply'}
                     </button>
                   ) : (
                     <button className="btn btn-outline-secondary" onClick={clearPromo} disabled={saving}>
-                      Quitar
+                      Remove
                     </button>
                   )}
                 </div>
                 {promo && (
-                  <div className="text-success small mt-1">✓ Código aplicado: <strong>{promo.code}</strong></div>
+                  <div className="text-success small mt-1">✓ Coupon applied: <strong>{promo.code}</strong></div>
                 )}
                 {promoError && (
                   <div className="text-danger small mt-1">{promoError}</div>
@@ -550,11 +550,11 @@ function CheckoutUI(props: {
 
               {/* MÉTODO DE PAGO */}
               <div className="mb-3">
-                <label className="form-label fw-semibold">Método de pago</label>
+                <label className="form-label fw-semibold">Payment Method</label>
                 <div className="d-flex flex-column gap-2">
                   <label className="d-flex align-items-center gap-2">
                     <input type="radio" name="pm" className="form-check-input" checked={payMethod==='cash'} onChange={() => setPayMethod('cash')} />
-                    <span>Efectivo</span>
+                    <span>Cash</span>
                   </label>
 
                   <label className="d-flex align-items-center gap-2">
@@ -575,18 +575,18 @@ function CheckoutUI(props: {
 
             <div className="card-footer">
               <div className="d-flex justify-content-between align-items-center">
-                <div className="text-muted small">Se cobrará según el método seleccionado.</div>
+                <div className="text-muted small">It will be charged according to the selected method.</div>
                 <button
                   className="btn btn-primary"
                   disabled={disableSubmit}
                   onClick={() => {
                     if (payMethod === 'cash') return onSubmitCash();
                     if (payMethod === 'paypal') {
-                      alert('Usa el botón PayPal para continuar.');
+                      alert('Use the PayPal button to continue.');
                     }
                   }}
                 >
-                  {saving ? 'Procesando…' : (payMethod === 'cash' ? 'Confirmar pedido' : 'Pagar ahora')}
+                  {saving ? 'Processing…' : (payMethod === 'cash' ? 'Confirm order' : 'Pay now')}
                 </button>
               </div>
             </div>
@@ -596,26 +596,26 @@ function CheckoutUI(props: {
         {/* Resumen */}
         <div className="col-12 col-lg-5">
           <div className="card border-0 shadow-sm">
-            <div className="card-header"><div className="fw-semibold">Resumen</div></div>
+            <div className="card-header"><div className="fw-semibold">Summary</div></div>
             <div className="card-body">
               {mode === 'delivery' && (
                 <div className="border rounded p-2 mb-3 bg-light">
-                  <div className="small text-muted">Entrega</div>
+                  <div className="small text-muted">Deliver</div>
                   <div className="fw-semibold">
-                    {addressLabel === 'home' ? 'Casa' : addressLabel === 'office' ? 'Oficina' : 'Dirección'}{': '}
+                    {addressLabel === 'home' ? 'Home' : addressLabel === 'office' ? 'Office' : 'Address'}{': '}
                     {address || (addressLabel === 'home' ? homeAddr?.line1 : officeAddr?.line1) || '—'}
                   </div>
                   {(addressLabel && (addressLabel === 'home' ? homeAddr : officeAddr)) && (
                     <div className="small text-muted mt-1">
                       {addressLabel === 'home'
-                        ? [homeAddr?.city && `Ciudad: ${homeAddr.city}`, homeAddr?.country && `País: ${homeAddr.country}`, homeAddr?.zip && `ZIP: ${homeAddr.zip}`].filter(Boolean).join(' · ')
-                        : [officeAddr?.city && `Ciudad: ${officeAddr.city}`, officeAddr?.country && `País: ${officeAddr.country}`, officeAddr?.zip && `ZIP: ${officeAddr.zip}`].filter(Boolean).join(' · ')
+                        ? [homeAddr?.city && `City: ${homeAddr.city}`, homeAddr?.country && `Country: ${homeAddr.country}`, homeAddr?.zip && `ZIP: ${homeAddr.zip}`].filter(Boolean).join(' · ')
+                        : [officeAddr?.city && `City: ${officeAddr.city}`, officeAddr?.country && `Country: ${officeAddr.country}`, officeAddr?.zip && `ZIP: ${officeAddr.zip}`].filter(Boolean).join(' · ')
                       }
                     </div>
                   )}
                   <div className="mt-2 small">
-                    <span className="text-muted">Cliente:</span> {customerName || '—'}
-                    <span className="text-muted ms-2">Tel:</span> {phone || '—'}
+                    <span className="text-muted">Client:</span> {customerName || '—'}
+                    <span className="text-muted ms-2">Phone:</span> {phone || '—'}
                   </div>
                 </div>
               )}
@@ -625,12 +625,12 @@ function CheckoutUI(props: {
                 <div className="d-flex justify-content-between"><div>Subtotal</div><div className="fw-semibold">{fmtQ(subtotal)}</div></div>
 
                 {/* NUEVO: línea de descuento si hay promo */}
-                {promo && <div className="d-flex justify-content-between text-success"><div>Descuento ({promo.code})</div><div className="fw-semibold">- {fmtQ((promo.discountTotalCents||0)/100)}</div></div>}
+                {promo && <div className="d-flex justify-content-between text-success"><div>Discount ({promo.code})</div><div className="fw-semibold">- {fmtQ((promo.discountTotalCents||0)/100)}</div></div>}
 
-                {mode === 'delivery' && (<div className="d-flex justify-content-between"><div>Envío</div><div className="fw-semibold">{fmtQ(deliveryFee)}</div></div>)}
+                {mode === 'delivery' && (<div className="d-flex justify-content-between"><div>Delivery</div><div className="fw-semibold">{fmtQ(deliveryFee)}</div></div>)}
                 {mode !== 'delivery' && (
                   <div className="d-flex align-items-center justify-content-between gap-2 mt-2">
-                    <label className="mb-0">Propina (sugerido 10%)</label>
+                    <label className="mb-0">Tip (suggested 10%)</label>
                     <div className="d-flex align-items-center gap-2">
                       <input type="number" min="0" step="0.01" className="form-control form-control-sm" style={{ width: 120 }}
                         value={Number.isFinite(tip) ? tip : 0}
@@ -640,11 +640,11 @@ function CheckoutUI(props: {
                   </div>
                 )}
                 <hr />
-                <div className="d-flex justify-content-between"><div className="fw-semibold">Gran total</div><div className="fw-bold">{fmtQ(grandTotal)}</div></div>
+                <div className="d-flex justify-content-between"><div className="fw-semibold">Grand total</div><div className="fw-bold">{fmtQ(grandTotal)}</div></div>
               </div>
             </div>
             <div className="card-footer d-flex justify-content-between">
-              <div className="small text-muted">Total según método seleccionado{promo ? ` (incluye ${promo.code})` : ''}.</div>
+              <div className="small text-muted">Total according to selected method{promo ? ` (includes ${promo.code})` : ''}.</div>
               <div />
             </div>
           </div>
@@ -666,7 +666,7 @@ function CheckoutCoreNoStripe() {
       provider: 'cash',
       status: 'pending',
       amount: payload.orderTotal,
-      currency: (payload as any).totals?.currency || 'GTQ',
+      currency: (payload as any).totals?.currency || 'USD',
       createdAt: serverTimestamp(),
     };
     try {
@@ -686,10 +686,10 @@ function CheckoutCoreNoStripe() {
 
       cart.clear();
       router.push('/cart-new');
-      alert('¡Orden creada (efectivo)! ID: ' + ref.id);
+      alert('¡Order Created (efectivo)! ID: ' + ref.id);
     } catch (e) {
       console.error(e);
-      alert('No se pudo crear la orden.');
+      alert('The order could not be created.');
     } finally {
       actions.setSaving(false);
     }
@@ -705,11 +705,11 @@ function CheckoutCoreNoStripe() {
     if (!cid) return;
     if ((window as any).paypal) { setPaypalReady(true); return; }
     const s = document.createElement('script');
-    const currency = process.env.NEXT_PUBLIC_PAY_CURRENCY || 'GTQ';
+    const currency = process.env.NEXT_PUBLIC_PAY_CURRENCY || 'USD';
     s.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(cid)}&currency=${encodeURIComponent(currency)}`;
     s.async = true;
     s.onload = () => setPaypalReady(true);
-    s.onerror = () => console.warn('No se pudo cargar PayPal SDK.');
+    s.onerror = () => console.warn('PayPal could not be loaded SDK.');
     document.body.appendChild(s);
   }, []);
 
@@ -741,7 +741,7 @@ function CheckoutCoreNoStripe() {
           });
           if (!res.ok) {
             const j = await res.json().catch(() => null);
-            throw new Error(j?.error || 'No se pudo crear orden PayPal.');
+            throw new Error(j?.error || 'Could not create PayPal order.');
           }
           const { paypalOrderId } = await res.json();
           return paypalOrderId;
@@ -755,7 +755,7 @@ function CheckoutCoreNoStripe() {
             });
             if (!res.ok) {
               const j = await res.json().catch(() => null);
-              throw new Error(j?.error || 'No se pudo capturar PayPal.');
+              throw new Error(j?.error || 'Could not capture PayPal.');
             }
 
             // NUEVO: intentar leer { orderId } para consumir promo
@@ -781,14 +781,14 @@ function CheckoutCoreNoStripe() {
 
             helpers.cart.clear();
             helpers.router.push('/cart-new');
-            alert('Pago PayPal capturado. La orden se confirmará en breve.');
+            alert('PayPal payment captured. Order Confirmed');
           } catch (e: any) {
-            alert(e?.message || 'Error capturando PayPal.');
+            alert(e?.message || 'Error capturing PayPal.');
           }
         },
         onError: (err: any) => {
           console.error('PayPal error:', err);
-          alert('Error en PayPal.');
+          alert('Error in PayPal.');
         },
         style: { layout: 'vertical', shape: 'rect', label: 'paypal' },
       });

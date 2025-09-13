@@ -7,7 +7,7 @@ import type { NewCartItem } from '@/lib/newcart/types';
 
 function fmtQ(n?: number) {
   const v = Number.isFinite(Number(n)) ? Number(n) : 0;
-  try { return new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(v); }
+  try { return new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'USD' }).format(v); }
   catch { return `Q ${v.toFixed(2)}`; }
 }
 
@@ -20,14 +20,14 @@ export default function CartViewNew() {
   return (
     <div className="card border-0 shadow-sm">
       <div className="card-header d-flex align-items-center justify-content-between">
-        <div className="fw-semibold">Tu carrito</div>
+        <div className="fw-semibold">Your Cart</div>
         {lines.length > 0 && (
-          <button className="btn btn-sm btn-outline-danger" onClick={() => cart.clear()}>Vaciar</button>
+          <button className="btn btn-sm btn-outline-danger" onClick={() => cart.clear()}>Empty</button>
         )}
       </div>
 
       <div className="card-body">
-        {lines.length === 0 && <div className="text-muted">Tu carrito está vacío.</div>}
+        {lines.length === 0 && <div className="text-muted">Your cart is empty.</div>}
 
         <div className="d-flex flex-column gap-3">
           {lines.map((ln, idx) => {
@@ -98,10 +98,10 @@ export default function CartViewNew() {
       </div>
 
       <div className="card-footer d-flex justify-content-between align-items-center">
-        <div className="fw-semibold">Total a pagar</div>
+        <div className="fw-semibold">Total to pay</div>
         <div className="d-flex align-items-center gap-2">
           <div className="fw-bold fs-5">{fmtQ(grand)}</div>
-          <Link href="/checkout-new" className="btn btn-primary">Ir al checkout</Link>
+          <Link href="/checkout-new" className="btn btn-primary">Go to checkout</Link>
         </div>
       </div>
     </div>

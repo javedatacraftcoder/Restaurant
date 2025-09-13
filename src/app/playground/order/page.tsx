@@ -128,13 +128,13 @@ export default function OrderPlaygroundPage() {
     setOkMsg(null);
     try {
       if (cart.length === 0) {
-        setErrorMsg("Tu carrito está vacío.");
+        setErrorMsg("Your cart is empty.");
         return;
       }
 
       // Si es delivery, exigir login (la UI ya lo oculta si no hay user, pero reforzamos)
       if (orderType === "delivery" && !user) {
-        setErrorMsg("Debes iniciar sesión para crear una orden de delivery.");
+        setErrorMsg("You must log in to create a delivery order.");
         return;
       }
 
@@ -157,14 +157,14 @@ export default function OrderPlaygroundPage() {
 
       const data = await res.json();
       if (!res.ok || !data?.ok) {
-        setErrorMsg(data?.error || "No se pudo crear la orden.");
+        setErrorMsg(data?.error || "The order could not be created.");
         return;
       }
 
-      setOkMsg(`Orden creada: ${data?.order?.id || "(sin id)"}`);
+      setOkMsg(`Order created: ${data?.order?.id || "(sin id)"}`);
       setCart([]);
     } catch (e: any) {
-      setErrorMsg(e?.message || "Error desconocido");
+      setErrorMsg(e?.message || "Unknown error");
     } finally {
       setSubmitting(false);
     }
@@ -172,7 +172,7 @@ export default function OrderPlaygroundPage() {
 
   return (
     <div style={{ maxWidth: 960, margin: "40px auto", padding: 16 }}>
-      <h1>Armar orden</h1>
+      <h1>Build order</h1>
 
       {/* Radios de tipo de orden: Delivery solo si hay usuario */}
       <div style={{ display: "flex", gap: 16, margin: "12px 0 24px" }}>
@@ -205,16 +205,16 @@ export default function OrderPlaygroundPage() {
               checked={orderType === "delivery"}
               onChange={() => setOrderType("delivery")}
             />
-            Delivery (requiere login)
+            Delivery (requiers login)
           </label>
         )}
       </div>
 
       {loading ? (
-        <p>Cargando menú…</p>
+        <p>Loading menu…</p>
       ) : (
         <>
-          <h2>Menú</h2>
+          <h2>Menu</h2>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
             {items
               .filter((i) => i.isActive !== false)
@@ -250,22 +250,22 @@ export default function OrderPlaygroundPage() {
                         cursor: "pointer",
                       }}
                     >
-                      Agregar
+                      Add
                     </button>
                   </div>
                 );
               })}
           </div>
 
-          <h2 style={{ marginTop: 24 }}>Carrito</h2>
+          <h2 style={{ marginTop: 24 }}>Cart</h2>
           {cart.length === 0 ? (
-            <p>No hay items en el carrito.</p>
+            <p>There are no items in the cart..</p>
           ) : (
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: 8 }}>Producto</th>
-                  <th style={{ textAlign: "right", borderBottom: "1px solid #ddd", padding: 8 }}>Cant.</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: 8 }}>Product</th>
+                  <th style={{ textAlign: "right", borderBottom: "1px solid #ddd", padding: 8 }}>Qty.</th>
                   <th style={{ textAlign: "right", borderBottom: "1px solid #ddd", padding: 8 }}>Unit.</th>
                   <th style={{ textAlign: "right", borderBottom: "1px solid #ddd", padding: 8 }}>Total</th>
                   <th style={{ borderBottom: "1px solid #ddd", padding: 8 }}></th>
@@ -326,7 +326,7 @@ export default function OrderPlaygroundPage() {
                 cursor: submitting ? "not-allowed" : "pointer",
               }}
             >
-              {submitting ? "Enviando…" : "Confirmar orden"}
+              {submitting ? "Sending…" : "Confirm order"}
             </button>
           </div>
         </>

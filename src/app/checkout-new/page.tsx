@@ -23,7 +23,7 @@ import { getAuth } from 'firebase/auth';
 
 function fmtQ(n?: number) {
   const v = Number.isFinite(Number(n)) ? Number(n) : 0;
-  try { return new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(v); }
+  try { return new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'USD' }).format(v); }
   catch { return `Q ${v.toFixed(2)}`; }
 }
 
@@ -232,9 +232,9 @@ export default function CheckoutNewPage() {
           if (!selectedDeliveryOptionId && arr.length > 0) {
             setSelectedDeliveryOptionId(arr[0].id);
           }
-          console.warn('[deliveryOptions] usando fallback sin índice compuesto. Crea el índice para habilitar orderBy en server.');
+          console.warn('[deliveryOptions] Using fallback without a composite index. Create the index to enable orderBy on the server.');
         } catch (inner) {
-          console.error('Error leyendo deliveryOptions:', inner);
+          console.error('Error reading deliveryOptions:', inner);
           setDeliveryOptions([]);
         }
       }
@@ -274,7 +274,7 @@ export default function CheckoutNewPage() {
   const applyPromo = useCallback(async () => {
     setPromoError(null);
     const code = (promoCode || '').trim().toUpperCase();
-    if (!code) { setPromoError('Ingresa un código.'); return; }
+    if (!code) { setPromoError('Enter your coupon.'); return; }
     setPromoApplying(true);
     try {
       const auth = getAuth();
@@ -299,7 +299,7 @@ export default function CheckoutNewPage() {
       const j = await res.json();
       if (!res.ok || !j?.ok) {
         setPromo(null);
-        setPromoError(j?.reason || 'Código inválido.');
+        setPromoError(j?.reason || 'Invalid coupon.');
         return;
       }
       setPromo({
@@ -311,7 +311,7 @@ export default function CheckoutNewPage() {
       setPromoError(null);
     } catch (e: any) {
       setPromo(null);
-      setPromoError('No se pudo validar el código.');
+      setPromoError('The code could not be validated');
     } finally {
       setPromoApplying(false);
     }
@@ -414,7 +414,7 @@ export default function CheckoutNewPage() {
         deliveryFee,
         tip: mode === 'delivery' ? 0 : tip,
         discount: promoDiscountGTQ,               // 👈 NUEVO
-        currency: 'GTQ',
+        currency: 'USD',
       },
 
       // NUEVO: snapshot de promociones aplicadas
@@ -432,7 +432,7 @@ export default function CheckoutNewPage() {
     try {
       setSaving(true);
       const ref = await addDoc(collection(db, 'orders'), orderPayload);
-      console.log('[CHECKOUT] Orden guardada en orders con id:', ref.id);
+      console.log('[CHECKOUT] Order saved in orders with id:', ref.id);
 
       // ---------- NUEVO: consumir límite global de la promoción (idempotente por orderId) ----------
       if (promo?.promoId) {
@@ -448,16 +448,16 @@ export default function CheckoutNewPage() {
             }),
           });
         } catch (e) {
-          console.warn('[promotions/consume] no crítico:', e);
+          console.warn('[promotions/consume] not critical:', e);
         }
       }
 
       cart.clear();
       router.push('/cart-new'); // o '/menu'
-      alert('¡Orden creada! ID: ' + ref.id);
+      alert('¡Order created! ID: ' + ref.id);
     } catch (err) {
-      console.error('Error guardando la orden:', err);
-      alert('No se pudo guardar la orden. Intenta nuevamente.');
+      console.error('Error saving order:', err);
+      alert('The order could not be saved. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -472,18 +472,18 @@ export default function CheckoutNewPage() {
 
   return (
     <div className="container py-4">
-      <h1 className="h4 mb-3">Checkout (nuevo)</h1>
+      <h1 className="h4 mb-3">Checkout (New)</h1>
 
       <div className="row g-4">
         <div className="col-12 col-lg-7">
           <div className="card border-0 shadow-sm">
             <div className="card-header">
-              <div className="fw-semibold">Detalles</div>
+              <div className="fw-semibold">Details</div>
             </div>
             <div className="card-body">
               {/* Tipo de pedido */}
               <div className="mb-3">
-                <label className="form-label fw-semibold">Tipo de pedido</label>
+                <label className="form-label fw-semibold">Order type</label>
                 <div className="d-flex gap-2">
                   <button
                     className={`btn ${mode === 'dine-in' ? 'btn-primary' : 'btn-outline-primary'}`}
@@ -512,22 +512,22 @@ export default function CheckoutNewPage() {
               {mode === 'dine-in' && (
                 <>
                   <div className="mb-3">
-                    <label className="form-label">Mesa</label>
+                    <label className="form-label">Table</label>
                     <input
                       className="form-control"
                       value={table}
                       onChange={(e) => setTable(e.target.value)}
-                      placeholder="Ej. Mesa 5"
+                      placeholder="Ex. Table 5"
                       disabled={saving}
                     />
                   </div>
                   <div className="mb-3">
-                    <label className="form-label">Notas (opcional)</label>
+                    <label className="form-label">Notes (opcional)</label>
                     <textarea
                       className="form-control"
                       value={notes}
                       onChange={(e) => setNotes(e.target.value)}
-                      placeholder="Instrucciones adicionales"
+                      placeholder="Additional instructions"
                       disabled={saving}
                     />
                   </div>
@@ -537,7 +537,7 @@ export default function CheckoutNewPage() {
               {mode === 'delivery' && (
                 <>
                   <div className="mb-3">
-                    <label className="form-label">Dirección</label>
+                    <label className="form-label">Address</label>
                     {hasDropdown ? (
                       <>
                         <select
@@ -547,25 +547,25 @@ export default function CheckoutNewPage() {
                           disabled={saving}
                         >
                           {homeAddr?.line1 && String(homeAddr.line1).trim() !== '' && (
-                            <option value="home">Casa — {homeAddr.line1}</option>
+                            <option value="home">Home — {homeAddr.line1}</option>
                           )}
                           {officeAddr?.line1 && String(officeAddr.line1).trim() !== '' && (
-                            <option value="office">Oficina — {officeAddr.line1}</option>
+                            <option value="office">Office — {officeAddr.line1}</option>
                           )}
                         </select>
                         {addressLabel && (
                           <div className="form-text">
                             {addressLabel === 'home' ? (
                               <>
-                                {homeAddr?.city ? `Ciudad: ${homeAddr.city}. ` : ''}
+                                {homeAddr?.city ? `City: ${homeAddr.city}. ` : ''}
                                 {homeAddr?.zip ? `ZIP: ${homeAddr.zip}. ` : ''}
-                                {homeAddr?.notes ? `Notas: ${homeAddr.notes}.` : ''}
+                                {homeAddr?.notes ? `Notes: ${homeAddr.notes}.` : ''}
                               </>
                             ) : (
                               <>
-                                {officeAddr?.city ? `Ciudad: ${officeAddr.city}. ` : ''}
+                                {officeAddr?.city ? `City: ${officeAddr.city}. ` : ''}
                                 {officeAddr?.zip ? `ZIP: ${officeAddr.zip}. ` : ''}
-                                {officeAddr?.notes ? `Notas: ${officeAddr.notes}.` : ''}
+                                {officeAddr?.notes ? `Notes: ${officeAddr.notes}.` : ''}
                               </>
                             )}
                           </div>
@@ -576,28 +576,28 @@ export default function CheckoutNewPage() {
                         className="form-control"
                         value={address}
                         onChange={(e) => setAddress(e.target.value)}
-                        placeholder="Ej. 5a avenida 10-11..."
+                        placeholder="Ex. 5th avenue 1011..."
                         disabled={saving}
                       />
                     )}
                   </div>
 
                   <div className="mb-3">
-                    <label className="form-label">Teléfono</label>
+                    <label className="form-label">Phone</label>
                     <input
                       className="form-control"
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
-                      placeholder="Ej. 5555-5555"
+                      placeholder="Ex. 5555-5555"
                       disabled={saving}
                     />
                   </div>
 
                   {/* Opciones de envío */}
                   <div className="mb-3">
-                    <label className="form-label">Opciones de envío</label>
+                    <label className="form-label">Delivery options</label>
                     {deliveryOptions.length === 0 ? (
-                      <div className="form-text">No hay opciones de envío disponibles.</div>
+                      <div className="form-text">There are no shipping options available.</div>
                     ) : (
                       <div className="d-flex flex-column gap-2">
                         {deliveryOptions.map((opt) => (
@@ -624,12 +624,12 @@ export default function CheckoutNewPage() {
                   </div>
 
                   <div className="mb-3">
-                    <label className="form-label">Notas (opcional)</label>
+                    <label className="form-label">Notes (optional)</label>
                     <textarea
                       className="form-control"
                       value={notes}
                       onChange={(e) => setNotes(e.target.value)}
-                      placeholder="Instrucciones adicionales"
+                      placeholder="Additional instructions"
                       disabled={saving}
                     />
                   </div>
@@ -639,22 +639,22 @@ export default function CheckoutNewPage() {
               {mode === 'pickup' && (
                 <>
                   <div className="mb-3">
-                    <label className="form-label">Teléfono</label>
+                    <label className="form-label">Phone</label>
                     <input
                       className="form-control"
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
-                      placeholder="Ej. 5555-5555"
+                      placeholder="Ex. 5555-5555"
                       disabled={saving}
                     />
                   </div>
                   <div className="mb-3">
-                    <label className="form-label">Notas (opcional)</label>
+                    <label className="form-label">Notes (optional)</label>
                     <textarea
                       className="form-control"
                       value={notes}
                       onChange={(e) => setNotes(e.target.value)}
-                      placeholder="Instrucciones adicionales"
+                      placeholder="Additional instructions"
                       disabled={saving}
                     />
                   </div>
@@ -663,27 +663,27 @@ export default function CheckoutNewPage() {
 
               {/* ---------- NUEVO: Campo de CÓDIGO PROMO ---------- */}
               <div className="mb-3">
-                <label className="form-label fw-semibold">Código de promoción</label>
+                <label className="form-label fw-semibold">Promotion Coupon</label>
                 <div className="d-flex gap-2">
                   <input
                     className="form-control"
-                    placeholder="Ej. POSTRES10"
+                    placeholder="Ex. POSTRES10"
                     value={promoCode}
                     onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
                     disabled={promoApplying || saving}
                   />
                   {!promo ? (
                     <button className="btn btn-outline-primary" onClick={applyPromo} disabled={promoApplying || saving}>
-                      {promoApplying ? 'Aplicando…' : 'Aplicar'}
+                      {promoApplying ? 'Applying…' : 'Apply'}
                     </button>
                   ) : (
                     <button className="btn btn-outline-secondary" onClick={clearPromo} disabled={saving}>
-                      Quitar
+                      Remove
                     </button>
                   )}
                 </div>
                 {promo && (
-                  <div className="text-success small mt-1">✓ Código aplicado: <strong>{promo.code}</strong></div>
+                  <div className="text-success small mt-1">✓ Coupon applied: <strong>{promo.code}</strong></div>
                 )}
                 {promoError && (
                   <div className="text-danger small mt-1">{promoError}</div>
@@ -693,7 +693,7 @@ export default function CheckoutNewPage() {
 
             <div className="card-footer">
               <button className="btn btn-primary" disabled={disableSubmit} onClick={onSubmit}>
-                {saving ? 'Guardando…' : 'Confirmar pedido'}
+                {saving ? 'Saving…' : 'Confirm order'}
               </button>
             </div>
           </div>
@@ -703,13 +703,13 @@ export default function CheckoutNewPage() {
         <div className="col-12 col-lg-5">
           <div className="card border-0 shadow-sm">
             <div className="card-header">
-              <div className="fw-semibold">Resumen</div>
+              <div className="fw-semibold">Summary</div>
             </div>
             <div className="card-body">
               {/* Bloque de resumen de entrega con alias y contacto (idéntico al viejo comportamiento) */}
               {mode === 'delivery' && (
                 <div className="border rounded p-2 mb-3 bg-light">
-                  <div className="small text-muted">Entrega</div>
+                  <div className="small text-muted">Deliver</div>
                   <div className="fw-semibold">
                     {addressLabel === 'home' ? 'Casa' : addressLabel === 'office' ? 'Oficina' : 'Dirección'}
                     {': '}
@@ -732,8 +732,8 @@ export default function CheckoutNewPage() {
                     </div>
                   )}
                   <div className="mt-2 small">
-                    <span className="text-muted">Cliente:</span> {customerName || '—'}
-                    <span className="text-muted ms-2">Tel:</span> {phone || '—'}
+                    <span className="text-muted">Client:</span> {customerName || '—'}
+                    <span className="text-muted ms-2">Phone:</span> {phone || '—'}
                   </div>
                 </div>
               )}
@@ -773,7 +773,7 @@ export default function CheckoutNewPage() {
                         </div>
                       )}
                       <div className="text-muted small mt-1">
-                        ({fmtQ(ln.basePrice + unitExtras)} c/u)
+                        ({fmtQ(ln.basePrice + unitExtras)} each)
                       </div>
                     </div>
                   );
@@ -790,21 +790,21 @@ export default function CheckoutNewPage() {
                 {/* ---------- NUEVO: línea de descuento si hay promo ---------- */}
                 {promo && (
                   <div className="d-flex justify-content-between text-success">
-                    <div>Descuento ({promo.code})</div>
+                    <div>Discount ({promo.code})</div>
                     <div className="fw-semibold">- {fmtQ(promoDiscountGTQ)}</div>
                   </div>
                 )}
 
                 {mode === 'delivery' && (
                   <div className="d-flex justify-content-between">
-                    <div>Envío</div>
+                    <div>Delivery</div>
                     <div className="fw-semibold">{fmtQ(deliveryFee)}</div>
                   </div>
                 )}
 
                 {mode !== 'delivery' && (
                   <div className="d-flex align-items-center justify-content-between gap-2 mt-2">
-                    <label className="mb-0">Propina (sugerido 10%)</label>
+                    <label className="mb-0">Tip (suggested 10%)</label>
                     <div className="d-flex align-items-center gap-2">
                       <input
                         type="number"
@@ -827,14 +827,14 @@ export default function CheckoutNewPage() {
                 <hr />
 
                 <div className="d-flex justify-content-between">
-                  <div className="fw-semibold">Gran total</div>
+                  <div className="fw-semibold">Grand total</div>
                   <div className="fw-bold">{fmtQ(grandTotal)}</div>
                 </div>
               </div>
             </div>
 
             <div className="card-footer d-flex justify-content-between">
-              <div>Incluye descuento aplicado{promo ? ` (${promo.code})` : ''}.</div>
+              <div>Includes applied discount{promo ? ` (${promo.code})` : ''}.</div>
               <div className="fw-semibold">{/* redundante, ya mostramos arriba */}</div>
             </div>
           </div>
