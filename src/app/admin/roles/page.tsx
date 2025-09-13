@@ -142,22 +142,22 @@ function RolesPage_Inner() {
         throw new Error(data?.error || `PATCH ${res.status}`);
       }
       await load();
-      alert('Roles actualizados. El usuario debe renovar sesión para obtener nuevos permisos.');
+      alert('Roles updated. The user must refresh their session to obtain new permissions.');
     } catch (e: any) {
-      alert(e?.message || 'No se pudo actualizar roles');
+      alert(e?.message || 'Could not update roles');
     }
   };
 
-  if (!authReady) return <div className="container py-3">Inicializando…</div>;
-  if (!user) return <div className="container py-3 text-danger">Debes iniciar sesión.</div>;
-  if (!isAdmin) return <div className="container py-3 text-danger">No autorizado (solo administradores).</div>;
+  if (!authReady) return <div className="container py-3">Initializing…</div>;
+  if (!user) return <div className="container py-3 text-danger">You must sign in.</div>;
+  if (!isAdmin) return <div className="container py-3 text-danger">Unauthorized (admins only).</div>;
 
   return (
     <div className="container py-3">
       <div className="d-flex align-items-center justify-content-between mb-3">
-        <h1 className="h4 m-0">Administrar roles</h1>
+        <h1 className="h4 m-0">Manage roles</h1>
         <button className="btn btn-outline-secondary btn-sm" onClick={load} disabled={loading}>
-          {loading ? 'Cargando…' : 'Refrescar'}
+          {loading ? 'Loading…' : 'Refresh'}
         </button>
       </div>
 
@@ -167,7 +167,7 @@ function RolesPage_Inner() {
         <table className="table align-middle">
           <thead>
             <tr>
-              <th>Usuario</th>
+              <th>User</th>
               <th>UID</th>
               {ROLES.map((r) => (
                 <th key={r.key}>{r.label}</th>
@@ -178,9 +178,9 @@ function RolesPage_Inner() {
             {rows.map((u) => (
               <tr key={u.uid}>
                 <td>
-                  <div className="fw-semibold">{u.displayName || u.email || '(sin nombre)'}</div>
+                  <div className="fw-semibold">{u.displayName || u.email || '(no name)'}</div>
                   <div className="text-muted small">{u.email}</div>
-                  {u.disabled && <span className="badge bg-warning text-dark">Deshabilitado</span>}
+                  {u.disabled && <span className="badge bg-warning text-dark">Disabled</span>}
                 </td>
                 <td className="text-muted small">{u.uid}</td>
                 {ROLES.map((r) => {
@@ -201,7 +201,7 @@ function RolesPage_Inner() {
             {rows.length === 0 && (
               <tr>
                 <td colSpan={2 + ROLES.length} className="text-muted">
-                  Sin resultados
+                  No results
                 </td>
               </tr>
             )}
@@ -210,7 +210,7 @@ function RolesPage_Inner() {
       </div>
 
       <div className="text-muted small mt-2">
-        * El usuario debe cerrar sesión y volver a iniciarla (o refrescar su ID token) para recibir los nuevos permisos.
+        * The user must sign out and sign back in (or refresh their ID token) to receive the new permissions.
       </div>
     </div>
   );

@@ -43,7 +43,7 @@ function tsToDate(ts:TS){ if(!ts) return null; try{
   if (typeof ts === 'number') return new Date(ts);
   const d = new Date(ts); return isNaN(d.getTime())? null : d;
 }catch{return null;} }
-function fmtMoney(n?:number, cur='GTQ'){ const v=Number(n||0); try{ return new Intl.NumberFormat('es-GT',{style:'currency',currency:cur}).format(v);}catch{return `Q ${v.toFixed(2)}`;} }
+function fmtMoney(n?:number, cur='USD'){ const v=Number(n||0); try{ return new Intl.NumberFormat('es-GT',{style:'currency',currency:cur}).format(v);}catch{return `Q ${v.toFixed(2)}`;} }
 function extractDeltaQ(x:any){ const a=toNum(x?.priceDelta); if(a!==undefined) return a;
   const b=toNum(x?.priceExtra); if(b!==undefined) return b;
   const ac=toNum(x?.priceDeltaCents); if(ac!==undefined) return ac/100;
@@ -121,15 +121,15 @@ export default function EditOrdersListPage() {
       <RoleGate allow={['admin','waiter']}>
         <div className="container py-4">
           <div className="d-flex align-items-center justify-content-between mb-3">
-            <h1 className="h4 m-0">Editar órdenes</h1>
+            <h1 className="h4 m-0">Edit orders</h1>
             <div className="input-group" style={{maxWidth: 360}}>
               <span className="input-group-text">@</span>
-              <input className="form-control" placeholder="Buscar por correo o #"
+              <input className="form-control" placeholder="Search by email or #"
                     value={q} onChange={e=>setQ(e.target.value)} />
             </div>
           </div>
 
-          {loading && <div className="alert alert-info">Cargando…</div>}
+          {loading && <div className="alert alert-info">Loading...</div>}
 
           {!loading && (
             <ul className="list-group">
@@ -142,7 +142,7 @@ export default function EditOrdersListPage() {
                     <div className="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between">
                       <div>
                         <div className="fw-semibold">#{n} <span className="badge text-bg-light">{displayType(o)}</span></div>
-                        <div className="small text-muted">Fecha: {d}</div>
+                        <div className="small text-muted">Date: {d}</div>
                       </div>
                       <div className="d-flex align-items-center gap-2 mt-2 mt-md-0">
                         <div className="fw-bold">{fmtMoney(total, o.currency)}</div>
@@ -172,7 +172,7 @@ export default function EditOrdersListPage() {
                               });
                               return rows.length?(
                                 <div key={gi} className="ms-3 text-muted">
-                                  <span className="fw-semibold">{g.groupName || 'Opciones'}:</span> {rows}
+                                  <span className="fw-semibold">{g.groupName || 'Options'}:</span> {rows}
                                 </div>
                               ):null;
                             })}
@@ -184,7 +184,7 @@ export default function EditOrdersListPage() {
                               });
                               return rows.length?(
                                 <div key={`op-${gi}`} className="ms-3 text-muted">
-                                  <span className="fw-semibold">{g.groupName || 'Opciones'}:</span> {rows}
+                                  <span className="fw-semibold">{g.groupName || 'Options'}:</span> {rows}
                                 </div>
                               ):null;
                             })}
@@ -202,7 +202,7 @@ export default function EditOrdersListPage() {
                             )}
 
                             <div className="d-flex justify-content-between">
-                              <span className="text-muted">Subtotal línea</span>
+                              <span className="text-muted">Subtotal line</span>
                               <span className="text-muted">{fmtMoney(sum, o.currency)}</span>
                             </div>
                           </div>
@@ -212,7 +212,7 @@ export default function EditOrdersListPage() {
                   </li>
                 );
               })}
-              {filtered.length===0 && <li className="list-group-item text-muted">Sin resultados</li>}
+              {filtered.length===0 && <li className="list-group-item text-muted">No results</li>}
             </ul>
           )}
         </div>

@@ -30,7 +30,7 @@ type DeliveryOption = {
 function fmtQ(n?: number) {
   const v = Number.isFinite(Number(n)) ? Number(n) : 0;
   try {
-    return new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(v);
+    return new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'USD' }).format(v);
   } catch {
     return `Q ${v.toFixed(2)}`;
   }
@@ -86,10 +86,10 @@ export default function AdminDeliveryOptionsPage() {
       setPrice(0);
       setIsActive(true);
       setSortOrder(0);
-      alert('Opción creada');
+      alert('Option created');
     } catch (e) {
       console.error(e);
-      alert('No se pudo crear la opción');
+      alert('The option could not be created');
     }
   }
 
@@ -103,45 +103,45 @@ export default function AdminDeliveryOptionsPage() {
         sortOrder: Number(it.sortOrder || 0),
         updatedAt: serverTimestamp(),
       });
-      alert('Opción actualizada');
+      alert('Updated option');
     } catch (e) {
       console.error(e);
-      alert('No se pudo actualizar');
+      alert('Could not update');
     }
   }
 
   async function onDelete(id: string) {
-    if (!confirm('¿Eliminar esta opción de envío?')) return;
+    if (!confirm('Remove this shipping option?')) return;
     try {
       await deleteDoc(doc(db, 'deliveryOptions', id));
-      alert('Eliminado');
+      alert('Delted');
     } catch (e) {
       console.error(e);
-      alert('No se pudo eliminar');
+      alert('Could not delete');
     }
   }
 
   return (
     <div className="container py-4">
-      <h1 className="h4 mb-3">Opciones de Envío</h1>
+      <h1 className="h4 mb-3">Delivery options</h1>
 
       {/* Crear nueva */}
       <div className="card border-0 shadow-sm mb-4">
         <div className="card-header">
-          <div className="fw-semibold">Crear opción</div>
+          <div className="fw-semibold">Create delivery option</div>
         </div>
         <form className="card-body" onSubmit={onCreate}>
           <div className="row g-3">
             <div className="col-md-4">
-              <label className="form-label">Título</label>
+              <label className="form-label">Title</label>
               <input className="form-control" value={title} onChange={(e) => setTitle(e.target.value)} required />
             </div>
             <div className="col-md-4">
-              <label className="form-label">Descripción</label>
+              <label className="form-label">Description</label>
               <input className="form-control" value={description} onChange={(e) => setDescription(e.target.value)} />
             </div>
             <div className="col-md-2">
-              <label className="form-label">Precio</label>
+              <label className="form-label">Price</label>
               <input
                 type="number"
                 step="0.01"
@@ -153,7 +153,7 @@ export default function AdminDeliveryOptionsPage() {
               />
             </div>
             <div className="col-md-1">
-              <label className="form-label">Activo</label>
+              <label className="form-label">Active</label>
               <div className="form-check mt-2">
                 <input
                   type="checkbox"
@@ -164,7 +164,7 @@ export default function AdminDeliveryOptionsPage() {
               </div>
             </div>
             <div className="col-md-1">
-              <label className="form-label">Orden</label>
+              <label className="form-label">Order</label>
               <input
                 type="number"
                 className="form-control"
@@ -175,7 +175,7 @@ export default function AdminDeliveryOptionsPage() {
           </div>
           <div className="mt-3">
             <button className="btn btn-primary" type="submit">
-              Guardar
+              Save
             </button>
           </div>
         </form>
@@ -184,25 +184,25 @@ export default function AdminDeliveryOptionsPage() {
       {/* Listado y edición */}
       <div className="card border-0 shadow-sm">
         <div className="card-header">
-          <div className="fw-semibold">Listado</div>
+          <div className="fw-semibold">List</div>
         </div>
         <div className="card-body">
           {loading ? (
-            <div>Cargando…</div>
+            <div>Loading...</div>
           ) : list.length === 0 ? (
-            <div className="text-muted">Sin registros.</div>
+            <div className="text-muted">No records.</div>
           ) : (
             <div className="table-responsive">
               <table className="table align-middle">
                 <thead>
                   <tr>
-                    <th style={{ width: 220 }}>Título</th>
-                    <th>Descripción</th>
-                    <th style={{ width: 120 }}>Precio</th>
-                    <th style={{ width: 80 }}>Activo</th>
-                    <th style={{ width: 100 }}>Orden</th>
+                    <th style={{ width: 220 }}>Title</th>
+                    <th>Description</th>
+                    <th style={{ width: 120 }}>Price</th>
+                    <th style={{ width: 80 }}>Active</th>
+                    <th style={{ width: 100 }}>Order</th>
                     <th style={{ width: 180 }} className="text-end">
-                      Acciones
+                      Actions
                     </th>
                   </tr>
                 </thead>
@@ -266,10 +266,10 @@ export default function AdminDeliveryOptionsPage() {
                       </td>
                       <td className="text-end">
                         <button className="btn btn-sm btn-outline-primary me-2" onClick={() => onUpdate(it)}>
-                          Guardar
+                          Save
                         </button>
                         <button className="btn btn-sm btn-outline-danger" onClick={() => onDelete(it.id)}>
-                          Eliminar
+                          Delete
                         </button>
                       </td>
                     </tr>

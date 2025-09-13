@@ -223,10 +223,10 @@ export default function EditOrderMenuPage() {
     <Protected>
               <RoleGate allow={['admin','waiter']}>
     <div className="container py-4">
-      <h1 className="h5 mb-3">Agregar a la orden #{String(id).slice(0, 6)}</h1>
+      <h1 className="h5 mb-3">Add to order #{String(id).slice(0, 6)}</h1>
 
       {menu.length === 0 && (
-        <div className="alert alert-light border">No se encontraron platos en /api/menu.</div>
+        <div className="alert alert-light border">No dishes were found.</div>
       )}
 
       <div className="list-group">
@@ -257,7 +257,7 @@ export default function EditOrderMenuPage() {
                     className="btn btn-outline-secondary btn-sm"
                     onClick={() => toggle(mi.id)}
                   >
-                    {isOpen ? 'Ocultar' : 'Opciones'}
+                    {isOpen ? 'Hide' : 'Options'}
                   </button>
                   <button className="btn btn-primary btn-sm" onClick={() => addToCart(mi)}>
                     Agregar

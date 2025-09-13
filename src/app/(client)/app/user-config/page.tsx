@@ -62,7 +62,7 @@ function useCustomer() {
       if (!res.ok || data?.ok === false) throw new Error(data?.error || `HTTP ${res.status}`);
       setCust(data.customer || null);
     } catch (e: any) {
-      setErr(e?.message || "No se pudo cargar el perfil");
+      setErr(e?.message || "Could not load profile");
       setCust(null);
     } finally {
       setLoading(false);
@@ -171,9 +171,9 @@ function UserConfigInner() {
       setMsg(null);
       setBusyProfile(true);
       await saveProfile({ displayName, phone });
-      setMsg("Perfil actualizado");
+      setMsg("Profile updated");
     } catch (e: any) {
-      setErrMsg(e?.message || "No se pudo guardar el perfil");
+      setErrMsg(e?.message || "Could not save profile");
     } finally {
       setBusyProfile(false);
     }
@@ -185,9 +185,9 @@ function UserConfigInner() {
       setMsg(null);
       setBusyAddr(true);
       await saveAddresses({ home, office });
-      setMsg("Direcciones guardadas");
+      setMsg("Addresses saved");
     } catch (e: any) {
-      setErrMsg(e?.message || "No se pudieron guardar las direcciones");
+      setErrMsg(e?.message || "Could not save addresses");
     } finally {
       setBusyAddr(false);
     }
@@ -200,9 +200,9 @@ function UserConfigInner() {
       setMsg(null);
       setBusyBilling(true);
       await saveBilling({ name: billingName, taxId: billingTaxId });
-      setMsg("Datos de facturación guardados");
+      setMsg("Billing details saved");
     } catch (e: any) {
-      setErrMsg(e?.message || "No se pudieron guardar los datos de facturación");
+      setErrMsg(e?.message || "Could not save billing details");
     } finally {
       setBusyBilling(false);
     }
@@ -215,19 +215,19 @@ function UserConfigInner() {
       setCurrPassError(null); // limpiar error inline antes de validar
 
       if (!user?.email) {
-        setErrMsg("No hay email en la sesión actual");
+        setErrMsg("There's no email in the current session");
         return;
       }
       if (!currPass) {
-        setCurrPassError("Ingresa tu contraseña actual");
+        setCurrPassError("Enter your current password");
         return;
       }
       if (!newPass || newPass.length < 6) {
-        setErrMsg("La nueva contraseña debe tener al menos 6 caracteres");
+        setErrMsg("New password must be at least 6 characters");
         return;
       }
       if (newPass !== newPass2) {
-        setErrMsg("La confirmación no coincide");
+        setErrMsg("Password confirmation doesn't match");
         return;
       }
 
@@ -240,7 +240,7 @@ function UserConfigInner() {
       await reauthenticateWithCredential(auth.currentUser!, cred);
       await updatePassword(auth.currentUser!, newPass);
 
-      setMsg("Contraseña actualizada correctamente");
+      setMsg("Password updated successfully");
       setCurrPass("");
       setNewPass("");
       setNewPass2("");
@@ -250,13 +250,13 @@ function UserConfigInner() {
       const code: string = e?.code || "";
       if (code === "auth/wrong-password" || code === "auth/invalid-credential") {
         // ❗️Marcar solo el campo de contraseña actual en rojo, sin alert global
-        setCurrPassError("Contraseña actual incorrecta");
+        setCurrPassError("Incorrect current password");
       } else if (code === "auth/too-many-requests") {
-        setCurrPassError("Demasiados intentos. Intenta nuevamente más tarde.");
+        setCurrPassError("Too many attempts. Try again later.");
       } else if (code === "auth/requires-recent-login") {
-        setErrMsg("Por seguridad, vuelve a iniciar sesión e intenta de nuevo.");
+        setErrMsg("For security, sign in again and try again.");
       } else {
-        setErrMsg(e?.message || "No se pudo actualizar la contraseña");
+        setErrMsg(e?.message || "Could not update password");
       }
     } finally {
       setBusyPwd(false);
@@ -266,13 +266,13 @@ function UserConfigInner() {
   return (
     <div className="container py-4">
       <div className="d-flex align-items-center justify-content-between mb-3">
-        <h1 className="h5 m-0">Configuración de usuario</h1>
+        <h1 className="h5 m-0">User settings</h1>
         <button className="btn btn-outline-secondary btn-sm" onClick={() => refresh()} disabled={loading}>
-          Refrescar
+          Refresh
         </button>
       </div>
 
-      {loading && <div className="alert alert-info">Cargando…</div>}
+      {loading && <div className="alert alert-info">Loading…</div>}
       {err && <div className="alert alert-danger">Error: {err}</div>}
       {msg && <div className="alert alert-success">{msg}</div>}
       {/* En errores de contraseña por "wrong password" ya no usamos este alert. */}
@@ -284,25 +284,25 @@ function UserConfigInner() {
           <section className="mb-4">
             <div className="card shadow-sm">
               <div className="card-header">
-                <strong>Perfil</strong>
+                <strong>Profile</strong>
               </div>
               <div className="card-body">
                 <div className="row g-3">
                   <div className="col-12 col-md-6">
-                    <label className="form-label">Correo (solo lectura)</label>
+                    <label className="form-label">Email (read-only)</label>
                     <input className="form-control" value={cust.email || ""} disabled />
                   </div>
                   <div className="col-12 col-md-6">
-                    <label className="form-label">Nombre para mostrar</label>
+                    <label className="form-label">Display name</label>
                     <input
                       className="form-control"
                       value={displayName}
                       onChange={(e) => setDisplayName(e.target.value)}
-                      placeholder="Tu nombre"
+                      placeholder="Your name"
                     />
                   </div>
                   <div className="col-12 col-md-6">
-                    <label className="form-label">Teléfono</label>
+                    <label className="form-label">Phone</label>
                     <input
                       className="form-control"
                       value={phone}
@@ -314,7 +314,7 @@ function UserConfigInner() {
               </div>
               <div className="card-footer d-flex justify-content-end">
                 <button className="btn btn-primary" onClick={onSaveProfile} disabled={busyProfile}>
-                  {busyProfile ? "Guardando…" : "Guardar perfil"}
+                  {busyProfile ? "Saving…" : "Save profile"}
                 </button>
               </div>
             </div>
@@ -324,25 +324,25 @@ function UserConfigInner() {
           <section className="mb-4">
             <div className="card shadow-sm">
               <div className="card-header">
-                <strong>Direcciones</strong>
+                <strong>Addresses</strong>
               </div>
               <div className="card-body">
                 <div className="row">
                   {/* HOME */}
                   <div className="col-12 col-lg-6">
-                    <h6 className="mb-3">Casa</h6>
+                    <h6 className="mb-3">Home</h6>
                     <div className="mb-2">
-                      <label className="form-label">Dirección</label>
+                      <label className="form-label">Address</label>
                       <input
                         className="form-control"
                         value={home.line1}
                         onChange={(e) => setHome({ ...home, line1: e.target.value })}
-                        placeholder="Calle/Avenida, número, referencia"
+                        placeholder="Street/Avenue, number, reference"
                       />
                     </div>
                     <div className="row g-2">
                       <div className="col-12 col-md-6">
-                        <label className="form-label">Ciudad</label>
+                        <label className="form-label">City</label>
                         <input
                           className="form-control"
                           value={home.city}
@@ -351,7 +351,7 @@ function UserConfigInner() {
                         />
                       </div>
                       <div className="col-6 col-md-3">
-                        <label className="form-label">País</label>
+                        <label className="form-label">Country</label>
                         <input
                           className="form-control"
                           value={home.country}
@@ -370,32 +370,32 @@ function UserConfigInner() {
                       </div>
                     </div>
                     <div className="mt-2">
-                      <label className="form-label">Indicaciones adicionales</label>
+                      <label className="form-label">Additional directions</label>
                       <textarea
                         className="form-control"
                         rows={2}
                         value={home.notes}
                         onChange={(e) => setHome({ ...home, notes: e.target.value })}
-                        placeholder="Detalles para la entrega"
+                        placeholder="Delivery details"
                       />
                     </div>
                   </div>
 
                   {/* OFFICE */}
                   <div className="col-12 col-lg-6 mt-4 mt-lg-0">
-                    <h6 className="mb-3">Oficina</h6>
+                    <h6 className="mb-3">Office</h6>
                     <div className="mb-2">
-                      <label className="form-label">Dirección</label>
+                      <label className="form-label">Address</label>
                       <input
                         className="form-control"
                         value={office.line1}
                         onChange={(e) => setOffice({ ...office, line1: e.target.value })}
-                        placeholder="Edificio, nivel, oficina"
+                        placeholder="Building, floor, office"
                       />
                     </div>
                     <div className="row g-2">
                       <div className="col-12 col-md-6">
-                        <label className="form-label">Ciudad</label>
+                        <label className="form-label">City</label>
                         <input
                           className="form-control"
                           value={office.city}
@@ -404,7 +404,7 @@ function UserConfigInner() {
                         />
                       </div>
                       <div className="col-6 col-md-3">
-                        <label className="form-label">País</label>
+                        <label className="form-label">Country</label>
                         <input
                           className="form-control"
                           value={office.country}
@@ -423,13 +423,13 @@ function UserConfigInner() {
                       </div>
                     </div>
                     <div className="mt-2">
-                      <label className="form-label">Indicaciones adicionales</label>
+                      <label className="form-label">Additional directions</label>
                       <textarea
                         className="form-control"
                         rows={2}
                         value={office.notes}
                         onChange={(e) => setOffice({ ...office, notes: e.target.value })}
-                        placeholder="Recepción, horarios, etc."
+                        placeholder="Reception, hours, etc."
                       />
                     </div>
                   </div>
@@ -437,7 +437,7 @@ function UserConfigInner() {
               </div>
               <div className="card-footer d-flex justify-content-end">
                 <button className="btn btn-primary" onClick={onSaveAddresses} disabled={busyAddr}>
-                  {busyAddr ? "Guardando…" : "Guardar direcciones"}
+                  {busyAddr ? "Saving…" : "Save addresses"}
                 </button>
               </div>
             </div>
@@ -447,33 +447,33 @@ function UserConfigInner() {
           <section className="mb-4">
             <div className="card shadow-sm">
               <div className="card-header">
-                <strong>Facturación</strong>
+                <strong>Billing</strong>
               </div>
               <div className="card-body">
                 <div className="row g-3">
                   <div className="col-12 col-md-6">
-                    <label className="form-label">Nombre de facturación</label>
+                    <label className="form-label">Billing name</label>
                     <input
                       className="form-control"
                       value={billingName}
                       onChange={(e) => setBillingName(e.target.value)}
-                      placeholder="Razón social / Nombre para factura"
+                      placeholder="Business name / Billing name"
                     />
                   </div>
                   <div className="col-12 col-md-6">
-                    <label className="form-label">Número de Identificación Tributaria (NIT)</label>
+                    <label className="form-label">Tax Identification Number (NIT)</label>
                     <input
                       className="form-control"
                       value={billingTaxId}
                       onChange={(e) => setBillingTaxId(e.target.value)}
-                      placeholder="Ej. CF / 1234567-8"
+                      placeholder="e.g., CF / 1234567-8"
                     />
                   </div>
                 </div>
               </div>
               <div className="card-footer d-flex justify-content-end">
                 <button className="btn btn-primary" onClick={onSaveBilling} disabled={busyBilling}>
-                  {busyBilling ? "Guardando…" : "Guardar facturación"}
+                  {busyBilling ? "Saving…" : "Save billing"}
                 </button>
               </div>
             </div>
@@ -483,12 +483,12 @@ function UserConfigInner() {
           <section className="mb-4">
             <div className="card shadow-sm">
               <div className="card-header">
-                <strong>Seguridad</strong> <span className="text-muted small ms-2">(cambiar contraseña)</span>
+                <strong>Security</strong> <span className="text-muted small ms-2">(change password)</span>
               </div>
               <div className="card-body">
                 <div className="row g-3">
                   <div className="col-12 col-md-4">
-                    <label className="form-label">Contraseña actual</label>
+                    <label className="form-label">Current password</label>
                     <input
                       type="password"
                       className={`form-control ${currPassError ? "is-invalid" : ""}`}
@@ -507,7 +507,7 @@ function UserConfigInner() {
                     )}
                   </div>
                   <div className="col-12 col-md-4">
-                    <label className="form-label">Nueva contraseña</label>
+                    <label className="form-label">New password</label>
                     <input
                       type="password"
                       className="form-control"
@@ -518,7 +518,7 @@ function UserConfigInner() {
                     />
                   </div>
                   <div className="col-12 col-md-4">
-                    <label className="form-label">Confirmar nueva contraseña</label>
+                    <label className="form-label">Confirm new password</label>
                     <input
                       type="password"
                       className="form-control"
@@ -532,7 +532,7 @@ function UserConfigInner() {
               </div>
               <div className="card-footer d-flex justify-content-end">
                 <button className="btn btn-outline-primary" onClick={onChangePassword} disabled={busyPwd}>
-                  {busyPwd ? "Actualizando…" : "Actualizar contraseña"}
+                  {busyPwd ? "Updating…" : "Update password"}
                 </button>
               </div>
             </div>

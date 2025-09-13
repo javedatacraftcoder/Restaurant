@@ -129,18 +129,18 @@ export default function AppHome() {
         {/* Hero */}
         <div className="col-12">
           <div className="text-center">
-            <h1 className="display-6 fw-semibold mb-2">¡Bienvenido!</h1>
+            <h1 className="display-6 fw-semibold mb-2">Welcome!</h1>
             <p className="lead text-body-secondary">
-              Empieza viendo el <a className="link-primary" href="/app/menu">menú</a> o revisa tu{" "}
-              <a className="link-secondary" href="/app/orders">historial de órdenes</a>.
+              Start by viewing the <a className="link-primary" href="/app/menu">menu</a> or check your{" "}
+              <a className="link-secondary" href="/app/orders">order history</a>.
             </p>
 
             <div className="d-flex flex-wrap justify-content-center gap-2 mt-3">
-              <a href="/app/menu" className="btn btn-primary btn-lg" aria-label="Ver menú">
-                Ver menú
+              <a href="/app/menu" className="btn btn-primary btn-lg" aria-label="View menu">
+                View menu
               </a>
-              <a href="/app/orders" className="btn btn-outline-secondary btn-lg" aria-label="Ver mis órdenes">
-                Mis órdenes
+              <a href="/app/orders" className="btn btn-outline-secondary btn-lg" aria-label="View my orders">
+                My orders
               </a>
             </div>
           </div>
@@ -150,11 +150,11 @@ export default function AppHome() {
         <div className="col-12 col-md-6">
           <div className="card shadow-sm h-100">
             <div className="card-body">
-              <h2 className="h5 mb-3">Accesos rápidos</h2>
+              <h2 className="h5 mb-3">Quick links</h2>
               <div className="d-grid gap-2">
-                <a className="btn btn-light" href="/app/cart" aria-label="Ver carrito">🛒 Ver carrito</a>
-                <a className="btn btn-light" href="/app/checkout" aria-label="Ir al checkout">💳 Ir al checkout</a>
-                <a className="btn btn-light" href="/app/user-config" aria-label="Ir a configuración">⚙️ Configuración</a>
+                <a className="btn btn-light" href="/app/cart" aria-label="View cart">🛒 View cart</a>
+                <a className="btn btn-light" href="/app/checkout" aria-label="Go to checkout">💳 Go to checkout</a>
+                <a className="btn btn-light" href="/app/user-config" aria-label="Go to settings">⚙️ Settings</a>
               </div>
             </div>
           </div>
@@ -164,18 +164,18 @@ export default function AppHome() {
         <div className="col-12 col-md-6">
           <div className="card shadow-sm h-100">
             <div className="card-body">
-              <h2 className="h5 mb-3">Seguimiento de orden</h2>
+              <h2 className="h5 mb-3">Order tracking</h2>
               <p className="mb-2 text-body-secondary">
-                Revisa el estado de tu última orden en tiempo real.
+                Check the status of your latest order in real time.
               </p>
               <a className="btn btn-outline-primary" href="/app/tracking" aria-label="Ver seguimiento">
-                Ver seguimiento
+                View tracking
               </a>
 
               <hr className="my-4" />
 
               {/* ======= Promociones ======= */}
-              <h3 className="h6 text-body-secondary mb-2">Promociones</h3>
+              <h3 className="h6 text-body-secondary mb-2">Promotions</h3>
 
               <div
                 className="rounded-4 p-3 p-md-4 text-white"
@@ -183,15 +183,15 @@ export default function AppHome() {
               >
                 <div className="d-flex align-items-center justify-content-between mb-3">
                   <div>
-                    <div className="fs-5 fw-bold">Códigos activos</div>
+                    <div className="fs-5 fw-bold">Active codes</div>
                     <div className="small" style={{ opacity: 0.85 }}>
-                      Canjéalos en el checkout para obtener tu descuento
+                      Redeem them at checkout to get your discount
                     </div>
                   </div>
                   <div className="display-6" aria-hidden>🎟️</div>
                 </div>
 
-                {loadingPromos && <div className="opacity-75">Cargando promociones…</div>}
+                {loadingPromos && <div className="opacity-75">Loading promotions…</div>}
 
                 {!loadingPromos && hasPromos && (
                   <div className="d-flex flex-wrap gap-2">
@@ -202,17 +202,17 @@ export default function AppHome() {
                         style={{ border: '1px solid rgba(0,0,0,.06)' }}
                       >
                         <div className="me-2">
-                          <span className="fw-semibold">{p.name || p.title || 'Promoción'}</span>
+                          <span className="fw-semibold">{p.name || p.title || 'Promotion'}</span>
                         </div>
                         <span className="badge bg-dark-subtle text-dark border">{p.code}</span>
                         <button
                           className="btn btn-sm btn-dark ms-2"
                           onClick={() => navigator.clipboard?.writeText(p.code || '')}
-                          aria-label={`Copiar código ${p.code}`}
-                          title="Copiar código"
+                          aria-label={`Copy code ${p.code}`}
+                          title="Copy code"
                           type="button"
                         >
-                          Copiar
+                          Copy
                         </button>
                       </div>
                     ))}
@@ -220,7 +220,7 @@ export default function AppHome() {
                 )}
 
                 {!loadingPromos && !hasPromos && (
-                  <div className="opacity-75">No hay promociones activas en este momento.</div>
+                  <div className="opacity-75">There are no active promotions at the moment.</div>
                 )}
               </div>
               {/* ======= FIN Promociones ======= */}

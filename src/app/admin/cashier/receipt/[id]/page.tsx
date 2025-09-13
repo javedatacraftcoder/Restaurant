@@ -137,7 +137,7 @@ type OrderDoc = {
 
 const toNum = (x: any) => { const n = Number(x); return Number.isFinite(n) ? n : undefined; };
 const centsToQ = (c?: number) => (Number.isFinite(c) ? Number(c) / 100 : 0);
-function fmtCurrency(n?: number, currency = 'GTQ') {
+function fmtCurrency(n?: number, currency = 'USD') {
   if (typeof n !== 'number') return '—';
   try { return new Intl.NumberFormat('es-GT', { style: 'currency', currency }).format(n); }
   catch { return n.toFixed(2); }
@@ -373,7 +373,7 @@ function ReceiptPage_Inner() {
       try {
         const o = await fetchOrder(String(id));
         if (!alive) return;
-        if (!o) { setError('Orden no encontrada'); return; }
+        if (!o) { setError('Order not found'); return; }
         setOrder(o);
 
         // ➕ cargar facturación del customer (sin bloquear la impresión)
@@ -388,7 +388,7 @@ function ReceiptPage_Inner() {
         setTimeout(() => { try { window.print(); } catch {} }, 150);
       } catch (e: any) {
         if (!alive) return;
-        setError(e?.message || 'No se pudo cargar la orden.');
+        setError(e?.message || 'The order could not be loaded.');
       }
     })();
     return () => { alive = false; };
@@ -460,11 +460,11 @@ function ReceiptPage_Inner() {
 
       <div className="wrap">
         <div className="noprint" style={{ marginBottom: 8 }}>
-          <button className="btn" onClick={() => window.print()}>Imprimir</button>
-          <button className="btn" onClick={() => window.close?.()} style={{ marginLeft: 8 }}>Cerrar</button>
+          <button className="btn" onClick={() => window.print()}>Print</button>
+          <button className="btn" onClick={() => window.close?.()} style={{ marginLeft: 8 }}>Close</button>
         </div>
 
-        {!order && !error && <div className="muted">Cargando…</div>}
+        {!order && !error && <div className="muted">Loading...</div>}
         {error && <div className="muted">Error: {error}</div>}
 
         {order && totals && (
@@ -474,20 +474,20 @@ function ReceiptPage_Inner() {
             {rawType === 'pickup' && <div className="muted" style={{ marginTop: 2 }}><span className="badge bg-dark-subtle text-dark">Pickup</span></div>}
 
             <div className="muted">#{order.orderNumber || order.id} · {toDate(order.createdAt ?? new Date()).toLocaleString()}</div>
-            {table ? <div className="muted">Mesa: {table}</div> : null}
+            {table ? <div className="muted">Table: {table}</div> : null}
 
             {/* Cliente / entrega / teléfono (existente) */}
-            {customerName ? <div className="muted">Cliente: {customerName}</div> : null}
-            {fullAddress ? <div className="muted">Entrega: {fullAddress}</div> : (address ? <div className="muted">Entrega: {address}</div> : null)}
-            {phone ? <div className="muted">Tel: {phone}</div> : null}
+            {customerName ? <div className="muted">Client: {customerName}</div> : null}
+            {fullAddress ? <div className="muted">Delivery: {fullAddress}</div> : (address ? <div className="muted">Delivery: {address}</div> : null)}
+            {phone ? <div className="muted">Phone: {phone}</div> : null}
 
             {/* ➕ Facturación (si existe en customers/{uid}) */}
             {(billingName || billingTaxId) && <div className="hr"></div>}
-            {billingName ? <div className="muted">Factura a: {billingName}</div> : null}
+            {billingName ? <div className="muted">Invoice to: {billingName}</div> : null}
             {billingTaxId ? <div className="muted">NIT: {billingTaxId}</div> : null}
 
             {/* Nota de la ORDEN, no de la dirección */}
-            {notes ? <div className="muted">Nota: {notes}</div> : null}
+            {notes ? <div className="muted">Note: {notes}</div> : null}
 
             <div className="hr"></div>
 
@@ -507,7 +507,7 @@ function ReceiptPage_Inner() {
                     const pr = extractDeltaQ(it);
                     return <span key={i}>{nm}{pr ? ` (${fmtCurrency(pr)})` : ''}{i < its.length - 1 ? ', ' : ''}</span>;
                   });
-                  groupsHtml.push(<div className="addon" key={`g${groupsHtml.length}`}>• <b>{g?.groupName ?? 'Opciones'}:</b> {rows}</div>);
+                  groupsHtml.push(<div className="addon" key={`g${groupsHtml.length}`}>• <b>{g?.groupName ?? 'Options'}:</b> {rows}</div>);
                 }
               }
 
@@ -521,7 +521,7 @@ function ReceiptPage_Inner() {
                     const pr = extractDeltaQ(s);
                     return <span key={i}>{nm}{pr ? ` (${fmtCurrency(pr)})` : ''}{i < sels.length - 1 ? ', ' : ''}</span>;
                   });
-                  groupsHtml.push(<div className="addon" key={`g${groupsHtml.length}`}>• <b>{g?.groupName ?? 'Opciones'}:</b> {rows}</div>);
+                  groupsHtml.push(<div className="addon" key={`g${groupsHtml.length}`}>• <b>{g?.groupName ?? 'Options'}:</b> {rows}</div>);
                 }
               }
 
@@ -548,7 +548,7 @@ function ReceiptPage_Inner() {
                   {groupsHtml}
                   {lineTotal > 0 && (
                     <div className="row">
-                      <div className="muted">Subtotal línea</div>
+                      <div className="muted">Subtotal line</div>
                       <div className="muted">{fmtCurrency(lineTotal)}</div>
                     </div>
                   )}
@@ -562,7 +562,7 @@ function ReceiptPage_Inner() {
             {/* ➕ Envío si es delivery */}
             {type === 'delivery' && (
               <div className="row">
-                <div>Envío{ order?.orderInfo?.deliveryOption?.title ? ` — ${order.orderInfo.deliveryOption.title}` : '' }</div>
+                <div>Delivery{ order?.orderInfo?.deliveryOption?.title ? ` — ${order.orderInfo.deliveryOption.title}` : '' }</div>
                 <div>{fmtCurrency(deliveryFeeShown)}</div>
               </div>
             )}
@@ -570,21 +570,21 @@ function ReceiptPage_Inner() {
             {/* ➕ Descuento con nombre/código */}
             {Number(totals.discount || 0) > 0 && (
               <div className="row">
-                <div>Descuento{promoLabel ? ` (${promoLabel})` : ''}</div>
+                <div>Discount{promoLabel ? ` (${promoLabel})` : ''}</div>
                 <div>-{fmtCurrency(totals.discount)}</div>
               </div>
             )}
 
-            {totals.tax ? <div className="row"><div>Impuestos</div><div>{fmtCurrency(totals.tax)}</div></div> : null}
-            {totals.serviceFee ? <div className="row"><div>Servicio</div><div>{fmtCurrency(totals.serviceFee)}</div></div> : null}
+            {totals.tax ? <div className="row"><div>Taxes</div><div>{fmtCurrency(totals.tax)}</div></div> : null}
+            {totals.serviceFee ? <div className="row"><div>Service</div><div>{fmtCurrency(totals.serviceFee)}</div></div> : null}
 
             {/* Propina solo si aplica (normalmente dine-in/pickup) */}
-            {Number(totals.tip || 0) > 0 && <div className="row"><div>Propina</div><div>{fmtCurrency(totals.tip)}</div></div>}
+            {Number(totals.tip || 0) > 0 && <div className="row"><div>Tip</div><div>{fmtCurrency(totals.tip)}</div></div>}
 
             <div className="row tot"><div>Gran total</div><div>{fmtCurrency(grandTotalShown)}</div></div>
 
             <div className="hr"></div>
-            <div className="center muted">¡Gracias por su compra!</div>
+            <div className="center muted">Thank you for your purchase!</div>
           </>
         )}
       </div>

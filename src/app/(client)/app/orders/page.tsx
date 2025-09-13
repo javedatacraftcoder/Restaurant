@@ -1,4 +1,3 @@
-// src/app/(client)/app/orders/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -7,7 +6,7 @@ import Protected from "@/components/Protected";
 import { useAuth } from "@/app/providers";
 
 /** --------------------------
- *  Tipos de datos esperados
+ *  Expected data types
  *  -------------------------- */
 type FirestoreTS =
   | { seconds: number; nanoseconds?: number }
@@ -17,7 +16,7 @@ type FirestoreTS =
 
 type OpsOption = { groupName: string; selected: Array<{ name: string; priceDelta: number }> };
 
-// 🔧 NUEVO: shape usado por checkout (addons + optionGroups.items)
+// 🔧 NEW: shape used by checkout (addons + optionGroups.items)
 type OpsAddon = { name: string; price?: number };
 type OpsGroupItem = { id: string; name: string; priceDelta?: number };
 type OpsGroup = { groupId: string; groupName: string; type?: "single" | "multiple"; items: OpsGroupItem[] };
@@ -26,9 +25,9 @@ type OpsItem = {
   menuItemId: string;
   menuItemName?: string;
   quantity: number;
-  // Compat: viejo
+  // Compat: old
   options?: OpsOption[];
-  // Nuevo (checkout)
+  // New (checkout)
   addons?: OpsAddon[];
   optionGroups?: OpsGroup[];
 };
@@ -49,10 +48,10 @@ type Order = {
   updatedAt?: FirestoreTS;
   notes?: string | null;
 
-  // OPS (ambas variantes)
+  // OPS (both variants)
   items?: OpsItem[];
 
-  // Totales
+  // Totals
   amounts?: {
     subtotal: number;
     tax?: number;
@@ -66,7 +65,7 @@ type Order = {
   lines?: LegacyLine[];
   totals?: { totalCents?: number } | null;
 
-  // autoría
+  // authorship
   createdBy?: { uid?: string; email?: string | null } | null;
   userEmail?: string | null;
   userEmail_lower?: string | null;
@@ -76,21 +75,21 @@ type Order = {
 type ApiList = { ok?: boolean; orders?: Order[]; error?: string };
 
 /** --------------------------
- *  Helpers de formato/fecha
+ *  Format/date helpers
  *  -------------------------- */
 function tsToDate(ts: any): Date | null {
   if (!ts) return null;
 
-  // 1) Date ya listo
+  // 1) Date ready
   if (ts instanceof Date) return isNaN(ts.getTime()) ? null : ts;
 
-  // 2) Firestore Timestamp (cliente)
+  // 2) Firestore Timestamp (client)
   if (typeof ts?.toDate === "function") {
     const d = ts.toDate();
     return d instanceof Date && !isNaN(d.getTime()) ? d : null;
   }
 
-  // 3) Objeto serializado con segundos/nanosegundos (con o sin guion bajo)
+  // 3) Serialized object with seconds/nanoseconds (with or without underscore)
   if (typeof ts === "object") {
     const seconds =
       ts.seconds ?? ts._seconds ?? ts.$seconds ?? null;
@@ -101,7 +100,7 @@ function tsToDate(ts: any): Date | null {
       const d = new Date(ms);
       if (!isNaN(d.getTime())) return d;
     }
-    // 3b) ISO serializado dentro de otra propiedad común
+    // 3b) ISO serialized inside another common prop
     const iso = ts.$date ?? ts.iso ?? ts.date ?? null;
     if (typeof iso === "string") {
       const d = new Date(iso);
@@ -109,22 +108,22 @@ function tsToDate(ts: any): Date | null {
     }
   }
 
-  // 4) String: ISO o número en string (ms/segundos)
+  // 4) String: ISO or numeric string (ms/seconds)
   if (typeof ts === "string") {
     const d = new Date(ts);
     if (!isNaN(d.getTime())) return d;
     const n = Number(ts);
     if (Number.isFinite(n)) {
-      const ms = n > 1e12 ? n : n * 1000; // heurística ms vs s
+      const ms = n > 1e12 ? n : n * 1000; // ms vs s heuristic
       const d2 = new Date(ms);
       if (!isNaN(d2.getTime())) return d2;
     }
     return null;
   }
 
-  // 5) Número: epoch en ms o s
+  // 5) Number: epoch in ms or s
   if (typeof ts === "number") {
-    const ms = ts > 1e12 ? ts : ts * 1000; // heurística ms vs s
+    const ms = ts > 1e12 ? ts : ts * 1000; // ms vs s heuristic
     const d = new Date(ms);
     return isNaN(d.getTime()) ? null : d;
   }
@@ -164,7 +163,7 @@ function orderTotal(order: Order): number {
 }
 
 function lineName(l: LegacyLine) {
-  return (l.name && String(l.name)) || (l.itemId && `Item ${l.itemId}`) || "Ítem";
+  return (l.name && String(l.name)) || (l.itemId && `Item ${l.itemId}`) || "Item";
 }
 
 function closedStatus(s?: string) {
@@ -173,7 +172,7 @@ function closedStatus(s?: string) {
 }
 
 /** --------------------------
- *  Página (inner)
+ *  Page (inner)
  *  -------------------------- */
 function ClientOrdersPageInner() {
   const { user, idToken } = useAuth();
@@ -182,7 +181,7 @@ function ClientOrdersPageInner() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
 
-  // Cargar órdenes y filtrar por el usuario actual (uid/email).
+  // Load orders and filter by current user (uid/email).
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -213,7 +212,7 @@ function ClientOrdersPageInner() {
           return byUid || byMail;
         });
 
-        // Orden descendente por fecha
+        // Descending by date
         mine.sort((a, b) => {
           const da = tsToDate(a.createdAt)?.getTime() ?? 0;
           const db = tsToDate(b.createdAt)?.getTime() ?? 0;
@@ -222,7 +221,7 @@ function ClientOrdersPageInner() {
 
         if (alive) setOrders(mine);
       } catch (e: any) {
-        if (alive) setErr(e?.message || "No se pudieron cargar las órdenes");
+        if (alive) setErr(e?.message || "Could not load orders");
       } finally {
         if (alive) setLoading(false);
       }
@@ -238,16 +237,16 @@ function ClientOrdersPageInner() {
   return (
     <div className="container py-4">
       <div className="d-flex align-items-center justify-content-between mb-3">
-        <h1 className="h5 m-0">Mis órdenes</h1>
+        <h1 className="h5 m-0">My orders</h1>
         <span className="text-muted small">Total: {totalOrders}</span>
       </div>
 
-      {loading && <div className="alert alert-info">Cargando órdenes…</div>}
+      {loading && <div className="alert alert-info">Loading orders…</div>}
       {err && <div className="alert alert-danger">Error: {err}</div>}
 
       {!loading && !err && totalOrders === 0 && (
         <div className="alert alert-secondary">
-          Aún no tienes órdenes. Ve al <Link href="/menu">menú</Link> para empezar.
+          You don't have any orders yet. Go to the <Link href="/menu">menu</Link> to get started.
         </div>
       )}
 
@@ -266,37 +265,37 @@ function ClientOrdersPageInner() {
                   <div className="card-body d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center">
                     <div className="me-md-3">
                       <div className="d-flex align-items-center flex-wrap gap-2">
-                        <span className="fw-semibold">Orden #{o.id.slice(0, 6)}</span>
+                        <span className="fw-semibold">Order #{o.id.slice(0, 6)}</span>
                         <span className={`badge rounded-pill ${pillClass}`}>{(o.status || "placed").toUpperCase()}</span>
                       </div>
-                      <div className="small text-muted mt-1">Fecha: {fmtDate(o.createdAt)}</div>
+                      <div className="small text-muted mt-1">Date: {fmtDate(o.createdAt)}</div>
                     </div>
                     <div className="mt-2 mt-md-0 fw-bold">
                       {fmtMoneyQ(total, cur)}
                     </div>
                   </div>
 
-                  {/* Acciones */}
+                  {/* Actions */}
                   <div className="card-footer d-flex gap-2">
                     <button
                       type="button"
                       className="btn btn-outline-secondary btn-sm"
                       onClick={() => setOpenId(isOpen ? null : o.id)}
                     >
-                      {isOpen ? "Ocultar detalle" : "Ver detalle"}
+                      {isOpen ? "Hide details" : "View details"}
                     </button>
                     <Link href={`/app/orders/${o.id}`} className="btn btn-outline-primary btn-sm">
-                      Abrir / Compartir
+                      Open / Share
                     </Link>
                   </div>
 
-                  {/* Detalle expandible en línea */}
+                  {/* Inline expandable detail */}
                   {isOpen && (
                     <div className="card-footer bg-white">
                       {/* OPS items */}
                       {Array.isArray(o.items) && o.items.length > 0 && (
                         <div className="mb-3">
-                          <div className="fw-semibold mb-2">Productos</div>
+                          <div className="fw-semibold mb-2">Products</div>
                           <ul className="list-group">
                             {o.items.map((it, idx) => (
                               <li className="list-group-item" key={`${it.menuItemId}-${idx}`}>
@@ -306,7 +305,7 @@ function ClientOrdersPageInner() {
                                       {it.menuItemName || it.menuItemId}
                                     </div>
 
-                                    {/* ✅ Nuevo: addons */}
+                                    {/* ✅ New: addons */}
                                     {Array.isArray(it.addons) && it.addons.length > 0 && (
                                       <ul className="small text-muted mt-1 ps-3">
                                         {it.addons.map((ad, ai) => (
@@ -318,7 +317,7 @@ function ClientOrdersPageInner() {
                                       </ul>
                                     )}
 
-                                    {/* ✅ Nuevo: optionGroups.items */}
+                                    {/* ✅ New: optionGroups.items */}
                                     {Array.isArray(it.optionGroups) && it.optionGroups.some(g => (g.items || []).length > 0) && (
                                       <ul className="small text-muted mt-1 ps-3">
                                         {it.optionGroups.map((g, gi) => (
@@ -334,7 +333,7 @@ function ClientOrdersPageInner() {
                                       </ul>
                                     )}
 
-                                    {/* Compat: shape viejo con 'options' */}
+                                    {/* Compat: old shape with 'options' */}
                                     {Array.isArray(it.options) && it.options.length > 0 && (
                                       <ul className="small text-muted mt-1 ps-3">
                                         {it.options.map((g, gi) => (
@@ -348,11 +347,11 @@ function ClientOrdersPageInner() {
                                       </ul>
                                     )}
 
-                                    {/* Si nada de lo anterior aplica */}
+                                    {/* If none of the above applies */}
                                     {!((it.addons && it.addons.length) ||
                                        (it.optionGroups && it.optionGroups.some(g => (g.items || []).length > 0)) ||
                                        (it.options && it.options.length)) && (
-                                      <div className="small text-muted">Sin addons</div>
+                                      <div className="small text-muted">No addons</div>
                                     )}
                                   </div>
 
@@ -367,7 +366,7 @@ function ClientOrdersPageInner() {
                       {/* LEGACY lines */}
                       {Array.isArray(o.lines) && o.lines.length > 0 && (
                         <div className="mb-3">
-                          <div className="fw-semibold mb-2">Productos</div>
+                          <div className="fw-semibold mb-2">Products</div>
                           <ul className="list-group">
                             {o.lines.map((l, idx) => {
                               const qty = Number(l.qty || 1);
@@ -394,18 +393,18 @@ function ClientOrdersPageInner() {
                         </div>
                       )}
 
-                      {/* Notas y totales */}
+                      {/* Notes and totals */}
                       <div className="row g-2">
                         {o.notes ? (
                           <div className="col-12">
                             <div className="small">
-                              <span className="text-muted">Notas: </span>
+                              <span className="text-muted">Notes: </span>
                               {o.notes}
                             </div>
                           </div>
                         ) : null}
 
-                        {/* Totales desglosados si vienen en OPS */}
+                        {/* Breakdown totals if provided in OPS */}
                         {o.amounts ? (
                           <div className="col-12">
                             <div className="d-flex flex-column align-items-end gap-1">
@@ -416,28 +415,28 @@ function ClientOrdersPageInner() {
                               </div>
                               {!!o.amounts.tax && (
                                 <div className="small text-muted">
-                                  Impuestos: <span className="fw-semibold">
+                                  Taxes: <span className="fw-semibold">
                                     {fmtMoneyQ(Number(o.amounts.tax || 0), o.currency)}
                                   </span>
                                 </div>
                               )}
                               {!!o.amounts.serviceFee && (
                                 <div className="small text-muted">
-                                  Servicio: <span className="fw-semibold">
+                                  Service: <span className="fw-semibold">
                                     {fmtMoneyQ(Number(o.amounts.serviceFee || 0), o.currency)}
                                   </span>
                                 </div>
                               )}
                               {!!o.amounts.discount && (
                                 <div className="small text-muted">
-                                  Descuento: <span className="fw-semibold">
+                                  Discount: <span className="fw-semibold">
                                     −{fmtMoneyQ(Number(o.amounts.discount || 0), o.currency)}
                                   </span>
                                 </div>
                               )}
                               {!!o.amounts.tip && (
                                 <div className="small text-muted">
-                                  Propina: <span className="fw-semibold">
+                                  Tip: <span className="fw-semibold">
                                     {fmtMoneyQ(Number(o.amounts.tip || 0), o.currency)}
                                   </span>
                                 </div>
@@ -467,14 +466,14 @@ function ClientOrdersPageInner() {
       )}
 
       <div className="mt-4">
-        <Link href="/menu" className="btn btn-outline-secondary">Volver al menú</Link>
+        <Link href="/menu" className="btn btn-outline-secondary">Back to menu</Link>
       </div>
     </div>
   );
 }
 
 /** --------------------------
- *  Export protegido
+ *  Protected export
  *  -------------------------- */
 export default function ClientOrdersPage() {
   return (

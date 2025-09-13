@@ -28,7 +28,7 @@ type Props = React.ComponentProps<'div'> & {
 function fmtQ(n?: number) {
   const v = Number.isFinite(Number(n)) ? Number(n) : 0;
   try {
-    return new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(v);
+    return new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'USD' }).format(v);
   } catch {
     return `Q ${v.toFixed(2)}`;
   }
@@ -91,7 +91,7 @@ export default function CartBadge({ className, href = '/cart-new', showTotal = f
           <span
             className="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"
             style={{ fontSize: '0.65rem' }}
-            aria-label={`Tienes ${count} ítem(s) en el carrito`}
+            aria-label={`You have ${count} ítem(s) in your cart`}
           >
             {count}
           </span>

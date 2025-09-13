@@ -25,7 +25,7 @@ async function ensureFirebaseApp() {
     if (cfg.apiKey && cfg.authDomain && cfg.projectId && cfg.appId) {
       app.initializeApp(cfg);
     } else {
-      console.warn('[Firebase] Faltan variables NEXT_PUBLIC_*; Auth no podrá inicializar.');
+      console.warn('[Firebase] Missing NEXT_PUBLIC_* variables; Auth will not be able to initialize.');
     }
   }
 }
@@ -152,16 +152,16 @@ type OrderDoc = {
    Utils y helpers (alineados con Kitchen)
 --------------------------------------------- */
 const TitleMap: Record<StatusSnake, string> = {
-  cart: 'Carrito',
-  placed: 'Recibido',
-  kitchen_in_progress: 'En cocina',
-  kitchen_done: 'Cocina lista',
-  ready_to_close: 'Listo para cerrar',
-  assigned_to_courier: 'Asignado a repartidor',
-  on_the_way: 'En camino',
-  delivered: 'Entregado',
-  closed: 'Cerrado',
-  cancelled: 'Cancelado',
+  cart: 'Cart',
+  placed: 'Received',
+  kitchen_in_progress: 'In kitchen',
+  kitchen_done: 'Kitchen ready',
+  ready_to_close: 'Ready to close',
+  assigned_to_courier: 'Assigned to delivery',
+  on_the_way: 'In route',
+  delivered: 'Delivered',
+  closed: 'Closed',
+  cancelled: 'Cancelled',
 };
 function toDate(x: any): Date {
   if (x?.toDate?.() instanceof Date) return x.toDate();
@@ -171,11 +171,11 @@ function toDate(x: any): Date {
 function timeAgo(from: Date, now: Date) {
   const ms = Math.max(0, now.getTime() - from.getTime());
   const m = Math.floor(ms / 60000);
-  if (m < 1) return 'hace segundos';
-  if (m < 60) return `hace ${m} min`;
+  if (m < 1) return 'seconds ago';
+  if (m < 60) return `min ${m} ago`;
   const h = Math.floor(m / 60);
   const rem = m % 60;
-  return `hace ${h} h ${rem} m`;
+  return `h ${h} m ${rem} ago`;
 }
 function toSnakeStatus(s: string): StatusSnake {
   if (!s) return 'placed';
@@ -226,7 +226,7 @@ function normalizeOptions(l: any): Array<{ label: string; values: string[] }> {
   const res: Array<{ label: string; values: string[] }> = [];
   if (Array.isArray(l?.optionGroups) && l.optionGroups.length) {
     for (const g of l.optionGroups) {
-      const label = String(g?.groupName ?? 'Opciones');
+      const label = String(g?.groupName ?? 'Options');
       const values = Array.isArray(g?.items)
         ? g.items.map((it: any) => String(it?.name ?? it)).filter(Boolean)
         : [];
@@ -235,7 +235,7 @@ function normalizeOptions(l: any): Array<{ label: string; values: string[] }> {
   }
   if (Array.isArray(l?.options) && l.options.length) {
     for (const g of l.options) {
-      const label = String(g?.groupName ?? 'Opciones');
+      const label = String(g?.groupName ?? 'Options');
       const values = Array.isArray(g?.selected)
         ? g.selected.map((s: any) => String(s?.name ?? s)).filter(Boolean)
         : [];
@@ -245,7 +245,7 @@ function normalizeOptions(l: any): Array<{ label: string; values: string[] }> {
   const buckets = [
     { key: 'addons', label: 'Addons' },
     { key: 'extras', label: 'Extras' },
-    { key: 'modifiers', label: 'Modificadores' },
+    { key: 'modifiers', label: 'Modifiers' },
   ] as const;
   for (const b of buckets) {
     const arr = l?.[b.key];
@@ -316,7 +316,7 @@ function useDeliveryOrders(enabled: boolean, pollMs = 4000) {
       setError(null);
       if (!enabled) { setLoading(false); return; }
       const token = await getIdTokenSafe(false);
-      if (!token) { setLoading(false); setError('Debes iniciar sesión.'); return; }
+      if (!token) { setLoading(false); setError('You must log in.'); return; }
 
       const url = `/api/orders?statusIn=${encodeURIComponent(STATUS_QUERY_MAIN)}&typeIn=${encodeURIComponent(TYPE_QUERY)}&limit=100`;
       const res = await apiFetch(url);
@@ -338,7 +338,7 @@ function useDeliveryOrders(enabled: boolean, pollMs = 4000) {
       setOrders(list);
       setLoading(false);
     } catch (e: any) {
-      setError(e?.message || 'Error al cargar');
+      setError(e?.message || 'Error loading');
       setLoading(false);
     }
   };
@@ -419,21 +419,21 @@ function CourierModal({
       <div className="modal-dialog">
         <div className="modal-content shadow">
           <div className="modal-header">
-            <h5 className="modal-title">Asignar repartidor</h5>
+            <h5 className="modal-title">Assign delivery</h5>
             <button type="button" className="btn-close" onClick={onClose} />
           </div>
           <div className="modal-body">
-            <label className="form-label">Nombre del repartidor</label>
+            <label className="form-label">Delivery driver's name</label>
             <input
               className="form-control"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Ej. Carlos Pérez"
+              placeholder="Ex. John Snow"
               autoFocus
             />
           </div>
           <div className="modal-footer">
-            <button className="btn btn-outline-secondary" onClick={onClose}>Cancelar</button>
+            <button className="btn btn-outline-secondary" onClick={onClose}>Cancel</button>
             <button
               className="btn btn-primary"
               onClick={() => {
@@ -442,7 +442,7 @@ function CourierModal({
                 onSave(v);
               }}
             >
-              Guardar y tomar
+              Save and take
             </button>
           </div>
         </div>
@@ -477,7 +477,7 @@ function printDeliveryTicket(o: OrderDoc) {
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Ticket entrega #${escapeHtml(o.orderNumber || o.id)}</title>
+<title>Ticket delivery #${escapeHtml(o.orderNumber || o.id)}</title>
 <style>
   html, body { margin: 0; padding: 0; }
   body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px; padding: 12px; }
@@ -492,15 +492,15 @@ function printDeliveryTicket(o: OrderDoc) {
 </style>
 </head>
 <body>
-  <h1>Ticket de entrega</h1>
+  <h1>Ticket delivery</h1>
   <div class="row"><strong>Orden:</strong> #${escapeHtml(o.orderNumber || o.id)}</div>
   <div class="row muted">${escapeHtml(created.toLocaleString())}</div>
-  <div class="row"><strong>Cliente:</strong> ${escapeHtml(customer)}</div>
-  <div class="row"><strong>Teléfono:</strong> ${escapeHtml(phone)}</div>
-  <div class="row"><strong>Dirección:</strong> ${escapeHtml(full || '—')}</div>
-  ${notes ? `<div class="row"><strong>Nota de dirección:</strong> ${escapeHtml(notes)}</div>` : ''}
+  <div class="row"><strong>Client:</strong> ${escapeHtml(customer)}</div>
+  <div class="row"><strong>Phone:</strong> ${escapeHtml(phone)}</div>
+  <div class="row"><strong>Address:</strong> ${escapeHtml(full || '—')}</div>
+  ${notes ? `<div class="row"><strong>Additional notes:</strong> ${escapeHtml(notes)}</div>` : ''}
   <hr/>
-  <div class="row"><strong>Productos:</strong></div>
+  <div class="row"><strong>Products:</strong></div>
   <pre>${escapeHtml(itemsText || '—')}</pre>
 
   <div class="no-print" style="margin-top:12px;">
@@ -515,7 +515,7 @@ function printDeliveryTicket(o: OrderDoc) {
 
   const w = window.open('', 'printTicket', 'width=480,height=640');
   if (!w) {
-    alert('No se pudo abrir la ventana de impresión (pop-up bloqueado).');
+    alert('Could not open print window (pop-up blocked).');
     return;
   }
   w.document.open();
@@ -599,7 +599,7 @@ function DeliveryCard({
             <small className="text-muted">
               {created.toLocaleString()} · {timeAgo(created, new Date())}
             </small>
-            {courierName && <small className="text-muted">Repartidor: <strong>{courierName}</strong></small>}
+            {courierName && <small className="text-muted">Delivery: <strong>{courierName}</strong></small>}
           </div>
           <div className="d-flex gap-2 align-items-center">
             <span className="badge bg-outline-secondary text-dark">delivery</span>
@@ -610,13 +610,13 @@ function DeliveryCard({
         <div className="card-body">
           {/* Datos de entrega */}
           <div className="mb-2">
-            <div><span className="fw-semibold">Dirección:</span> {fullAddress || <em className="text-muted">—</em>}</div>
+            <div><span className="fw-semibold">Address:</span> {fullAddress || <em className="text-muted">—</em>}</div>
             {addressNote ? (
-              <div><span className="fw-semibold">Nota de dirección:</span> {addressNote}</div>
+              <div><span className="fw-semibold">Address notes:</span> {addressNote}</div>
             ) : null}
-            <div><span className="fw-semibold">Teléfono:</span> {phone || <em className="text-muted">—</em>}</div>
-            {notes ? <div><span className="fw-semibold">Notas de la orden:</span> {notes}</div> : null}
-            <div className="small text-muted">Sub-estado: {subState}</div>
+            <div><span className="fw-semibold">Phone:</span> {phone || <em className="text-muted">—</em>}</div>
+            {notes ? <div><span className="fw-semibold">Order notes:</span> {notes}</div> : null}
+            <div className="small text-muted">Sub-state: {subState}</div>
           </div>
 
           {/* Ítems con addons / option-groups */}
@@ -650,7 +650,7 @@ function DeliveryCard({
                 onClick={() => printDeliveryTicket(o)}
                 title="Imprimir ticket de entrega"
               >
-                Imprimir ticket
+                Print ticket
               </button>
 
               <button className="btn btn-outline-secondary btn-sm" disabled>{TitleMap[o.status]}</button>
@@ -660,19 +660,19 @@ function DeliveryCard({
                   className="btn btn-primary btn-sm"
                   disabled={busy}
                   onClick={() => setShowModal(true)}
-                  title="Asignar repartidor y tomar pedido"
+                  title="Assign delivery person and take order"
                 >
-                  Tomar
+                  Take
                 </button>
               )}
               {canGo && (
-                <button className="btn btn-primary btn-sm" disabled={busy} onClick={doOut} title="Salir en ruta">
-                  En ruta
+                <button className="btn btn-primary btn-sm" disabled={busy} onClick={doOut} title="In route">
+                  In route
                 </button>
               )}
               {canFinish && (
-                <button className="btn btn-success btn-sm" disabled={busy} onClick={doDelivered} title="Marcar como entregado">
-                  Entregado
+                <button className="btn btn-success btn-sm" disabled={busy} onClick={doDelivered} title="Mark as delivered">
+                  Delivered
                 </button>
               )}
             </div>
@@ -738,37 +738,37 @@ function DeliveryBoardPageInner() {
   return (
     <div className="container py-3">
       <div className="d-flex align-items-center justify-content-between mb-3 gap-2 flex-wrap">
-        <h1 className="h4 m-0">Delivery — Asignación y Ruta</h1>
+        <h1 className="h4 m-0">Delivery — Assignment and Route</h1>
         <div className="d-flex align-items-center gap-2">
           <div className="input-group input-group-sm" style={{ width: 280 }}>
-            <span className="input-group-text">Buscar</span>
+            <span className="input-group-text">Search</span>
             <input
               type="search"
               className="form-control"
-              placeholder="#orden, dirección, teléfono, ítem, nota"
+              placeholder="#order, address, phone, item, note"
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
           </div>
-          <button className="btn btn-outline-secondary btn-sm" onClick={() => refresh()}>Refrescar</button>
+          <button className="btn btn-outline-secondary btn-sm" onClick={() => refresh()}>Refresh</button>
         </div>
       </div>
 
-      {!authReady && <div className="text-muted">Inicializando sesión…</div>}
-      {authReady && !user && <div className="text-danger">Inicia sesión para ver órdenes.</div>}
+      {!authReady && <div className="text-muted">Initializing session…</div>}
+      {authReady && !user && <div className="text-danger">Sign in to view orders.</div>}
       {error && <div className="text-danger">{error}</div>}
-      {user && loading && <div className="text-muted">Cargando pedidos…</div>}
+      {user && loading && <div className="text-muted">Loading orders…</div>}
 
       {user && (
         <>
           {/* 1) Listos para asignar */}
           <section className="mb-4">
             <div className="d-flex align-items-center justify-content-between mb-2">
-              <h2 className="h5 m-0">Listos para asignar</h2>
+              <h2 className="h5 m-0">Ready to assign</h2>
               <span className="badge bg-secondary">{listosParaAsignar.length}</span>
             </div>
             {listosParaAsignar.length === 0 ? (
-              <div className="text-muted small">No hay órdenes listas para asignar.</div>
+              <div className="text-muted small">There are no orders ready to assign.</div>
             ) : (
               <div className="row g-3">
                 {listosParaAsignar.map((o) => (
@@ -783,11 +783,11 @@ function DeliveryBoardPageInner() {
           {/* 2) En ruta */}
           <section className="mb-4">
             <div className="d-flex align-items-center justify-content-between mb-2">
-              <h2 className="h5 m-0">En ruta</h2>
+              <h2 className="h5 m-0">In route</h2>
               <span className="badge bg-secondary">{enRuta.length}</span>
             </div>
             {enRuta.length === 0 ? (
-              <div className="text-muted small">No hay órdenes en ruta.</div>
+              <div className="text-muted small">There are no orders en route.</div>
             ) : (
               <div className="row g-3">
                 {enRuta.map((o) => (
@@ -802,11 +802,11 @@ function DeliveryBoardPageInner() {
           {/* 3) Entregados */}
           <section className="mb-4">
             <div className="d-flex align-items-center justify-content-between mb-2">
-              <h2 className="h5 m-0">Entregados</h2>
+              <h2 className="h5 m-0">Delivered</h2>
               <span className="badge bg-secondary">{entregados.length}</span>
             </div>
             {entregados.length === 0 ? (
-              <div className="text-muted small">No hay entregas registradas.</div>
+              <div className="text-muted small">No deliveries recorded.</div>
             ) : (
               <div className="row g-3">
                 {entregados.map((o) => (

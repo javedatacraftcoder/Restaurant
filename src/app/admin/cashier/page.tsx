@@ -25,7 +25,7 @@ async function ensureFirebaseApp() {
     if (cfg.apiKey && cfg.authDomain && cfg.projectId && cfg.appId) {
       app.initializeApp(cfg);
     } else {
-      console.warn('[Firebase] Faltan variables NEXT_PUBLIC_*; Auth no podrá inicializar.');
+      console.warn('[Firebase] Missing NEXT_PUBLIC_* variables; Auth will not be able to initialize.');
     }
   }
 }
@@ -213,16 +213,16 @@ type OrderDoc = {
 };
 
 const TitleMap: Record<StatusSnake, string> = {
-  cart: 'Carrito',
-  placed: 'Recibido',
-  kitchen_in_progress: 'En cocina',
-  kitchen_done: 'Cocina lista',
-  ready_to_close: 'Listo para cerrar',
-  assigned_to_courier: 'Asignado a repartidor',
-  on_the_way: 'En camino',
-  delivered: 'Entregado',
-  closed: 'Cerrado',
-  cancelled: 'Cancelado',
+  cart: 'Cart',
+  placed: 'Received',
+  kitchen_in_progress: 'In kitchen',
+  kitchen_done: 'Kitchen done',
+  ready_to_close: 'Ready to close',
+  assigned_to_courier: 'Assigned to delivery',
+  on_the_way: 'In route',
+  delivered: 'Delivered',
+  closed: 'Closed',
+  cancelled: 'Cancelled',
 };
 
 function toDate(x: any): Date {
@@ -230,7 +230,7 @@ function toDate(x: any): Date {
   const d = new Date(x);
   return isNaN(d.getTime()) ? new Date() : d;
 }
-function fmtCurrency(n?: number, currency = 'GTQ') {
+function fmtCurrency(n?: number, currency = 'USD') {
   if (typeof n !== 'number') return '—';
   try {
     return new Intl.NumberFormat('es-GT', { style: 'currency', currency }).format(n);
@@ -612,7 +612,7 @@ function OrderCard({
         <div className="d-flex flex-column">
           <div className="fw-semibold">#{o.orderNumber || o.id}</div>
           {(type !== 'delivery' && (o.orderInfo?.table || o.tableNumber)) && (
-            <div className="fw-semibold">Mesa {o.orderInfo?.table || o.tableNumber}</div>
+            <div className="fw-semibold">Table {o.orderInfo?.table || o.tableNumber}</div>
           )}
           <small className="text-muted">
             {created.toLocaleString()}
@@ -625,10 +625,10 @@ function OrderCard({
       </div>
       <div className="card-body">
         {type === 'delivery' && (o.orderInfo?.address || o.deliveryAddress) ? (
-          <div className="mb-1"><strong>Entrega:</strong> {o.orderInfo?.address || o.deliveryAddress}</div>
+          <div className="mb-1"><strong>Deliver:</strong> {o.orderInfo?.address || o.deliveryAddress}</div>
         ) : null}
-        {o.orderInfo?.phone ? <div className="mb-1"><strong>Tel:</strong> {o.orderInfo.phone}</div> : null}
-        {(o.orderInfo?.notes || o.notes) ? <div className="mb-2"><em>Nota: {o.orderInfo?.notes || o.notes}</em></div> : null}
+        {o.orderInfo?.phone ? <div className="mb-1"><strong>Phone:</strong> {o.orderInfo.phone}</div> : null}
+        {(o.orderInfo?.notes || o.notes) ? <div className="mb-2"><em>Note: {o.orderInfo?.notes || o.notes}</em></div> : null}
 
         {/* Ítems y addons (con precios por línea) */}
         <div className="mb-2">
@@ -650,7 +650,7 @@ function OrderCard({
                 });
                 groupRows.push(
                   <div className="ms-3 text-muted" key={`og-${idx}-${g.groupId || g.groupName}`}>
-                    <span className="fw-semibold">{g?.groupName ?? 'Opciones'}:</span> {rows}
+                    <span className="fw-semibold">{g?.groupName ?? 'Options'}:</span> {rows}
                   </div>
                 );
               }
@@ -668,7 +668,7 @@ function OrderCard({
                 });
                 groupRows.push(
                   <div className="ms-3 text-muted" key={`op-${idx}-${g.groupName}`}>
-                    <span className="fw-semibold">{g?.groupName ?? 'Opciones'}:</span> {rows}
+                    <span className="fw-semibold">{g?.groupName ?? 'Options'}:</span> {rows}
                   </div>
                 );
               }
@@ -701,7 +701,7 @@ function OrderCard({
                 {groupRows}
                 {lineTotal > 0 && (
                   <div className="d-flex justify-content-between">
-                    <span className="text-muted">Subtotal línea</span>
+                    <span className="text-muted">Subtotal line</span>
                     <span className="text-muted">{fmtCurrency(lineTotal)}</span>
                   </div>
                 )}
@@ -720,7 +720,7 @@ function OrderCard({
           {/* NUEVO: línea de descuento con nombre/código */}
           {discountShown > 0 && (
             <div className="d-flex justify-content-between text-success">
-              <div>Descuento{promoLabel ? ` (${promoLabel})` : ''}</div>
+              <div>Discount{promoLabel ? ` (${promoLabel})` : ''}</div>
               <div className="fw-semibold">- {fmtCurrency(discountShown)}</div>
             </div>
           )}
@@ -728,7 +728,7 @@ function OrderCard({
           {type === 'delivery' && (
             <div className="d-flex justify-content-between">
               <div>
-                Envío{ o.orderInfo?.deliveryOption?.title ? ` — ${o.orderInfo.deliveryOption.title}` : '' }
+                Delivery{ o.orderInfo?.deliveryOption?.title ? ` — ${o.orderInfo.deliveryOption.title}` : '' }
               </div>
               <div className="fw-semibold">{fmtCurrency(deliveryFeeShown)}</div>
             </div>
@@ -736,14 +736,14 @@ function OrderCard({
 
           {type !== 'delivery' && Number(totals.tip || 0) > 0 && (
             <div className="d-flex justify-content-between">
-              <div>Propina</div>
+              <div>Tip</div>
               <div className="fw-semibold">{fmtCurrency(totals.tip)}</div>
             </div>
           )}
 
           <hr />
           <div className="d-flex justify-content-between">
-            <div className="fw-semibold">Gran total</div>
+            <div className="fw-semibold">Grand total</div>
             <div className="fw-bold">{fmtCurrency(grandTotalShown)}</div>
           </div>
         </div>
@@ -752,7 +752,7 @@ function OrderCard({
         <div className="d-flex justify-content-between align-items-center mt-2">
           <div className="small">
             Total: <span className="fw-semibold">{fmtCurrency(grandTotalShown)}</span>
-            {totals.tip ? <span className="text-muted"> · propina {fmtCurrency(totals.tip)}</span> : null}
+            {totals.tip ? <span className="text-muted"> · tip {fmtCurrency(totals.tip)}</span> : null}
           </div>
 
           <div className="btn-group">
@@ -762,10 +762,10 @@ function OrderCard({
               target="_blank"
               rel="noopener noreferrer"
             >
-              Imprimir recibo
+              Print receipt
             </a>
             <button className="btn btn-success btn-sm" onClick={() => onClose(o)} disabled={busy}>
-              Cerrar
+              Close
             </button>
           </div>
         </div>
@@ -789,7 +789,7 @@ function CashierPage_Inner() {
       await advanceToClose(o, async () => {}); // encadena pasos permitidos hasta 'closed'
       await refresh();
     } catch (e: any) {
-      alert(e?.message || 'No se pudo cerrar la orden.');
+      alert(e?.message || 'The order could not be closed.');
     } finally {
       setBusyId(null);
     }
@@ -810,31 +810,31 @@ function CashierPage_Inner() {
     <div className="container py-3">
       <div className="d-flex align-items-center justify-content-between gap-3 mb-3 sticky-top bg-white py-2" style={{ top: 0, zIndex: 5, borderBottom: '1px solid #eee' }}>
         <div className="d-flex align-items-center gap-3">
-          <h1 className="h4 m-0">Caja — Cashier</h1>
+          <h1 className="h4 m-0">Cashier</h1>
           <span className="text-muted small d-none d-md-inline">
-            Órdenes desde <strong>Cocina lista</strong> en adelante. Desde aquí puedes imprimir y cerrar.
+            Orders from <strong>Kitchen ready status</strong> onwards. From here you can print and close.
           </span>
         </div>
         <div className="d-flex align-items-center gap-2">
-          <button className="btn btn-outline-secondary btn-sm" onClick={() => refresh()}>Refrescar</button>
+          <button className="btn btn-outline-secondary btn-sm" onClick={() => refresh()}>Refresh</button>
         </div>
       </div>
 
-      {!authReady && <div className="text-muted">Inicializando sesión…</div>}
-      {authReady && !user && <div className="text-danger">No has iniciado sesión.</div>}
+      {!authReady && <div className="text-muted">Initializing session…</div>}
+      {authReady && !user && <div className="text-danger">You are not logged in.</div>}
       {error && <div className="text-danger">{error}</div>}
-      {user && loading && <div className="text-muted">Cargando órdenes…</div>}
+      {user && loading && <div className="text-muted">Loading orders...</div>}
 
       {user && !loading && (
         <>
           {/* Dine-in */}
           <section className="mb-4">
             <div className="d-flex align-items-center justify-content-between mb-2">
-              <h2 className="h5 m-0">Salón (Dine-in)</h2>
+              <h2 className="h5 m-0">Restaurant (Dine-in)</h2>
               <span className="badge bg-secondary">{dineIn.length}</span>
             </div>
             {dineIn.length === 0 ? (
-              <div className="text-muted small">No hay órdenes dine-in.</div>
+              <div className="text-muted small">There are no dine-in orders.</div>
             ) : (
               <div className="row g-3">
                 {dineIn.map(o => (
@@ -853,7 +853,7 @@ function CashierPage_Inner() {
               <span className="badge bg-secondary">{delivery.length}</span>
             </div>
             {delivery.length === 0 ? (
-              <div className="text-muted small">No hay órdenes de delivery.</div>
+              <div className="text-muted small">There are no delivery orders.</div>
             ) : (
               <div className="row g-3">
                 {delivery.map(o => (

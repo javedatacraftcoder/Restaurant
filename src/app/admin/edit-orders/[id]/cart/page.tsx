@@ -77,7 +77,7 @@ type Order = {
 
 const toNum=(x:any)=> (Number.isFinite(Number(x))?Number(x):undefined);
 const centsToQ=(c?:number)=> (Number.isFinite(c)?Number(c)/100:0);
-function fmtMoney(n?:number, cur='GTQ'){ const v=Number(n||0); try{ return new Intl.NumberFormat('es-GT',{style:'currency',currency:cur}).format(v);}catch{return `Q ${v.toFixed(2)}`;} }
+function fmtMoney(n?:number, cur='USD'){ const v=Number(n||0); try{ return new Intl.NumberFormat('es-GT',{style:'currency',currency:cur}).format(v);}catch{return `Q ${v.toFixed(2)}`;} }
 function getQty(l:Line){ return Number(l?.quantity ?? 1) || 1; }
 function getName(l:Line){ return String(l?.menuItemName ?? l?.name ?? 'Ítem'); }
 function extractDeltaQ(x:any){
@@ -211,8 +211,8 @@ export default function EditOrderCartPage(){
         const res = await apiFetch(`/api/orders/${id}`);
         let data: any = null;
         try { data = await res.json(); } catch(parseErr){
-          console.error('No se pudo parsear JSON del GET /api/orders/[id]', parseErr);
-          setErr('Respuesta no válida del servidor.');
+          console.error('Could not parse JSON from GET /api/orders/[id]', parseErr);
+          setErr('Invalid response from the server.');
           return;
         }
         // Aceptar distintos formatos:
@@ -236,11 +236,11 @@ export default function EditOrderCartPage(){
         if(!res.ok){
           setErr(data?.error || `Error ${res.status}`);
         } else if(!order){
-          setErr('No se encontró la orden.');
+          setErr('Order not found.');
         }
       } catch(e:any){ 
         console.error(e); 
-        setErr(e?.message || 'Error al cargar la orden');
+        setErr(e?.message || 'Error loading order');
       }
       try{
         const arr: NewLine[] = JSON.parse(sessionStorage.getItem(key) || '[]');
@@ -253,7 +253,7 @@ export default function EditOrderCartPage(){
   const appendTotal = useMemo(()=> pending.reduce((acc,l)=>acc+(Number(l.lineTotal||0)),0),[pending]);
 
   async function confirmAppend(){
-    if(!pending.length){ alert('No hay elementos para agregar.'); return; }
+    if(!pending.length){ alert('There are no items to add.'); return; }
     const res = await apiFetch(`/api/orders/${id}/append`, {
       method: 'POST',
       headers: { 'Content-Type':'application/json' },
@@ -262,11 +262,11 @@ export default function EditOrderCartPage(){
     const data = await res.json().catch(()=> ({} as any));
     if(!res.ok || data?.ok===false){ alert(data?.error || `Error ${res.status}`); return; }
     sessionStorage.removeItem(key);
-    alert('Se agregaron los nuevos ítems y la orden regresó a Cocina (placed).');
+    alert('The new items were added and the order was placed back in the Kitchen..');
     router.push('/admin/edit-orders');
   }
 
-  const currency = original?.currency || 'GTQ';
+  const currency = original?.currency || 'USD';
   const origLines: Line[] = useMemo(()=>{
     // prioridad: items -> lines -> encontradas
     const A = (original?.items && original.items.length ? original.items : null);
@@ -282,20 +282,20 @@ export default function EditOrderCartPage(){
     <Protected>
       <RoleGate allow={['admin','waiter']}>
     <div className="container py-4">
-      <h1 className="h5">Editar orden #{String(id).slice(0,6)}</h1>
+      <h1 className="h5">Edit Order #{String(id).slice(0,6)}</h1>
 
       {/* Orden original */}
       <div className="card border-0 shadow-sm mt-3">
-        <div className="card-header"><div className="fw-semibold">Orden original</div></div>
+        <div className="card-header"><div className="fw-semibold">Original order</div></div>
         <div className="card-body">
-          {!original && !err && <div className="text-muted">Cargando orden…</div>}
+          {!original && !err && <div className="text-muted">Loading order…</div>}
           {err && <div className="text-danger small">{err}</div>}
           {original && (
             <>
-              <div className="small text-muted mb-2">Total actual: {fmtMoney(currentTotal, currency)}</div>
+              <div className="small text-muted mb-2">Current total: {fmtMoney(currentTotal, currency)}</div>
 
               {origLines.length === 0 && (
-                <div className="text-muted small">Sin líneas en esta orden.</div>
+                <div className="text-muted small">No lines in this order.</div>
               )}
 
               {origLines.map((l,idx)=>{
@@ -317,7 +317,7 @@ export default function EditOrderCartPage(){
                       });
                       return rows.length?(
                         <div key={gi} className="ms-3 text-muted">
-                          <span className="fw-semibold">{g.groupName || 'Opciones'}:</span> {rows}
+                          <span className="fw-semibold">{g.groupName || 'Options'}:</span> {rows}
                         </div>
                       ):null;
                     })}
@@ -329,7 +329,7 @@ export default function EditOrderCartPage(){
                       });
                       return rows.length?(
                         <div key={`op-${gi}`} className="ms-3 text-muted">
-                          <span className="fw-semibold">{g.groupName || 'Opciones'}:</span> {rows}
+                          <span className="fw-semibold">{g.groupName || 'Options'}:</span> {rows}
                         </div>
                       ):null;
                     })}
@@ -346,7 +346,7 @@ export default function EditOrderCartPage(){
                     )}
 
                     <div className="d-flex justify-content-between">
-                      <span className="text-muted">Subtotal línea</span>
+                      <span className="text-muted">Subtotal line</span>
                       <span className="text-muted">{fmtMoney(sum, currency)}</span>
                     </div>
                   </div>
@@ -359,9 +359,9 @@ export default function EditOrderCartPage(){
 
       {/* Nuevos ítems */}
       <div className="card border-0 shadow-sm mt-4">
-        <div className="card-header"><div className="fw-semibold">Nuevos ítems a agregar</div></div>
+        <div className="card-header"><div className="fw-semibold">New items to add</div></div>
         <div className="card-body">
-          {pending.length===0 && <div className="text-muted">Aún no has agregado nada desde el menú.</div>}
+          {pending.length===0 && <div className="text-muted">You haven't added anything from the menu yet..</div>}
           {pending.map((l,idx)=>{
             const name = l.menuItemName || 'Ítem';
             const q = Number(l.quantity||1);
@@ -371,7 +371,7 @@ export default function EditOrderCartPage(){
               <div key={idx} className="small mb-2 border-top pt-2">
                 <div className="d-flex justify-content-between">
                   <div>• {q} × {name}</div>
-                  <div className="text-muted">({fmtMoney(base)} c/u)</div>
+                  <div className="text-muted">({fmtMoney(base)} each)</div>
                 </div>
 
                 {Array.isArray(l.optionGroups)&&l.optionGroups.map((g,gi)=>(
@@ -389,7 +389,7 @@ export default function EditOrderCartPage(){
                 )}
 
                 <div className="d-flex justify-content-between">
-                  <span className="text-muted">Subtotal línea</span>
+                  <span className="text-muted">Subtotal line</span>
                   <span className="text-muted">{fmtMoney(sum)}</span>
                 </div>
               </div>
@@ -397,10 +397,10 @@ export default function EditOrderCartPage(){
           })}
         </div>
         <div className="card-footer d-flex justify-content-between align-items-center">
-          <div>Total a agregar: <strong>{fmtMoney(appendTotal)}</strong></div>
+          <div>Total to add: <strong>{fmtMoney(appendTotal)}</strong></div>
           <div className="d-flex gap-2">
             <button className="btn btn-outline-secondary" onClick={()=>{ sessionStorage.removeItem(key); setPending([]); }}>Vaciar</button>
-            <button className="btn btn-primary" onClick={confirmAppend} disabled={!pending.length}>Confirmar</button>
+            <button className="btn btn-primary" onClick={confirmAppend} disabled={!pending.length}>Continue</button>
           </div>
         </div>
       </div>

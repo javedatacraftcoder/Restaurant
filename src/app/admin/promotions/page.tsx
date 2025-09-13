@@ -308,7 +308,7 @@ function AdminPromotionsPage_Inner() {
         });
 
       } catch (e: any) {
-        setErr(e?.message || "Error cargando datos");
+        setErr(e?.message || "Error loading data");
       } finally {
         setLoading(false);
       }
@@ -338,18 +338,18 @@ function AdminPromotionsPage_Inner() {
   async function onSavePromotion() {
     try {
       const nameV = name.trim();
-      if (!nameV) { alert("Nombre de promoción requerido"); return; }
+      if (!nameV) { alert("Promotion name is required"); return; }
 
       const codeV = normalizeCode(code);
-      if (!codeV) { alert("Código requerido"); return; }
+      if (!codeV) { alert("Code is required"); return; }
 
       const valN = toNumber(value);
-      if (!valN || valN <= 0) { alert(type === "percent" ? "Porcentaje inválido" : "Monto inválido"); return; }
-      if (type === "percent" && (valN <= 0 || valN > 100)) { alert("El porcentaje debe ser 1–100"); return; }
+      if (!valN || valN <= 0) { alert(type === "percent" ? "Invalid percentage" : "Invalid amount"); return; }
+      if (type === "percent" && (valN <= 0 || valN > 100)) { alert("Percentage must be 1–100"); return; }
 
       // chequear unicidad de código
       if (await isCodeTaken(codeV, editingId || undefined)) {
-        alert("Ese código ya existe. Usa otro.");
+        alert("That code already exists. Use another one.");
         return;
       }
 
@@ -403,18 +403,18 @@ function AdminPromotionsPage_Inner() {
       }
 
       resetForm();
-      alert("Promoción guardada.");
+      alert("Promotion saved.");
     } catch (e: any) {
-      alert(e?.message || "No se pudo guardar la promoción");
+      alert(e?.message || "Could not save the promotion");
     }
   }
 
   async function onDeletePromotion(id: string) {
-    if (!confirm("¿Eliminar esta promoción?")) return;
+    if (!confirm("Delete this promotion?")) return;
     try {
       await deleteDocById("promotions", id);
     } catch (e: any) {
-      alert(e?.message || "No se pudo eliminar la promoción");
+      alert(e?.message || "Could not delete the promotion");
     }
   }
 
@@ -480,23 +480,23 @@ function AdminPromotionsPage_Inner() {
     const cats = p.scope?.categories?.length || 0;
     const subs = p.scope?.subcategories?.length || 0;
     const mis  = p.scope?.menuItems?.length || 0;
-    if (!cats && !subs && !mis) return "Todos los ítems";
+    if (!cats && !subs && !mis) return "All items";
     const parts: string[] = [];
-    if (cats) parts.push(`${cats} categoría(s)`);
+    if (cats) parts.push(`${cats} category(ies)`);
     if (subs) parts.push(`${subs} subcat(s)`);
-    if (mis)  parts.push(`${mis} plato(s)`);
+    if (mis)  parts.push(`${mis} dish(es)`);
     return parts.join(" · ");
   }
   function discountSummary(p: Promotion) {
-    return p.type === "percent" ? `${p.value}%` : `${fmtQ(p.value)} fijo`;
+    return p.type === "percent" ? `${p.value}%` : `${fmtQ(p.value)} fixed`;
   }
   function ruleSummary(p: Promotion) {
     const arr: string[] = [];
-    if (p.constraints?.minTargetSubtotal) arr.push(`mín ${fmtQ(p.constraints.minTargetSubtotal)}`);
+    if (p.constraints?.minTargetSubtotal) arr.push(`min ${fmtQ(p.constraints.minTargetSubtotal)}`);
     if (p.constraints?.allowedOrderTypes?.length) arr.push(p.constraints.allowedOrderTypes.join("/"));
-    if (p.constraints?.globalLimit != null) arr.push(`límite global: ${p.constraints.globalLimit}`);
-    if (p.constraints?.perUserLimit != null) arr.push(`límite usuario: ${p.constraints.perUserLimit}`);
-    if (p.constraints?.stackable) arr.push("acumulable");
+    if (p.constraints?.globalLimit != null) arr.push(`global limit: ${p.constraints.globalLimit}`);
+    if (p.constraints?.perUserLimit != null) arr.push(`user limit: ${p.constraints.perUserLimit}`);
+    if (p.constraints?.stackable) arr.push("stackable");
     if (p.constraints?.autoApply) arr.push("auto");
     return arr.join(" · ") || "—";
   }
@@ -513,15 +513,15 @@ function AdminPromotionsPage_Inner() {
   /* =========================================================================
      Render
      ========================================================================= */
-  if (!authReady) return <div className="container py-3">Inicializando sesión…</div>;
-  if (!user) return <div className="container py-5 text-danger">Debes iniciar sesión.</div>;
-  if (!isAdmin) return <div className="container py-5 text-danger">No autorizado (solo administradores).</div>;
+  if (!authReady) return <div className="container py-3">Initializing session…</div>;
+  if (!user) return <div className="container py-5 text-danger">You must sign in.</div>;
+  if (!isAdmin) return <div className="container py-5 text-danger">Unauthorized (admins only).</div>;
 
   return (
     <div className="container py-3">
       <div className="d-flex align-items-center justify-content-between mb-3">
-        <h1 className="h4 m-0">Promociones — Códigos de descuento</h1>
-        <span className="text-muted small">Actualización en tiempo real</span>
+        <h1 className="h4 m-0">Promotions — Discount Codes</h1>
+        <span className="text-muted small">Real-time updates</span>
       </div>
       {err && <div className="alert alert-danger">{err}</div>}
 
@@ -530,45 +530,45 @@ function AdminPromotionsPage_Inner() {
         <div className="col-12 col-lg-5">
           <div className="card">
             <div className="card-header d-flex align-items-center justify-content-between">
-              <span>{editingId ? "Editar promoción" : "Crear promoción"}</span>
+              <span>{editingId ? "Edit promotion" : "Create promotion"}</span>
               {editingId && (
-                <button className="btn btn-sm btn-outline-secondary" onClick={resetForm}>Nueva</button>
+                <button className="btn btn-sm btn-outline-secondary" onClick={resetForm}>New</button>
               )}
             </div>
             <div className="card-body">
               {/* Básicos */}
               <div className="mb-2">
-                <label className="form-label">Nombre (visible para cliente)</label>
+                <label className="form-label">Name (visible to customer)</label>
                 <input className="form-control" value={name} onChange={(e) => setName(e.target.value)} />
               </div>
               <div className="row g-2">
                 <div className="col-8">
-                  <label className="form-label">Código</label>
+                  <label className="form-label">Code</label>
                   <input
                     className="form-control"
                     value={code}
                     onChange={(e) => setCode(e.target.value.toUpperCase())}
-                    placeholder="p.ej. POSTRES10"
+                    placeholder="e.g., DESSERTS10"
                   />
                 </div>
                 <div className="col-4 d-flex align-items-end">
                   <div className="form-check">
                     <input className="form-check-input" type="checkbox" id="act" checked={active} onChange={(e) => setActive(e.target.checked)} />
-                    <label className="form-check-label" htmlFor="act">Activo</label>
+                    <label className="form-check-label" htmlFor="act">Active</label>
                   </div>
                 </div>
               </div>
 
               <div className="row g-2 mt-1">
                 <div className="col-6">
-                  <label className="form-label">Tipo de descuento</label>
+                  <label className="form-label">Discount type</label>
                   <select className="form-select" value={type} onChange={(e) => setType(e.target.value as any)}>
-                    <option value="percent">% porcentaje</option>
-                    <option value="fixed">Q monto fijo</option>
+                    <option value="percent">% percent</option>
+                    <option value="fixed">Q fixed amount</option>
                   </select>
                 </div>
                 <div className="col-6">
-                  <label className="form-label">{type === "percent" ? "Porcentaje (1–100)" : "Monto (GTQ)"}</label>
+                  <label className="form-label">{type === "percent" ? "Percentage (1–100)" : "Amount (GTQ)"}</label>
                   <input
                     type="number"
                     step="0.01"
@@ -581,11 +581,11 @@ function AdminPromotionsPage_Inner() {
 
               <div className="row g-2 mt-2">
                 <div className="col-6">
-                  <label className="form-label">Inicio (opcional)</label>
+                  <label className="form-label">Start (optional)</label>
                   <input type="datetime-local" className="form-control" value={startAt} onChange={(e) => setStartAt(e.target.value)} />
                 </div>
                 <div className="col-6">
-                  <label className="form-label">Fin (opcional)</label>
+                  <label className="form-label">End (optional)</label>
                   <input type="datetime-local" className="form-control" value={endAt} onChange={(e) => setEndAt(e.target.value)} />
                 </div>
               </div>
@@ -593,21 +593,21 @@ function AdminPromotionsPage_Inner() {
               <hr className="my-3" />
               {/* Alcance */}
               <div className="d-flex align-items-center justify-content-between mb-2">
-                <strong>Alcance (¿a qué aplica?)</strong>
+                <strong>Scope (what does it apply to?)</strong>
                 <button
                   type="button"
                   className="btn btn-sm btn-outline-secondary"
                   onClick={() => { setScopeCats([]); setScopeSubs([]); setScopeItems([]); }}
                 >
-                  Limpiar selección
+                  Clear selection
                 </button>
               </div>
 
               <div className="row g-2">
                 <div className="col-12 col-md-4">
                   <div className="border rounded p-2" style={{ maxHeight: 180, overflow: "auto" }}>
-                    <div className="fw-semibold small mb-1">Categorías</div>
-                    {categories.length === 0 && <div className="text-muted small">No hay categorías.</div>}
+                    <div className="fw-semibold small mb-1">Categories</div>
+                    {categories.length === 0 && <div className="text-muted small">No categories.</div>}
                     {categories.map((c) => {
                       const checked = scopeCats.includes(c.id);
                       return (
@@ -630,8 +630,8 @@ function AdminPromotionsPage_Inner() {
 
                 <div className="col-12 col-md-4">
                   <div className="border rounded p-2" style={{ maxHeight: 180, overflow: "auto" }}>
-                    <div className="fw-semibold small mb-1">Subcategorías</div>
-                    {subcategories.length === 0 && <div className="text-muted small">No hay subcategorías.</div>}
+                    <div className="fw-semibold small mb-1">Subcategories</div>
+                    {subcategories.length === 0 && <div className="text-muted small">No subcategories.</div>}
                     {subcategories.map((s) => {
                       const checked = scopeSubs.includes(s.id);
                       const catName = categories.find(c => c.id === s.categoryId)?.name || "—";
@@ -656,21 +656,21 @@ function AdminPromotionsPage_Inner() {
                 <div className="col-12 col-md-4">
                   <div className="border rounded p-2">
                     <div className="d-flex align-items-center justify-content-between">
-                      <div className="fw-semibold small">Platos</div>
+                      <div className="fw-semibold small">Dishes</div>
                       <div className="d-flex gap-2">
                         <select className="form-select form-select-sm" style={{ width: 160 }} value={filterCat} onChange={(e) => { setFilterCat(e.target.value); setFilterSub(""); }}>
-                          <option value="">(Todas las categorías)</option>
+                          <option value="">(All categories)</option>
                           {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                         </select>
                         <select className="form-select form-select-sm" style={{ width: 160 }} value={filterSub} onChange={(e) => setFilterSub(e.target.value)}>
-                          <option value="">(Todas las subcategorías)</option>
+                          <option value="">(All subcategories)</option>
                           {subcategories.filter(s => !filterCat || s.categoryId === filterCat).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                         </select>
                       </div>
                     </div>
 
                     <div style={{ maxHeight: 180, overflow: "auto" }} className="mt-2">
-                      {itemsFiltered.length === 0 && <div className="text-muted small">Sin platos.</div>}
+                      {itemsFiltered.length === 0 && <div className="text-muted small">No dishes.</div>}
                       {itemsFiltered.map((mi) => {
                         const checked = scopeItems.includes(mi.id);
                         const cName = categories.find(c => c.id === mi.categoryId)?.name || "—";
@@ -697,14 +697,14 @@ function AdminPromotionsPage_Inner() {
 
               <hr className="my-3" />
               {/* Reglas */}
-              <strong>Reglas</strong>
+              <strong>Rules</strong>
               <div className="row g-2 mt-1">
                 <div className="col-6">
-                  <label className="form-label">Mín. subtotal elegible (GTQ)</label>
+                  <label className="form-label">Min. eligible subtotal (GTQ)</label>
                   <input type="number" step="0.01" className="form-control" value={minTargetSubtotal} onChange={(e) => setMinTargetSubtotal(e.target.value)} />
                 </div>
                 <div className="col-6">
-                  <label className="form-label">Tipos de orden permitidos</label>
+                  <label className="form-label">Allowed order types</label>
                   <div className="d-flex flex-wrap gap-3 border rounded p-2">
                     {(["dine_in","delivery","takeaway"] as const).map((t) => (
                       <label key={t} className="form-check">
@@ -724,31 +724,31 @@ function AdminPromotionsPage_Inner() {
                 </div>
 
                 <div className="col-6">
-                  <label className="form-label">Límite global de usos</label>
+                  <label className="form-label">Global usage limit</label>
                   <input type="number" className="form-control" value={globalLimit} onChange={(e) => setGlobalLimit(e.target.value)} />
                 </div>
                 <div className="col-6">
-                  <label className="form-label">Límite por usuario</label>
+                  <label className="form-label">Per-user limit</label>
                   <input type="number" className="form-control" value={perUserLimit} onChange={(e) => setPerUserLimit(e.target.value)} />
                 </div>
 
                 <div className="col-6 d-flex align-items-end">
                   <div className="form-check">
                     <input className="form-check-input" type="checkbox" id="stack" checked={stackable} onChange={(e) => setStackable(e.target.checked)} />
-                    <label className="form-check-label" htmlFor="stack">Acumulable (stackable)</label>
+                    <label className="form-check-label" htmlFor="stack">Stackable (stackable)</label>
                   </div>
                 </div>
                 <div className="col-6 d-flex align-items-end">
                   <div className="form-check">
                     <input className="form-check-input" type="checkbox" id="auto" checked={autoApply} onChange={(e) => setAutoApply(e.target.checked)} />
-                    <label className="form-check-label" htmlFor="auto">Aplicar automático (autoApply)</label>
+                    <label className="form-check-label" htmlFor="auto">Auto-apply (autoApply)</label>
                   </div>
                 </div>
               </div>
 
               <div className="text-end mt-3">
                 <button className="btn btn-primary" onClick={onSavePromotion}>
-                  {editingId ? "Guardar cambios" : "Crear promoción"}
+                  {editingId ? "Save changes" : "Create promotion"}
                 </button>
               </div>
             </div>
@@ -759,17 +759,17 @@ function AdminPromotionsPage_Inner() {
         <div className="col-12 col-lg-7">
           <div className="card">
             <div className="card-header d-flex align-items-center justify-content-between">
-              <span>Promociones existentes</span>
+              <span>Existing promotions</span>
               <input
                 className="form-control form-control-sm"
                 style={{ maxWidth: 240 }}
-                placeholder="Buscar por nombre o código…"
+                placeholder="Search by name or code…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
             <div className="card-body">
-              {promosFiltered.length === 0 && <div className="text-muted small">Sin promociones.</div>}
+              {promosFiltered.length === 0 && <div className="text-muted small">No promotions.</div>}
               <div className="row g-3">
                 {promosFiltered.map((p) => {
                   // Fechas legibles
@@ -786,24 +786,24 @@ function AdminPromotionsPage_Inner() {
                             <div>
                               <div className="fw-semibold">{p.name}</div>
                               <div className="text-muted small">
-                                Código: <strong>{p.code}</strong> · {discountSummary(p)} · {p.active ? <span className="badge text-bg-success">activo</span> : <span className="badge text-bg-secondary">inactivo</span>}
+                                Code: <strong>{p.code}</strong> · {discountSummary(p)} · {p.active ? <span className="badge text-bg-success">active</span> : <span className="badge text-bg-secondary">inactive</span>}
                               </div>
                               <div className="text-muted small mt-1">
-                                Alcance: {scopeSummary(p)}
+                                Scope: {scopeSummary(p)}
                               </div>
                               <div className="text-muted small">
-                                Reglas: {ruleSummary(p)}
+                                Rules: {ruleSummary(p)}
                               </div>
                               <div className="text-muted small">
-                                Vigencia: {toStr(p.startAt)} → {toStr(p.endAt)}
+                                Validity: {toStr(p.startAt)} → {toStr(p.endAt)}
                               </div>
                               <div className="text-muted small">
-                                Usos: {typeof p.timesRedeemed === "number" ? p.timesRedeemed : 0}
+                                Uses: {typeof p.timesRedeemed === "number" ? p.timesRedeemed : 0}
                               </div>
                             </div>
                             <div className="d-flex flex-column gap-2 align-items-stretch" style={{ minWidth: 160 }}>
-                              <button className="btn btn-outline-secondary btn-sm w-100" onClick={() => onEditPromotion(p)}>Editar</button>
-                              <button className="btn btn-outline-danger btn-sm w-100" onClick={() => onDeletePromotion(p.id)}>Eliminar</button>
+                              <button className="btn btn-outline-secondary btn-sm w-100" onClick={() => onEditPromotion(p)}>Edit</button>
+                              <button className="btn btn-outline-danger btn-sm w-100" onClick={() => onDeletePromotion(p.id)}>Delete</button>
                             </div>
                           </div>
                         </div>
@@ -816,8 +816,7 @@ function AdminPromotionsPage_Inner() {
           </div>
 
           <div className="alert alert-light border mt-3 small">
-            <strong>Nota:</strong> esta página solo administra metadatos de promociones. En el <em>checkout</em> agregaremos un campo de código y un endpoint que calcule el descuento
-            únicamente sobre ítems elegibles (por categoría, subcategoría o plato). No he tocado nada del checkout todavía.
+            <strong>Note:</strong> this page only manages promotion metadata. In the <em>checkout</em> we’ll add a code field and an endpoint that calculates the discount only over eligible items (by category, subcategory, or dish). I haven’t touched the checkout yet.
           </div>
         </div>
       </div>

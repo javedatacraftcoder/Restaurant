@@ -97,39 +97,39 @@ export default function AdminOpsPage() {
       <AdminOnly>
     <div className="container py-4">
       <div className="d-flex flex-wrap align-items-center justify-content-between mb-3 gap-2">
-        <h1 className="h4 m-0">Ops — Órdenes</h1>
+        <h1 className="h4 m-0">Ops — Orders</h1>
 
         <div className="d-flex gap-2">
-          <div className="btn-group" role="group" aria-label="Filtros">
+          <div className="btn-group" role="group" aria-label="Filters">
             <button
               className={`btn btn-sm ${filter==='all' ? 'btn-primary' : 'btn-outline-primary'}`}
               onClick={() => setFilter('all')}
             >
-              Todas
+              All
             </button>
             <button
               className={`btn btn-sm ${filter==='active' ? 'btn-primary' : 'btn-outline-primary'}`}
               onClick={() => setFilter('active')}
             >
-              Activas
+              Active
             </button>
             <button
               className={`btn btn-sm ${filter==='closed' ? 'btn-primary' : 'btn-outline-primary'}`}
               onClick={() => setFilter('closed')}
             >
-              Cerradas
+              Closed
             </button>
             <button
               className={`btn btn-sm ${filter==='cancelled' ? 'btn-primary' : 'btn-outline-primary'}`}
               onClick={() => setFilter('cancelled')}
             >
-              Canceladas
+              Cancelled
             </button>
           </div>
 
           <input
             className="form-control form-control-sm"
-            placeholder="Buscar (número, estado, mesa, dirección, plato...)"
+            placeholder="Search (number, status, table, address, dish...)"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{ minWidth: 260 }}
@@ -138,7 +138,7 @@ export default function AdminOpsPage() {
       </div>
 
       {filtered.length === 0 ? (
-        <div className="alert alert-light border">No hay órdenes para mostrar.</div>
+        <div className="alert alert-light border">No orders to show.</div>
       ) : (
         <div className="row g-3">
           {filtered.map((ord) => (

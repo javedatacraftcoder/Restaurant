@@ -19,11 +19,11 @@ export default function AuthButtons() {
           {flags.isAdmin ? "Admin" : isOp ? "Operaciones" : "Mi área"}
         </Link>
         <button className="btn btn-sm btn-warning" onClick={() => signOut(auth)}>
-          Cerrar sesión
+          Logout
         </button>
       </div>
     );
   }
 
-  return <Link className="btn btn-sm btn-primary" href="/login">Iniciar sesión</Link>;
+  return <Link className="btn btn-sm btn-primary" href="/login">Login</Link>;
 }

@@ -30,11 +30,11 @@ export default function AccountsRegisterPage() {
     setErr(null);
 
     if (pass1 !== pass2) {
-      setErr("Las contraseñas no coinciden.");
+      setErr("Passwords don{t match");
       return;
     }
     if (name.trim().length < 2) {
-      setErr("Ingresa tu nombre.");
+      setErr("Enter your name.");
       return;
     }
 
@@ -67,7 +67,7 @@ export default function AccountsRegisterPage() {
       // Redirige al home (o donde gustes)
       router.replace("/");
     } catch (e: any) {
-      setErr(e?.message || "No se pudo crear la cuenta.");
+      setErr(e?.message || "The account could not be created.");
     } finally {
       setBusy(false);
     }
@@ -75,15 +75,15 @@ export default function AccountsRegisterPage() {
 
   return (
     <main className="container py-4" style={{ maxWidth: 520 }}>
-      <h1 className="h3 mb-3 text-center">Crear cuenta</h1>
+      <h1 className="h3 mb-3 text-center">Create account</h1>
 
       <form onSubmit={onSubmit} className="card p-3 border-0 shadow-sm">
         <div className="mb-3">
-          <label className="form-label">Nombre</label>
+          <label className="form-label">Name</label>
           <input
             className="form-control"
             type="text"
-            placeholder="Tu nombre"
+            placeholder="Your name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
@@ -92,12 +92,12 @@ export default function AccountsRegisterPage() {
         </div>
 
         <div className="mb-3">
-          <label className="form-label">Correo</label>
+          <label className="form-label">Email</label>
           <input
             className="form-control"
             type="email"
             autoComplete="email"
-            placeholder="tu@correo.com"
+            placeholder="you@youremail.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
@@ -106,12 +106,12 @@ export default function AccountsRegisterPage() {
         </div>
 
         <div className="mb-3">
-          <label className="form-label">Contraseña</label>
+          <label className="form-label">Password</label>
           <input
             className="form-control"
             type="password"
             autoComplete="new-password"
-            placeholder="Mínimo 6 caracteres"
+            placeholder="Minimum 6 characters"
             value={pass1}
             onChange={(e) => setPass1(e.target.value)}
             required
@@ -121,12 +121,12 @@ export default function AccountsRegisterPage() {
         </div>
 
         <div className="mb-3">
-          <label className="form-label">Confirmar contraseña</label>
+          <label className="form-label">Confirm Password</label>
           <input
             className="form-control"
             type="password"
             autoComplete="new-password"
-            placeholder="Repite la contraseña"
+            placeholder="Confirm password"
             value={pass2}
             onChange={(e) => setPass2(e.target.value)}
             required
@@ -136,15 +136,15 @@ export default function AccountsRegisterPage() {
         </div>
 
         <button className="btn btn-success w-100" disabled={busy}>
-          {busy ? "Creando..." : "Crear cuenta"}
+          {busy ? "Creating..." : "Create account"}
         </button>
 
         {err && <p className="text-danger mt-3 mb-0">{err}</p>}
       </form>
 
       <p className="text-center mt-3 mb-0">
-        ¿Ya tienes cuenta?{" "}
-        <a href="/login" className="link-primary">Inicia sesión</a>
+        Already have an account?{" "}
+        <a href="/login" className="link-primary">Sign in</a>
       </p>
     </main>
   );

@@ -22,15 +22,15 @@ type OrderDoc = {
     menuItemId: string;
     menuItemName?: string;
     quantity: number;
-    // Nuevo
+    // New
     addons?: OpsAddon[];
     optionGroups?: OpsGroup[];
-    // Compat viejo
+    // Old compat
     options?: OpsOption[];
   }>;
   createdAt?: any;
 
-  // autoría
+  // authorship
   createdBy?: { uid?: string; email?: string | null } | null;
   userEmail?: string | null;
   userEmail_lower?: string | null;
@@ -78,20 +78,20 @@ function PageInner() {
     );
   }, [order, user]);
 
-  if (loading) return <div className="container py-4">Cargando orden…</div>;
-  if (!order) return <div className="container py-4">Orden no encontrada.</div>;
-  if (!owned) return <div className="container py-4 text-danger">No tienes permiso para ver esta orden.</div>;
+  if (loading) return <div className="container py-4">Loading order…</div>;
+  if (!order) return <div className="container py-4">Order not found.</div>;
+  if (!owned) return <div className="container py-4 text-danger">You don't have permission to view this order.</div>;
 
   return (
     <div className="container py-4">
-      <h1 className="h5">Orden #{(order.id || "").slice(0, 6)}</h1>
+      <h1 className="h5">Order #{(order.id || "").slice(0, 6)}</h1>
       <div className="mb-2">
-        <span className="text-muted">Estado: </span>
+        <span className="text-muted">Status: </span>
         <b>{(order.status || "placed").toUpperCase()}</b>
       </div>
 
       <div className="mt-4">
-        <h2 className="h6">Productos</h2>
+        <h2 className="h6">Products</h2>
 
         {Array.isArray(order.items) && order.items.length > 0 ? (
           <ul className="list-group">
@@ -113,7 +113,7 @@ function PageInner() {
                       </ul>
                     )}
 
-                    {/* ✅ Option groups (nuevo) */}
+                    {/* ✅ Option groups (new) */}
                     {Array.isArray(it.optionGroups) && it.optionGroups.some(g => (g.items || []).length > 0) && (
                       <ul className="small text-muted mt-1 ps-3">
                         {it.optionGroups.map((g, gi) => (
@@ -129,7 +129,7 @@ function PageInner() {
                       </ul>
                     )}
 
-                    {/* Compat: shape viejo con 'options' */}
+                    {/* Compat: old shape with 'options' */}
                     {Array.isArray(it.options) && it.options.length > 0 && (
                       <ul className="small text-muted mt-1 ps-3">
                         {it.options.map((g, gi) => (
@@ -150,7 +150,7 @@ function PageInner() {
             ))}
           </ul>
         ) : (
-          <div className="text-muted">Sin productos</div>
+          <div className="text-muted">No products</div>
         )}
       </div>
     </div>

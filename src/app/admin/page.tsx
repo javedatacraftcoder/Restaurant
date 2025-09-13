@@ -13,15 +13,16 @@ type AdminTile = {
 };
 
 const TILES: AdminTile[] = [
-  { title: "Kitchen",     subtitle: "admin/kitchen",     href: "/admin/kitchen",     emoji: "🍳", hint: "Comandas y estado de cocina" },
-  { title: "Cashier",     subtitle: "admin/cashier",     href: "/admin/cashier",     emoji: "💵", hint: "Cobro, recibos y cierre" },
-  { title: "Delivery",    subtitle: "admin/delivery",    href: "/admin/delivery",    emoji: "🚚", hint: "Asignación y seguimiento" },
-  { title: "Menu",        subtitle: "admin/menu",        href: "/admin/menu",        emoji: "📋", hint: "Categorías, subcategorías y platos" },
-  { title: "Orders",      subtitle: "admin/orders",      href: "/admin/orders",      emoji: "🧾", hint: "Listado y detalles de órdenes" },
-  { title: "Edit Orders", subtitle: "admin/edit-orders", href: "/admin/edit-orders", emoji: "✏️", hint: "Editar órdenes existentes" },
-  { title: "Roles",       subtitle: "admin/roles",       href: "/admin/roles",       emoji: "👥", hint: "Gestión de permisos y personal" },
-  { title: "OPS",         subtitle: "admin/ops",         href: "/admin/ops",         emoji: "🛠️", hint: "Operaciones y herramientas" },
-  { title: "Promotions",  subtitle: "admin/promotions",  href: "/admin/promotions",  emoji: "🎟️", hint: "Códigos y condiciones de descuento" },
+  { title: "Kitchen",     subtitle: "admin/kitchen",     href: "/admin/kitchen",     emoji: "🍳", hint: "Orders and kitchen status" },
+  { title: "Cashier",     subtitle: "admin/cashier",     href: "/admin/cashier",     emoji: "💵", hint: "Collection, receipts and closing" },
+  { title: "Delivery",    subtitle: "admin/delivery",    href: "/admin/delivery",    emoji: "🚚", hint: "Allocation and monitoring" },
+  { title: "Menu",        subtitle: "admin/menu",        href: "/admin/menu",        emoji: "📋", hint: "Categories, subcategories and dishes" },
+  { title: "Orders",      subtitle: "admin/orders",      href: "/admin/orders",      emoji: "🧾", hint: "List and details of orders" },
+  { title: "Edit Orders", subtitle: "admin/edit-orders", href: "/admin/edit-orders", emoji: "✏️", hint: "Edit existing orders" },
+  { title: "Roles",       subtitle: "admin/roles",       href: "/admin/roles",       emoji: "👥", hint: "Management of permits and personnel" },
+  { title: "OPS",         subtitle: "admin/ops",         href: "/admin/ops",         emoji: "🛠️", hint: "Operations and tools" },
+  { title: "Promotions",  subtitle: "admin/promotions",  href: "/admin/promotions",  emoji: "🎟️", hint: "Discount codes and conditions" },
+  { title: "Delivery options",  subtitle: "admin/delivery-options",  href: "/admin/delivery-options",  emoji: "🛵", hint: "Manage delivery options" },
 ];
 
 export default function AdminPage() {
@@ -80,14 +81,14 @@ export default function AdminPage() {
           <section className="admin-hero p-4 p-md-5 mb-4 shadow-sm">
             <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
               <div>
-                <h1 className="h3 m-0 fw-semibold">Panel Admin</h1>
+                <h1 className="h3 m-0 fw-semibold">Admin panel</h1>
                 <p className="m-0 mt-2 admin-subtle" style={{ color: "rgba(255,255,255,.85)" }}>
-                  Accede rápidamente a las herramientas de administración.
+                  Quickly access management tools.
                 </p>
               </div>
               <div className="d-flex flex-wrap gap-2">
-                <span className="admin-chip">🔐 Solo Admin</span>
-                <span className="admin-chip">⚡ Accesos rápidos</span>
+                <span className="admin-chip">🔐 Only Admin</span>
+                <span className="admin-chip">⚡ Quick access</span>
               </div>
             </div>
           </section>
@@ -109,7 +110,7 @@ export default function AdminPage() {
                         </div>
                         {t.hint && <p className="mb-0 admin-subtle">{t.hint}</p>}
                         <div className="mt-auto d-flex justify-content-between align-items-center">
-                          <span className="text-primary fw-semibold">Abrir</span>
+                          <span className="text-primary fw-semibold">Open</span>
                           <span aria-hidden>↗</span>
                         </div>
                       </div>

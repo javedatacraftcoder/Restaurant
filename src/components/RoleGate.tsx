@@ -11,7 +11,7 @@ export function RoleGate({
   children,
   fallback = (
     <p style={{ padding: 16, color: "crimson" }}>
-      Acceso denegado. No tienes permisos para ver esta sección.
+      Access denied. You do not have permission to view this section.
     </p>
   ),
 }: {

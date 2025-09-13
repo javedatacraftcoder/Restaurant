@@ -166,7 +166,7 @@ function getQty(l?: OrderLine): number {
   return Number(l?.quantity ?? 1) || 1;
 }
 function getName(l?: OrderLine): string {
-  return String(l?.menuItemName ?? l?.name ?? "Ítem");
+  return String(l?.menuItemName ?? l?.name ?? "Item");
 }
 function extractDeltaQ(x: OptionItem | any): number {
   const a = toNum(x?.priceDelta); if (a !== undefined) return a;
@@ -247,9 +247,9 @@ function displayType(o: OrderDoc): "dine_in" | "delivery" | "-" {
 /* 🔹 NUEVO: label legible para sub-estado delivery */
 function deliverySubstateLabel(s?: string | null) {
   const v = String(s || "").toLowerCase();
-  if (v === "pending") return "Pendiente";
-  if (v === "inroute") return "En ruta";
-  if (v === "delivered") return "Entregado";
+  if (v === "pending") return "Pending";
+  if (v === "inroute") return "En route";
+  if (v === "delivered") return "Delivered";
   return "-";
 }
 
@@ -271,7 +271,7 @@ function AdminOrdersPageInner() {
         if (!res.ok || data?.ok === false) throw new Error(data?.error || `HTTP ${res.status}`);
         if (isMounted) setOrders(data.orders || []);
       } catch (e: any) {
-        if (isMounted) setErr(e?.message || "Error cargando órdenes");
+        if (isMounted) setErr(e?.message || "Error loading orders");
       } finally {
         if (isMounted) setLoading(false);
       }
@@ -315,8 +315,8 @@ function AdminOrdersPageInner() {
       <div className="d-flex align-items-center justify-content-between mb-3">
         <h1 className="h4 m-0">Orders (Admin)</h1>
         <div className="d-flex align-items-center gap-2">
-          <span className="badge rounded-pill bg-primary">Activas: {counts.active}</span>
-          <span className="badge rounded-pill bg-danger">Cerradas: {counts.closed}</span>
+          <span className="badge rounded-pill bg-primary">Active: {counts.active}</span>
+          <span className="badge rounded-pill bg-danger">Closed: {counts.closed}</span>
         </div>
       </div>
 
@@ -325,7 +325,7 @@ function AdminOrdersPageInner() {
           <div className="row g-2 align-items-end">
             <div className="col-12 col-md-6">
               <label htmlFor="emailFilter" className="form-label mb-1">
-                Filtrar por correo de usuario
+                Filter by user email
               </label>
               <div className="input-group">
                 <span className="input-group-text">@</span>
@@ -333,25 +333,25 @@ function AdminOrdersPageInner() {
                   id="emailFilter"
                   type="text"
                   className="form-control"
-                  placeholder="usuario@correo.com"
+                  placeholder="user@email.com"
                   value={emailFilter}
                   onChange={(e) => setEmailFilter(e.target.value)}
                 />
                 {emailFilter && (
                   <button className="btn btn-outline-secondary" type="button" onClick={() => setEmailFilter("")}>
-                    Limpiar
+                    Clear
                   </button>
                 )}
               </div>
               <div className="form-text">
-                Busca en <code>userEmail</code>, <code>userEmail_lower</code>, <code>createdBy.email</code> o <code>contact.email</code>.
+                Searches in <code>userEmail</code>, <code>userEmail_lower</code>, <code>createdBy.email</code> or <code>contact.email</code>.
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {loading && <div className="alert alert-info">Cargando órdenes…</div>}
+      {loading && <div className="alert alert-info">Loading orders…</div>}
       {err && <div className="alert alert-danger">Error: {err}</div>}
 
       {!loading && !err && (
@@ -386,17 +386,17 @@ function AdminOrdersPageInner() {
                       <span className="badge text-bg-light">{typeLabel}</span>
                     </div>
                     <div className="small text-muted mt-1">
-                      Fecha: {d} {type === "dine_in" && (o.orderInfo?.table || o.tableNumber) ? `• Mesa: ${o.orderInfo?.table || o.tableNumber}` : ""}
+                      Date: {d} {type === "dine_in" && (o.orderInfo?.table || o.tableNumber) ? `• Table: ${o.orderInfo?.table || o.tableNumber}` : ""}
                     </div>
                     <div className="small mt-1">
-                      <span className="text-muted">Usuario: </span>
+                      <span className="text-muted">User: </span>
                       <span>{email}</span>
                     </div>
                   </div>
 
                   <div className="text-md-end mt-2 mt-md-0">
                     <div className="fw-bold">{fmtMoney(total, o.currency)}</div>
-                    {o.notes ? <div className="small text-muted text-wrap" style={{ maxWidth: 420 }}>Nota: {o.notes}</div> : null}
+                    {o.notes ? <div className="small text-muted text-wrap" style={{ maxWidth: 420 }}>Note: {o.notes}</div> : null}
                   </div>
                 </div>
 
@@ -410,12 +410,12 @@ function AdminOrdersPageInner() {
                           <span className="badge text-bg-secondary">Delivery</span>
                           {o.orderInfo?.delivery && (
                             <span className="badge text-bg-info">
-                              Estado: {deliverySubstateLabel(o.orderInfo?.delivery)}
+                              Status: {deliverySubstateLabel(o.orderInfo?.delivery)}
                             </span>
                           )}
                           {o.orderInfo?.courierName && (
                             <span className="badge text-bg-dark">
-                              Repartidor: {o.orderInfo.courierName}
+                              Courier: {o.orderInfo.courierName}
                             </span>
                           )}
                         </div>
@@ -432,7 +432,7 @@ function AdminOrdersPageInner() {
                         <div key={idx} className="small mb-2 border-top pt-2">
                           <div className="d-flex justify-content-between">
                             <div>• {qty} × {name}</div>
-                            <div className="text-muted">({fmtMoney(baseUnit, o.currency)} c/u)</div>
+                            <div className="text-muted">({fmtMoney(baseUnit, o.currency)} ea)</div>
                           </div>
 
                           {/* optionGroups (checkout) */}
@@ -443,7 +443,7 @@ function AdminOrdersPageInner() {
                             });
                             return rows.length ? (
                               <div key={gi} className="ms-3 text-muted">
-                                <span className="fw-semibold">{g.groupName || "Opciones"}:</span> {rows}
+                                <span className="fw-semibold">{g.groupName || "Options"}:</span> {rows}
                               </div>
                             ) : null;
                           })}
@@ -456,7 +456,7 @@ function AdminOrdersPageInner() {
                             });
                             return rows.length ? (
                               <div key={`op-${gi}`} className="ms-3 text-muted">
-                                <span className="fw-semibold">{g.groupName || "Opciones"}:</span> {rows}
+                                <span className="fw-semibold">{g.groupName || "Options"}:</span> {rows}
                               </div>
                             ) : null;
                           })}
@@ -476,7 +476,7 @@ function AdminOrdersPageInner() {
                           )}
 
                           <div className="d-flex justify-content-between">
-                            <span className="text-muted">Subtotal línea</span>
+                            <span className="text-muted">Line subtotal</span>
                             <span className="text-muted">{fmtMoney(lineTotal, o.currency)}</span>
                           </div>
                         </div>
@@ -490,7 +490,7 @@ function AdminOrdersPageInner() {
 
           {sorted.length === 0 && (
             <li className="list-group-item text-center text-muted">
-              No hay órdenes que coincidan con el filtro.
+              No orders match the filter.
             </li>
           )}
         </ul>

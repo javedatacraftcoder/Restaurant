@@ -142,16 +142,16 @@ type OrderDoc = {
    Helpers de presentación
 --------------------------------------------- */
 const TitleMap: Record<StatusSnake, string> = {
-  cart: "Carrito",
-  placed: "Recibido",
-  kitchen_in_progress: "En cocina",
-  kitchen_done: "Cocina lista",
-  ready_to_close: "Listo para cerrar",
-  assigned_to_courier: "Asignado a repartidor",
-  on_the_way: "En camino",
-  delivered: "Entregado",
-  closed: "Cerrado",
-  cancelled: "Cancelado",
+  cart: "Cart",
+  placed: "Received",
+  kitchen_in_progress: "In kitchen",
+  kitchen_done: "Kitchen ready",
+  ready_to_close: "Ready to close",
+  assigned_to_courier: "Assigned to courier",
+  on_the_way: "On the way",
+  delivered: "Delivered",
+  closed: "Closed",
+  cancelled: "Cancelled",
 };
 
 function toSnakeStatus(s: string): StatusSnake {
@@ -224,7 +224,7 @@ function useMyDeliveryOrders(enabled: boolean, pollMs = 4000) {
       const token = await getIdTokenSafe(false);
       if (!token) {
         setLoading(false);
-        setError("Debes iniciar sesión.");
+        setError("You must sign in.");
         return;
       }
 
@@ -262,7 +262,7 @@ function useMyDeliveryOrders(enabled: boolean, pollMs = 4000) {
       setOrders(list);
       setLoading(false);
     } catch (e: any) {
-      setError(e?.message || "Error al cargar");
+      setError(e?.message || "Error loading");
       setLoading(false);
     }
   };
@@ -300,12 +300,12 @@ type TimelineStepKey =
   | "delivered";
 
 const STEP_LABELS: Record<TimelineStepKey, string> = {
-  placed: "Recibido",
-  kitchen_in_progress: "En cocina",
-  kitchen_done: "Cocina lista",
-  assigned_to_courier_visual: "Asignado a repartidor",
-  inroute: "En ruta",
-  delivered: "Entregado",
+  placed: "Received",
+  kitchen_in_progress: "In kitchen",
+  kitchen_done: "Kitchen ready",
+  assigned_to_courier_visual: "Assigned to courier",
+  inroute: "On the way",
+  delivered: "Delivered",
 };
 
 function getStepState(
@@ -382,7 +382,7 @@ function VerticalTimeline({
                 className={`vtl-dot ${
                   state === "done" ? "vtl-done" : state === "active" ? "vtl-active" : "vtl-todo"
                 }`}
-                aria-label={`${s.label}${state === "active" ? " (actual)" : state === "done" ? " (completado)" : ""}`}
+                aria-label={`${s.label}${state === "active" ? " (current)" : state === "done" ? " (completed)" : ""}`}
               >
                 <StepIcon name={s.key} />
               </div>
@@ -472,7 +472,7 @@ function OrderTrackingCard({ o }: { o: OrderDoc }) {
         {/* Encabezado simple */}
         <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
           <div className="d-flex align-items-center gap-2">
-            <span className="badge bg-dark-subtle text-dark">delivery</span>
+            <span className="badge bg-dark-subtle text-dark">Delivery</span>
             <div className="fw-semibold">#{o.orderNumber || o.id}</div>
           </div>
           <span className="badge bg-secondary">{TitleMap[o.status]}</span>
@@ -481,20 +481,20 @@ function OrderTrackingCard({ o }: { o: OrderDoc }) {
         {/* Datos rápidos */}
         <div className="row g-2 small mb-3">
           <div className="col-12 col-sm-6">
-            <span className="fw-semibold">Dirección:</span>{" "}
+            <span className="fw-semibold">Address:</span>{" "}
             {address || <em className="text-muted">—</em>}
           </div>
           <div className="col-6 col-sm-3">
-            <span className="fw-semibold">Teléfono:</span>{" "}
+            <span className="fw-semibold">Phone:</span>{" "}
             {phone || <em className="text-muted">—</em>}
           </div>
           <div className="col-6 col-sm-3">
-            <span className="fw-semibold">Repartidor:</span>{" "}
+            <span className="fw-semibold">Courier:</span>{" "}
             {courierName ? courierName : <em className="text-muted">—</em>}
           </div>
           {notes ? (
             <div className="col-12">
-              <span className="fw-semibold">Notas:</span> {notes}
+              <span className="fw-semibold">Notes:</span> {notes}
             </div>
           ) : null}
         </div>
@@ -504,7 +504,7 @@ function OrderTrackingCard({ o }: { o: OrderDoc }) {
 
         {/* Pedido */}
         <div className="mt-3">
-          <div className="fw-semibold mb-1">Tu pedido</div>
+          <div className="fw-semibold mb-1">Your order</div>
           <div className="small">
             {(lines || []).map((it, idx) => (
               <div key={idx} className="mb-1">
@@ -513,7 +513,7 @@ function OrderTrackingCard({ o }: { o: OrderDoc }) {
                   (it as any)?.menuItemName ??
                     (it as any)?.name ??
                     (it as any)?.menuItem?.name ??
-                    "Ítem"
+                    "Item"
                 )}
               </div>
             ))}
@@ -550,25 +550,25 @@ function TrackingPageInner() {
         style={{ borderBottom: "1px solid #eee" }}
       >
         <div className="d-flex flex-column">
-          <h1 className="h5 m-0">Seguimiento de tus entregas</h1>
+          <h1 className="h5 m-0">Track your deliveries</h1>
           <small className="text-muted">
-            Verás tus órdenes de delivery hasta que sean marcadas como <strong>entregadas</strong>.
+            You'll see your delivery orders until they're marked as <strong>delivered</strong>.
           </small>
         </div>
         <button className="btn btn-outline-secondary btn-sm" onClick={() => refresh()}>
-            Refrescar
+            Refresh
         </button>
       </div>
 
-      {!authReady && <div className="text-muted">Inicializando sesión…</div>}
-      {authReady && !user && <div className="text-danger">Inicia sesión para ver tus órdenes.</div>}
+      {!authReady && <div className="text-muted">Initializing session…</div>}
+      {authReady && !user && <div className="text-danger">Sign in to see your orders.</div>}
       {error && <div className="text-danger">{error}</div>}
-      {user && loading && <div className="text-muted">Cargando pedidos…</div>}
+      {user && loading && <div className="text-muted">Loading orders…</div>}
 
       {user && (
         <>
           {orders.length === 0 ? (
-            <div className="alert alert-light">No tienes entregas en progreso por ahora.</div>
+            <div className="alert alert-light">You have no deliveries in progress right now.</div>
           ) : (
             <div className="row g-3">
               {orders.map((o) => (

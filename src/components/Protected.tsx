@@ -20,7 +20,7 @@ export default function Protected({ children, redirect = false }: Props) {
         <div className="d-flex align-items-center justify-content-center" style={{ minHeight: "40vh" }}>
           <div className="text-center">
             <div className="spinner-border" role="status" aria-label="Cargando" />
-            <div className="mt-2 text-muted">Cargando…</div>
+            <div className="mt-2 text-muted">Loading…</div>
           </div>
         </div>
       }
@@ -56,8 +56,8 @@ function Gate({ children, redirect = false }: Props) {
     return (
       <div className="d-flex align-items-center justify-content-center" style={{ minHeight: "40vh" }}>
         <div className="text-center">
-          <div className="spinner-border" role="status" aria-label="Cargando" />
-          <div className="mt-2 text-muted">Cargando…</div>
+          <div className="spinner-border" role="status" aria-label="Loading" />
+          <div className="mt-2 text-muted">Loading…</div>
         </div>
       </div>
     );
@@ -76,16 +76,16 @@ function Gate({ children, redirect = false }: Props) {
             <div className="card shadow-sm border-0">
               <div className="card-body p-4 text-center">
                 <div className="display-6 mb-2">🔒</div>
-                <h5 className="card-title mb-2">Necesitas iniciar sesión</h5>
+                <h5 className="card-title mb-2">You need to Login</h5>
                 <p className="text-muted mb-4">
-                  Para continuar, inicia sesión con tu cuenta.
+                  To continue, please log in to your account.
                 </p>
 
                 <Link
                   href={`/login?next=${encodeURIComponent(next)}`}
                   className="btn btn-primary btn-lg"
                 >
-                  Iniciar sesión
+                  Login
                 </Link>
 
                 <div className="mt-3">
@@ -94,14 +94,14 @@ function Gate({ children, redirect = false }: Props) {
                     className="btn btn-link"
                     onClick={() => router.refresh()}
                   >
-                    Reintentar
+                    Re-try
                   </button>
                 </div>
               </div>
             </div>
 
             <p className="text-center text-muted small mt-3 mb-0">
-              Si no tienes una cuenta, solicita acceso al administrador.
+              If you don't have an account, request access from the administrator,
             </p>
           </div>
         </div>

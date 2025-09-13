@@ -35,7 +35,7 @@ export type OpsOrder = {
 
 function fmtQ(n?: number) {
   const v = Number(n || 0);
-  try { return new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(v); }
+  try { return new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'USD' }).format(v); }
   catch { return `Q ${v.toFixed(2)}`; }
 }
 
@@ -139,8 +139,8 @@ export default function OrderCardOps({
     <div className="card border-0 shadow-sm">
       <div className="card-header d-flex flex-wrap align-items-center justify-content-between">
         <div className="d-flex flex-column">
-          <div className="fw-semibold">Orden #{orderNumber}</div>
-          <div className="text-muted small">Creada: {fmtDate(order.createdAt)}</div>
+          <div className="fw-semibold">Order #{orderNumber}</div>
+          <div className="text-muted small">Created: {fmtDate(order.createdAt)}</div>
         </div>
 
         <div className="text-end small">
@@ -150,15 +150,15 @@ export default function OrderCardOps({
           {info?.type === 'dine-in' ? (
             <div>
               <div className="fw-semibold">Dine-in</div>
-              {info.table ? <div>Mesa: {info.table}</div> : null}
-              {info.notes ? <div className="text-muted">Nota: {info.notes}</div> : null}
+              {info.table ? <div>Table: {info.table}</div> : null}
+              {info.notes ? <div className="text-muted">Note: {info.notes}</div> : null}
             </div>
           ) : info?.type === 'delivery' ? (
             <div>
               <div className="fw-semibold">Delivery</div>
-              {info.address ? <div>Dir: {info.address}</div> : null}
-              {info.phone ? <div>Tel: {info.phone}</div> : null}
-              {info.notes ? <div className="text-muted">Nota: {info.notes}</div> : null}
+              {info.address ? <div>Address: {info.address}</div> : null}
+              {info.phone ? <div>Phone: {info.phone}</div> : null}
+              {info.notes ? <div className="text-muted">Note: {info.notes}</div> : null}
             </div>
           ) : null}
         </div>
@@ -168,7 +168,7 @@ export default function OrderCardOps({
         {itemsWithPricing}
 
         <div className="mt-3">
-          <label className="form-label fw-semibold">Cambiar estado</label>
+          <label className="form-label fw-semibold">Change status</label>
           <div className="d-flex gap-2">
             <select
               className="form-select"
@@ -191,7 +191,7 @@ export default function OrderCardOps({
 
       {order.updatedAt ? (
         <div className="card-footer text-muted small">
-          Última actualización: {fmtDate(order.updatedAt)}
+          Last update: {fmtDate(order.updatedAt)}
         </div>
       ) : null}
     </div>

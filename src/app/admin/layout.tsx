@@ -160,10 +160,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               </li>
 
               <li className="nav-item">
-                <Link className={`nav-link ${isActive('/admin/menu') ? 'active' : ''}`} href="/admin/menu">Menú</Link>
+                <Link className={`nav-link ${isActive('/admin/menu') ? 'active' : ''}`} href="/admin/menu">Menu</Link>
               </li>
               <li className="nav-item">
-                <Link className={`nav-link ${isActive('/admin/orders') ? 'active' : ''}`} href="/admin/orders">Órdenes</Link>
+                <Link className={`nav-link ${isActive('/admin/orders') ? 'active' : ''}`} href="/admin/orders">Orders</Link>
               </li>
               <li className="nav-item">
                 <Link className={`nav-link ${isActive('/admin/roles') ? 'active' : ''}`} href="/admin/roles">Roles</Link>
@@ -177,10 +177,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <li className="nav-item">
                 <Link className={`nav-link ${isActive('/admin/promotions') ? 'active' : ''}`} href="/admin/promotions">Promotions</Link>
               </li>
+              <li className="nav-item">
+                <Link className={`nav-link ${isActive('/admin/delivery-options') ? 'active' : ''}`} href="/admin/delivery-options">Create Delivery</Link>
+              </li>
             </ul>
 
             <div className="d-flex align-items-center gap-2">
-              <Link className="btn btn-outline-primary btn-sm" href="/logout">Salir</Link>
+              <Link className="btn btn-outline-primary btn-sm" href="/logout">Logout</Link>
             </div>
           </div>
         </div>

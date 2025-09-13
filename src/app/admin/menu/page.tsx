@@ -340,7 +340,7 @@ function AdminMenuPage_Inner() {
   };
 
   const addNewEditRow = () => {
-    if (!editGroupId) { alert('Selecciona un grupo'); return; }
+    if (!editGroupId) { alert('Select a group'); return; }
     setEditRows((rows) => [
       ...rows,
       {
@@ -366,7 +366,7 @@ function AdminMenuPage_Inner() {
       active: r.active !== false,
       sortOrder: typeof r.sortOrder === 'number' ? r.sortOrder : undefined,
     };
-    if (!payload.name) { alert('Nombre requerido'); return; }
+    if (!payload.name) { alert('Name is required'); return; }
 
     try {
       if (r._isNew) {
@@ -377,7 +377,7 @@ function AdminMenuPage_Inner() {
           return copy;
         });
       } else {
-        if (!r.id) { alert('Falta ID de la opción'); return; }
+        if (!r.id) { alert('Option ID is missing'); return; }
         await updateDocById('option-items', r.id, payload);
         setEditRows((rows) => {
           const copy = [...rows];
@@ -386,7 +386,7 @@ function AdminMenuPage_Inner() {
         });
       }
     } catch (e: any) {
-      alert(e?.message || 'No se pudo guardar la opción');
+      alert(e?.message || 'Could not save the option');
     }
   };
 
@@ -397,12 +397,12 @@ function AdminMenuPage_Inner() {
       return;
     }
     if (!r.id) return;
-    if (!confirm('¿Eliminar esta opción?')) return;
+    if (!confirm('Delete this option?')) return;
     try {
       await deleteDocById('option-items', r.id);
       setEditRows((rows) => rows.filter((_, i) => i !== idx));
     } catch (e: any) {
-      alert(e?.message || 'No se pudo eliminar la opción');
+      alert(e?.message || 'Could not delete the option');
     }
   };
 
@@ -415,7 +415,7 @@ function AdminMenuPage_Inner() {
 
     if (typeof min === 'number' && min < 0) min = 0;
     if (typeof min === 'number' && typeof max === 'number' && min > max) {
-      alert('min no puede ser mayor que max');
+      alert('min cannot be greater than max');
       return;
     }
     if (g.type === 'single') {
@@ -425,9 +425,9 @@ function AdminMenuPage_Inner() {
 
     try {
       await updateDocById('option-groups', g.id, { min, max });
-      alert('Límites guardados.');
+      alert('Limits saved.');
     } catch (e: any) {
-      alert(e?.message || 'No se pudo guardar min/max');
+      alert(e?.message || 'Could not save min/max');
     }
   };
 
@@ -521,7 +521,7 @@ function AdminMenuPage_Inner() {
         );
 
       } catch (e: any) {
-        setErr(e?.message || 'Error cargando datos');
+        setErr(e?.message || 'Error loading data');
       } finally {
         setLoading(false);
       }
@@ -548,7 +548,7 @@ function AdminMenuPage_Inner() {
   const onSaveCategory = async () => {
     try {
       const name = catName.trim();
-      if (!name) { alert('Nombre requerido'); return; }
+      if (!name) { alert('Name is required'); return; }
       if (editingCatId) {
         const patch: Partial<Category> = {
           name,
@@ -569,7 +569,7 @@ function AdminMenuPage_Inner() {
       setCatName('');
       setEditingCatId(null);
     } catch (e: any) {
-      alert(e?.message || 'No se pudo guardar categoría');
+      alert(e?.message || 'Could not save category');
     }
   };
 
@@ -578,11 +578,11 @@ function AdminMenuPage_Inner() {
     setCatName(c.name || '');
   };
   const onDeleteCategory = async (id: string) => {
-    if (!confirm('¿Eliminar categoría? (También deberás revisar subcategorías/platos asociados)')) return;
+    if (!confirm('Delete category? (You’ll also need to review related subcategories/dishes)')) return;
     try {
       await deleteDocById('categories', id);
     } catch (e: any) {
-      alert(e?.message || 'No se pudo eliminar');
+      alert(e?.message || 'Could not delete');
     }
   };
 
@@ -599,7 +599,7 @@ function AdminMenuPage_Inner() {
       const up = await uploadMenuImage(file, keyPath);
       await updateDocById('categories', catId, { imageUrl: up.url, imagePath: up.path });
     } catch (e: any) {
-      alert(e?.message || 'No se pudo subir la imagen de la categoría');
+      alert(e?.message || 'Could not upload category image');
     }
   };
 
@@ -617,8 +617,8 @@ function AdminMenuPage_Inner() {
   const onSaveSubcategory = async () => {
     try {
       const name = subName.trim();
-      if (!name) { alert('Nombre requerido'); return; }
-      if (!subCatId) { alert('Selecciona la categoría'); return; }
+      if (!name) { alert('Name is required'); return; }
+      if (!subCatId) { alert('Select the category'); return; }
 
       if (editingSubId) {
         await updateDocById('subcategories', editingSubId, {
@@ -640,7 +640,7 @@ function AdminMenuPage_Inner() {
       setSubCatId('');
       setEditingSubId(null);
     } catch (e: any) {
-      alert(e?.message || 'No se pudo guardar subcategoría');
+      alert(e?.message || 'Could not save subcategory');
     }
   };
 
@@ -650,11 +650,11 @@ function AdminMenuPage_Inner() {
     setSubCatId(s.categoryId || '');
   };
   const onDeleteSubcategory = async (id: string) => {
-    if (!confirm('¿Eliminar subcategoría? (Revisa platos asociados)')) return;
+    if (!confirm('Delete subcategory? (Check related dishes)')) return;
     try {
       await deleteDocById('subcategories', id);
     } catch (e: any) {
-      alert(e?.message || 'No se pudo eliminar');
+      alert(e?.message || 'Could not delete');
     }
   };
 
@@ -670,7 +670,7 @@ function AdminMenuPage_Inner() {
       const up = await uploadMenuImage(file, keyPath);
       await updateDocById('subcategories', subId, { imageUrl: up.url, imagePath: up.path });
     } catch (e: any) {
-      alert(e?.message || 'No se pudo subir la imagen de la subcategoría');
+      alert(e?.message || 'Could not upload subcategory image');
     }
   };
 
@@ -729,7 +729,7 @@ function AdminMenuPage_Inner() {
   };
 
   const onDeleteItem = async (id: string, imgPath?: string | null) => {
-    if (!confirm('¿Eliminar plato?')) return;
+    if (!confirm('Delete dish?')) return;
     try {
       await deleteDocById('menuItems', id);
       if (imgPath) await deleteImageByPath(imgPath);
@@ -748,17 +748,17 @@ function AdminMenuPage_Inner() {
         setItemDescription('');
       }
     } catch (e: any) {
-      alert(e?.message || 'No se pudo eliminar plato');
+      alert(e?.message || 'Could not delete dish');
     }
   };
 
   const onSaveItem = async () => {
     try {
       const priceN = toNumber(itemPrice);
-      if (!itemName.trim()) { alert('Nombre requerido'); return; }
-      if (!priceN || priceN <= 0) { alert('Precio inválido'); return; }
-      if (!itemCatId) { alert('Selecciona categoría'); return; }
-      if (!itemSubId) { alert('Selecciona subcategoría'); return; }
+      if (!itemName.trim()) { alert('Name is required'); return; }
+      if (!priceN || priceN <= 0) { alert('Invalid price'); return; }
+      if (!itemCatId) { alert('Select category'); return; }
+      if (!itemSubId) { alert('Select subcategory'); return; }
 
       const payloadBase = {
         name: itemName.trim(),
@@ -802,9 +802,9 @@ function AdminMenuPage_Inner() {
       setImageMeta({});
       setItemDescription('');
 
-      alert('Plato guardado.');
+      alert('Dish saved.');
     } catch (e: any) {
-      alert(e?.message || 'No se pudo guardar plato');
+      alert(e?.message || 'Could not save dish');
     }
   };
 
@@ -819,15 +819,15 @@ function AdminMenuPage_Inner() {
   /* =========================================================================
      Render
      ========================================================================= */
-  if (!authReady) return <div className="container py-3">Inicializando sesión…</div>;
-  if (!user) return <div className="container py-5 text-danger">Debes iniciar sesión.</div>;
-  if (!isAdmin) return <div className="container py-5 text-danger">No autorizado (solo administradores).</div>;
+  if (!authReady) return <div className="container py-3">Initializing session…</div>;
+  if (!user) return <div className="container py-5 text-danger">You must sign in.</div>;
+  if (!isAdmin) return <div className="container py-5 text-danger">Unauthorized (admins only).</div>;
 
   return (
     <div className="container py-3">
       <div className="d-flex align-items-center justify-content-between mb-3">
-        <h1 className="h4 m-0">Menú — Categorías, Subcategorías y Platos</h1>
-        <span className="text-muted small">Actualización en tiempo real</span>
+        <h1 className="h4 m-0">Menu — Categories, Subcategories & Dishes</h1>
+        <span className="text-muted small">Real-time updates</span>
       </div>
       {err && <div className="alert alert-danger">{err}</div>}
 
@@ -835,19 +835,19 @@ function AdminMenuPage_Inner() {
         {/* ===================== Columna 1: Categorías ===================== */}
         <div className="col-12 col-lg-3">
           <div className="card">
-            <div className="card-header">Categorías</div>
+            <div className="card-header">Categories</div>
             <div className="card-body">
               <div className="mb-2">
-                <label className="form-label">Nombre</label>
+                <label className="form-label">Name</label>
                 <input className="form-control" value={catName} onChange={(e) => setCatName(e.target.value)} />
               </div>
               <div className="d-flex gap-2">
                 <button className="btn btn-primary btn-sm" onClick={onSaveCategory}>
-                  {editingCatId ? 'Guardar cambios' : 'Crear'}
+                  {editingCatId ? 'Save changes' : 'Create'}
                 </button>
                 {editingCatId && (
                   <button className="btn btn-outline-secondary btn-sm" onClick={() => { setEditingCatId(null); setCatName(''); }}>
-                    Cancelar
+                    Cancel
                   </button>
                 )}
               </div>
@@ -860,20 +860,20 @@ function AdminMenuPage_Inner() {
                         {c.imageUrl ? (
                           <img src={c.imageUrl} alt={c.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         ) : (
-                          <div className="d-flex h-100 w-100 align-items-center justify-content-center text-muted" style={{ fontSize: 10 }}>Sin img</div>
+                          <div className="d-flex h-100 w-100 align-items-center justify-content-center text-muted" style={{ fontSize: 10 }}>No img</div>
                         )}
                       </div>
                       <div className="text-truncate">
                         <div className="fw-semibold text-truncate">{c.name}</div>
                         <div className="text-muted small text-truncate">
-                          slug: {c.slug || '—'} · orden: {c.sortOrder ?? '—'} · activo: {String(c.isActive ?? true)}
+                          slug: {c.slug || '—'} · order: {c.sortOrder ?? '—'} · active: {String(c.isActive ?? true)}
                         </div>
                       </div>
                     </div>
                     {/* Botones en columna */}
                     <div className="d-flex flex-column gap-2 align-items-stretch" style={{ minWidth: 140 }}>
                       <label className="btn btn-outline-primary btn-sm w-100 m-0">
-                        Imagen
+                        Image
                         <input
                           type="file"
                           accept="image/*"
@@ -885,12 +885,12 @@ function AdminMenuPage_Inner() {
                           }}
                         />
                       </label>
-                      <button className="btn btn-outline-secondary btn-sm w-100" onClick={() => onEditCategory(c)}>Editar</button>
-                      <button className="btn btn-outline-danger btn-sm w-100" onClick={() => onDeleteCategory(c.id)}>Eliminar</button>
+                      <button className="btn btn-outline-secondary btn-sm w-100" onClick={() => onEditCategory(c)}>Edit</button>
+                      <button className="btn btn-outline-danger btn-sm w-100" onClick={() => onDeleteCategory(c.id)}>Delete</button>
                     </div>
                   </div>
                 ))}
-                {categories.length === 0 && <div className="text-muted small">No hay categorías.</div>}
+                {categories.length === 0 && <div className="text-muted small">No categories.</div>}
               </div>
             </div>
           </div>
@@ -899,28 +899,28 @@ function AdminMenuPage_Inner() {
         {/* ===================== Columna 2: Subcategorías ===================== */}
         <div className="col-12 col-lg-3">
           <div className="card">
-            <div className="card-header">Subcategorías</div>
+            <div className="card-header">Subcategories</div>
             <div className="card-body">
               <div className="mb-2">
-                <label className="form-label">Categoría</label>
+                <label className="form-label">Category</label>
                 <select className="form-select" value={subCatId} onChange={(e) => setSubCatId(e.target.value)}>
-                  <option value="">Selecciona categoría…</option>
+                  <option value="">Select category…</option>
                   {categories.map((c) => (
                     <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
                 </select>
               </div>
               <div className="mb-2">
-                <label className="form-label">Nombre</label>
+                <label className="form-label">Name</label>
                 <input className="form-control" value={subName} onChange={(e) => setSubName(e.target.value)} />
               </div>
               <div className="d-flex gap-2">
                 <button className="btn btn-primary btn-sm" onClick={onSaveSubcategory}>
-                  {editingSubId ? 'Guardar cambios' : 'Crear'}
+                  {editingSubId ? 'Save changes' : 'Create'}
                 </button>
                 {editingSubId && (
                   <button className="btn btn-outline-secondary btn-sm" onClick={() => { setEditingSubId(null); setSubName(''); setSubCatId(''); }}>
-                    Cancelar
+                    Cancel
                   </button>
                 )}
               </div>
@@ -935,18 +935,18 @@ function AdminMenuPage_Inner() {
                           {s.imageUrl ? (
                             <img src={s.imageUrl} alt={s.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                           ) : (
-                            <div className="d-flex h-100 w-100 align-items-center justify-content-center text-muted" style={{ fontSize: 10 }}>Sin img</div>
+                            <div className="d-flex h-100 w-100 align-items-center justify-content-center text-muted" style={{ fontSize: 10 }}>No img</div>
                           )}
                         </div>
                         <div className="text-truncate">
                           <div className="fw-semibold text-truncate">{s.name}</div>
-                          <div className="text-muted small text-truncate">Categoría: {catName} · orden: {s.sortOrder ?? '—'}</div>
+                          <div className="text-muted small text-truncate">Category: {catName} · order: {s.sortOrder ?? '—'}</div>
                         </div>
                       </div>
                       {/* Botones en columna */}
                       <div className="d-flex flex-column gap-2 align-items-stretch" style={{ minWidth: 140 }}>
                         <label className="btn btn-outline-primary btn-sm w-100 m-0">
-                          Imagen
+                          Image
                           <input
                             type="file"
                             accept="image/*"
@@ -958,13 +958,13 @@ function AdminMenuPage_Inner() {
                             }}
                           />
                         </label>
-                        <button className="btn btn-outline-secondary btn-sm w-100" onClick={() => onEditSubcategory(s)}>Editar</button>
-                        <button className="btn btn-outline-danger btn-sm w-100" onClick={() => onDeleteSubcategory(s.id)}>Eliminar</button>
+                        <button className="btn btn-outline-secondary btn-sm w-100" onClick={() => onEditSubcategory(s)}>Edit</button>
+                        <button className="btn btn-outline-danger btn-sm w-100" onClick={() => onDeleteSubcategory(s.id)}>Delete</button>
                       </div>
                     </div>
                   );
                 })}
-                {subcategories.length === 0 && <div className="text-muted small">No hay subcategorías.</div>}
+                {subcategories.length === 0 && <div className="text-muted small">No subcategories.</div>}
               </div>
             </div>
           </div>
@@ -974,57 +974,57 @@ function AdminMenuPage_Inner() {
         <div className="col-12 col-lg-6">
           <div className="card">
             <div className="card-header d-flex align-items-center justify-content-between">
-              <span>{itemEditingId ? 'Editar plato' : 'Crear plato'}</span>
+              <span>{itemEditingId ? 'Edit dish' : 'Create dish'}</span>
               <button type="button" className="btn btn-sm btn-outline-secondary" onClick={scrollToGroups}>
-                Editar grupos
+                Edit groups
               </button>
             </div>
             <div className="card-body">
               <div className="row g-3">
                 <div className="col-12 col-md-6">
-                  <label className="form-label">Categoría</label>
+                  <label className="form-label">Category</label>
                   <select className="form-select" value={itemCatId} onChange={(e) => { setItemCatId(e.target.value); setItemSubId(''); }}>
-                    <option value="">Selecciona categoría…</option>
+                    <option value="">Select category…</option>
                     {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                 </div>
                 <div className="col-12 col-md-6">
-                  <label className="form-label">Subcategoría</label>
+                  <label className="form-label">Subcategory</label>
                   <select className="form-select" value={itemSubId} onChange={(e) => setItemSubId(e.target.value)} disabled={!itemCatId}>
-                    <option value="">{itemCatId ? 'Selecciona subcategoría…' : 'Selecciona una categoría primero'}</option>
+                    <option value="">{itemCatId ? 'Select subcategory…' : 'Select a category first'}</option>
                     {subcategories.filter((s) => !itemCatId || s.categoryId === itemCatId).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
                 </div>
 
                 <div className="col-12 col-md-6">
-                  <label className="form-label">Nombre del plato</label>
+                  <label className="form-label">Dish name</label>
                   <input className="form-control" value={itemName} onChange={(e) => setItemName(e.target.value)} />
                 </div>
                 <div className="col-12 col-md-3">
-                  <label className="form-label">Precio (Q)</label>
+                  <label className="form-label">Price (Q)</label>
                   <input type="number" step="0.01" className="form-control" value={itemPrice} onChange={(e) => setItemPrice(e.target.value)} />
                 </div>
                 <div className="col-12 col-md-3 d-flex align-items-end">
                   <div className="form-check">
                     <input className="form-check-input" type="checkbox" id="activeCheck" checked={itemActive} onChange={(e) => setItemActive(e.target.checked)} />
-                    <label className="form-check-label" htmlFor="activeCheck">Activo</label>
+                    <label className="form-check-label" htmlFor="activeCheck">Active</label>
                   </div>
                 </div>
 
                 <div className="col-12">
-                  <label className="form-label">Grupos de opciones (option-groups)</label>
+                  <label className="form-label">Option groups (option-groups)</label>
                   <div className="d-flex align-items-center justify-content-between mb-2">
-                    <small className="text-muted">Marca los grupos aplicables a este plato.</small>
+                    <small className="text-muted">Check the groups that apply to this dish.</small>
                     <button
                       type="button"
                       className="btn btn-sm btn-outline-primary"
                       onClick={() => setShowOGCreator(s => !s)}
                     >
-                      {showOGCreator ? 'Ocultar' : 'Nuevo grupo + opciones'}
+                      {showOGCreator ? 'Hide' : 'New group + options'}
                     </button>
                   </div>
                   <div className="border rounded p-2" style={{ maxHeight: 160, overflow: 'auto' }}>
-                    {groups.length === 0 && <div className="text-muted small">No hay grupos de opciones.</div>}
+                    {groups.length === 0 && <div className="text-muted small">No option groups.</div>}
                     {groups.map((g) => {
                       const checked = itemOptionGroupIds.includes(g.id);
                       return (
@@ -1041,7 +1041,7 @@ function AdminMenuPage_Inner() {
                           />
                           <label className="form-check-label" htmlFor={`g_${g.id}`}>
                             {g.name}
-                            {g.required ? <span className="badge text-bg-light ms-1">obligatorio</span> : null}
+                            {g.required ? <span className="badge text-bg-light ms-1">required</span> : null}
                             {g.type ? <span className="badge text-bg-secondary ms-1">{g.type}</span> : null}
                           </label>
                         </div>
@@ -1055,24 +1055,24 @@ function AdminMenuPage_Inner() {
                   <div className="col-12">
                     <div className="border rounded p-3">
                       <div className="d-flex align-items-center justify-content-between mb-2">
-                        <strong>Nuevo grupo de opciones</strong>
-                        <button className="btn btn-sm btn-outline-secondary" onClick={() => setShowOGCreator(false)}>Cerrar</button>
+                        <strong>New option group</strong>
+                        <button className="btn btn-sm btn-outline-secondary" onClick={() => setShowOGCreator(false)}>Close</button>
                       </div>
 
                       <div className="row g-2">
                         <div className="col-12 col-md-6">
-                          <label className="form-label">Nombre del grupo</label>
+                          <label className="form-label">Group name</label>
                           <input className="form-control" value={ogName} onChange={(e) => setOgName(e.target.value)} />
                         </div>
                         <div className="col-6 col-md-2">
-                          <label className="form-label">Tipo</label>
+                          <label className="form-label">Type</label>
                           <select className="form-select" value={ogType} onChange={(e) => setOgType(e.target.value as any)}>
                             <option value="single">single</option>
                             <option value="multi">multi</option>
                           </select>
                         </div>
                         <div className="col-6 col-md-2">
-                          <label className="form-label">Orden</label>
+                          <label className="form-label">Order</label>
                           <input
                             type="number"
                             className="form-control"
@@ -1083,7 +1083,7 @@ function AdminMenuPage_Inner() {
                         <div className="col-12 col-md-2 d-flex align-items-end">
                           <div className="form-check">
                             <input className="form-check-input" type="checkbox" id="ogActive" checked={ogActive} onChange={(e) => setOgActive(e.target.checked)} />
-                            <label className="form-check-label" htmlFor="ogActive">Activo</label>
+                            <label className="form-check-label" htmlFor="ogActive">Active</label>
                           </div>
                         </div>
 
@@ -1108,35 +1108,35 @@ function AdminMenuPage_Inner() {
                         <div className="col-12 col-md-2 d-flex align-items-end">
                           <div className="form-check">
                             <input className="form-check-input" type="checkbox" id="ogReq" checked={ogRequired} onChange={(e) => setOgRequired(e.target.checked)} />
-                            <label className="form-check-label" htmlFor="ogReq">Requerido</label>
+                            <label className="form-check-label" htmlFor="ogReq">Required</label>
                           </div>
                         </div>
                       </div>
 
                       <hr className="my-3" />
                       <div className="d-flex align-items-center justify-content-between mb-2">
-                        <strong>Opciones de este grupo</strong>
+                        <strong>Options for this group</strong>
                         <button
                           className="btn btn-sm btn-outline-primary"
                           onClick={() => setOiRows((rows) => [...rows, { name: '', priceDelta: '', isDefault: false, active: true, sortOrder: '' }])}
                         >
-                          + Agregar opción
+                          + Add option
                         </button>
                       </div>
 
-                      {oiRows.length === 0 && <div className="text-muted small">Aún no has agregado opciones.</div>}
+                      {oiRows.length === 0 && <div className="text-muted small">You haven’t added options yet.</div>}
 
                       {oiRows.map((r, idx) => (
                         <div key={idx} className="row g-2 align-items-end mb-2">
                           <div className="col-12 col-md-4">
-                            <label className="form-label">Nombre</label>
+                            <label className="form-label">Name</label>
                             <input className="form-control" value={r.name} onChange={(e) => {
                               const val = e.target.value;
                               setOiRows((rows) => rows.map((x, i) => i === idx ? { ...x, name: val } : x));
                             }} />
                           </div>
                           <div className="col-6 col-md-2">
-                            <label className="form-label">Δ Precio</label>
+                            <label className="form-label">Δ Price</label>
                             <input
                               type="number"
                               step="0.01"
@@ -1149,7 +1149,7 @@ function AdminMenuPage_Inner() {
                             />
                           </div>
                           <div className="col-6 col-md-2">
-                            <label className="form-label">Orden</label>
+                            <label className="form-label">Order</label>
                             <input
                               type="number"
                               className="form-control"
@@ -1175,13 +1175,13 @@ function AdminMenuPage_Inner() {
                                 const val = e.target.checked;
                                 setOiRows((rows) => rows.map((x, i) => i === idx ? { ...x, active: val } : x));
                               }} />
-                              <label className="form-check-label" htmlFor={`oiAct_${idx}`}>Activo</label>
+                              <label className="form-check-label" htmlFor={`oiAct_${idx}`}>Active</label>
                             </div>
                           </div>
                           <div className="col-12 text-end">
                             <button className="btn btn-outline-danger btn-sm" onClick={() => {
                               setOiRows((rows) => rows.filter((_, i) => i !== idx));
-                            }}>Eliminar</button>
+                            }}>Delete</button>
                           </div>
                         </div>
                       ))}
@@ -1192,7 +1192,7 @@ function AdminMenuPage_Inner() {
                           onClick={async () => {
                             try {
                               const name = ogName.trim();
-                              if (!name) { alert('Nombre de grupo requerido'); return; }
+                              if (!name) { alert('Group name is required'); return; }
 
                               // Normalizar min/max según type/required
                               let min = (ogMin === '' ? undefined : Number(ogMin));
@@ -1204,7 +1204,7 @@ function AdminMenuPage_Inner() {
                                 if (typeof min === 'number' && min < 0) min = 0;
                                 if (typeof max === 'number' && max < 1) max = 1;
                                 if (typeof min === 'number' && typeof max === 'number' && min > max) {
-                                  alert('min no puede ser mayor que max');
+                                  alert('min cannot be greater than max');
                                   return;
                                 }
                               }
@@ -1240,13 +1240,13 @@ function AdminMenuPage_Inner() {
                               setOgMin(''); setOgMax(''); setOgActive(true); setOgSortOrder('');
                               setOiRows([]);
                               setShowOGCreator(false);
-                              alert('Grupo y opciones creados.');
+                              alert('Group and options created.');
                             } catch (e: any) {
-                              alert(e?.message || 'No se pudo crear el grupo/opciones');
+                              alert(e?.message || 'Failed to create group/options');
                             }
                           }}
                         >
-                          Crear grupo + opciones
+                          Create group + options
                         </button>
                       </div>
                     </div>
@@ -1255,11 +1255,11 @@ function AdminMenuPage_Inner() {
 
                 {/* Descripción del plato */}
                 <div className="col-12">
-                  <label className="form-label">Descripción (visible solo en el Menú)</label>
+                  <label className="form-label">Description (visible only in the Menu)</label>
                   <textarea
                     className="form-control"
                     rows={3}
-                    placeholder="Describe brevemente el plato (opcional)"
+                    placeholder="Briefly describe the dish (optional)"
                     value={itemDescription}
                     onChange={(e) => setItemDescription(e.target.value)}
                   />
@@ -1268,20 +1268,20 @@ function AdminMenuPage_Inner() {
                 {/* Addons */}
                 <div className="col-12">
                   <label className="form-label d-flex align-items-center justify-content-between">
-                    <span>Addons (extras por precio)</span>
-                    <button type="button" className="btn btn-outline-primary btn-sm" onClick={onAddAddon}>+ Agregar addon</button>
+                    <span>Add-ons (paid extras)</span>
+                    <button type="button" className="btn btn-outline-primary btn-sm" onClick={onAddAddon}>+ Add add-on</button>
                   </label>
-                  {addons.length === 0 && <div className="text-muted small">Sin addons.</div>}
+                  {addons.length === 0 && <div className="text-muted small">No add-ons.</div>}
                   {addons.map((a, idx) => (
                     <div key={idx} className="row g-2 align-items-center mb-1">
                       <div className="col-7">
-                        <input className="form-control" placeholder="Nombre" value={a.name} onChange={(e) => onChangeAddon(idx, 'name', e.target.value)} />
+                        <input className="form-control" placeholder="Name" value={a.name} onChange={(e) => onChangeAddon(idx, 'name', e.target.value)} />
                       </div>
                       <div className="col-3">
-                        <input type="number" step="0.01" className="form-control" placeholder="Precio" value={a.price} onChange={(e) => onChangeAddon(idx, 'price', e.target.value)} />
+                        <input type="number" step="0.01" className="form-control" placeholder="Price" value={a.price} onChange={(e) => onChangeAddon(idx, 'price', e.target.value)} />
                       </div>
                       <div className="col-2 text-end">
-                        <button type="button" className="btn btn-outline-danger btn-sm" onClick={() => onRemoveAddon(idx)}>Eliminar</button>
+                        <button type="button" className="btn btn-outline-danger btn-sm" onClick={() => onRemoveAddon(idx)}>Delete</button>
                       </div>
                     </div>
                   ))}
@@ -1298,7 +1298,7 @@ function AdminMenuPage_Inner() {
                 <div className="col-12 col-md-4 d-flex align-items-end">
                   <div className="d-flex gap-2">
                     <button className="btn btn-primary" onClick={onSaveItem}>
-                      {itemEditingId ? 'Guardar cambios' : 'Crear plato'}
+                      {itemEditingId ? 'Save changes' : 'Create dish'}
                     </button>
                     {itemEditingId && (
                       <button className="btn btn-outline-secondary" onClick={() => {
@@ -1314,7 +1314,7 @@ function AdminMenuPage_Inner() {
                         setImagePreview(null);
                         setImageMeta({});
                         setItemDescription('');
-                      }}>Cancelar</button>
+                      }}>Cancel</button>
                     )}
                   </div>
                 </div>
@@ -1325,16 +1325,16 @@ function AdminMenuPage_Inner() {
           {/* ===================== Sección independiente: Option-Groups ===================== */}
           <div id="option-groups-editor" className="card mt-3">
             <div className="card-header d-flex align-items-center justify-content-between">
-              <span>Option-Groups — editar items y límites</span>
+              <span>Option Groups — edit items and limits</span>
               <div className="d-flex align-items-center gap-2">
-                <label className="form-label m-0 small">Selecciona grupo:</label>
+                <label className="form-label m-0 small">Select group:</label>
                 <select
                   className="form-select form-select-sm"
                   style={{ minWidth: 260 }}
                   value={editGroupId}
                   onChange={(e) => setEditGroupId(e.target.value)}
                 >
-                  <option value="">— Elegir —</option>
+                  <option value="">— Choose —</option>
                   {groups.map((g) => (
                     <option key={g.id} value={g.id}>{g.name}</option>
                   ))}
@@ -1344,7 +1344,7 @@ function AdminMenuPage_Inner() {
 
             <div className="card-body">
               {!editGroupId && (
-                <div className="text-muted small">Selecciona un grupo para ver y editar sus opciones.</div>
+                <div className="text-muted small">Select a group to view and edit its options.</div>
               )}
 
               {!!editGroupId && (
@@ -1377,23 +1377,23 @@ function AdminMenuPage_Inner() {
                     </div>
                     <div className="col-12 col-md-3">
                       <button type="button" className="btn btn-sm btn-primary w-100" onClick={saveGroupConstraints}>
-                        Guardar límites
+                        Save limits
                       </button>
                     </div>
                   </div>
 
                   {/* Editor de Option-Items del grupo seleccionado */}
                   <div className="d-flex align-items-center justify-content-between mb-2">
-                    <small className="text-muted">Agrega, edita o elimina opciones. Los cambios se guardan por fila.</small>
-                    <button className="btn btn-sm btn-outline-primary" onClick={addNewEditRow}>+ Agregar opción</button>
+                    <small className="text-muted">Add, edit or delete options. Changes are saved per row.</small>
+                    <button className="btn btn-sm btn-outline-primary" onClick={addNewEditRow}>+ Add option</button>
                   </div>
 
-                  {editRows.length === 0 && <div className="text-muted small">Este grupo no tiene opciones.</div>}
+                  {editRows.length === 0 && <div className="text-muted small">This group has no options.</div>}
 
                   {editRows.map((r, idx) => (
                     <div key={r.id || `new_${idx}`} className="row g-2 align-items-end mb-2">
                       <div className="col-12 col-md-4">
-                        <label className="form-label">Nombre</label>
+                        <label className="form-label">Name</label>
                         <input
                           className="form-control form-control-sm"
                           value={r.name}
@@ -1401,7 +1401,7 @@ function AdminMenuPage_Inner() {
                         />
                       </div>
                       <div className="col-6 col-md-2">
-                        <label className="form-label">Δ Precio</label>
+                        <label className="form-label">Δ Price</label>
                         <input
                           type="number"
                           step="0.01"
@@ -1411,7 +1411,7 @@ function AdminMenuPage_Inner() {
                         />
                       </div>
                       <div className="col-6 col-md-2">
-                        <label className="form-label">Orden</label>
+                        <label className="form-label">Order</label>
                         <input
                           type="number"
                           className="form-control form-control-sm"
@@ -1443,13 +1443,13 @@ function AdminMenuPage_Inner() {
                             checked={r.active !== false}
                             onChange={(e) => markRow(idx, { active: e.target.checked })}
                           />
-                          <label className="form-check-label" htmlFor={`edAct_${r.id || idx}`}>Activo</label>
+                          <label className="form-check-label" htmlFor={`edAct_${r.id || idx}`}>Active</label>
                         </div>
                       </div>
 
                       <div className="col-12 d-flex justify-content-end gap-2">
-                        <button className="btn btn-outline-danger btn-sm" onClick={() => deleteEditRow(idx)}>Eliminar</button>
-                        <button className="btn btn-primary btn-sm" disabled={!r._dirty} onClick={() => saveEditRow(idx)}>Guardar</button>
+                        <button className="btn btn-outline-danger btn-sm" onClick={() => deleteEditRow(idx)}>Delete</button>
+                        <button className="btn btn-primary btn-sm" disabled={!r._dirty} onClick={() => saveEditRow(idx)}>Save</button>
                       </div>
                     </div>
                   ))}
@@ -1461,14 +1461,14 @@ function AdminMenuPage_Inner() {
           {/* ===================== Listado de Platos ===================== */}
           <div className="card mt-3">
             <div className="card-header">
-              Platos
+              Dishes
               <div className="float-end">
                 <select className="form-select form-select-sm d-inline-block me-2" style={{ width: 200 }} value={filterCat} onChange={(e) => { setFilterCat(e.target.value); setFilterSub(''); }}>
-                  <option value="">(Todas las categorías)</option>
+                  <option value="">(All categories)</option>
                   {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
                 <select className="form-select form-select-sm d-inline-block" style={{ width: 200 }} value={filterSub} onChange={(e) => setFilterSub(e.target.value)}>
-                  <option value="">(Todas las subcategorías)</option>
+                  <option value="">(All Subcategories)</option>
                   {subcategories
                     .filter((s) => !filterCat || s.categoryId === filterCat)
                     .map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -1476,7 +1476,7 @@ function AdminMenuPage_Inner() {
               </div>
             </div>
             <div className="card-body">
-              {itemsFiltered.length === 0 && <div className="text-muted small">Sin resultados.</div>}
+              {itemsFiltered.length === 0 && <div className="text-muted small">No results.</div>}
               <div className="row g-3">
                 {itemsFiltered.map((mi) => {
                   const cName = categories.find((c) => c.id === mi.categoryId)?.name || '—';
@@ -1491,7 +1491,7 @@ function AdminMenuPage_Inner() {
                               {mi.imageUrl ? (
                                 <img src={mi.imageUrl} alt={mi.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                               ) : (
-                                <div className="d-flex h-100 w-100 align-items-center justify-content-center text-muted small">Sin imagen</div>
+                                <div className="d-flex h-100 w-100 align-items-center justify-content-center text-muted small">No image</div>
                               )}
                             </div>
                             <div className="flex-fill">
@@ -1500,10 +1500,10 @@ function AdminMenuPage_Inner() {
                                 <div className="fw-semibold">{fmtQ(mi.price)}</div>
                               </div>
                               <div className="text-muted small">
-                                {cName} · {sName} {mi.active === false ? <span className="badge text-bg-warning ms-1">inactivo</span> : null}
+                                {cName} · {sName} {mi.active === false ? <span className="badge text-bg-warning ms-1">Inactive</span> : null}
                               </div>
                               {!!gNames.length && (
-                                <div className="text-muted small mt-1">Grupos: {gNames.join(', ')}</div>
+                                <div className="text-muted small mt-1">Groups: {gNames.join(', ')}</div>
                               )}
                               {!!mi.addons?.length && (
                                 <div className="text-muted small mt-1">
@@ -1514,8 +1514,8 @@ function AdminMenuPage_Inner() {
                           </div>
                         </div>
                         <div className="card-footer d-flex justify-content-end gap-2">
-                          <button className="btn btn-outline-secondary btn-sm" onClick={() => onEditItem(mi)}>Editar</button>
-                          <button className="btn btn-outline-danger btn-sm" onClick={() => onDeleteItem(mi.id, mi.imagePath)}>Eliminar</button>
+                          <button className="btn btn-outline-secondary btn-sm" onClick={() => onEditItem(mi)}>Edit</button>
+                          <button className="btn btn-outline-danger btn-sm" onClick={() => onDeleteItem(mi.id, mi.imagePath)}>Delete</button>
                         </div>
                       </div>
                     </div>
@@ -1543,7 +1543,7 @@ function ImagePicker({
 }) {
   return (
     <>
-      <label className="form-label">Imagen (Storage)</label>
+      <label className="form-label">Image (Storage)</label>
       <input
         type="file"
         accept="image/*"
@@ -1562,7 +1562,7 @@ function ImagePicker({
       )}
       {imageMetaUrl && (
         <div className="text-muted small mt-1">
-          Imagen actual: <a href={imageMetaUrl} target="_blank" rel="noopener noreferrer">ver</a>
+          Current image: <a href={imageMetaUrl} target="_blank" rel="noopener noreferrer">view</a>
         </div>
       )}
     </>

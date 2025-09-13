@@ -62,7 +62,7 @@ export default function EditCheckoutPage() {
           optionItemIds: g.optionItemIds,
         })),
       })),
-      currency: cart.currency ?? "GTQ",
+      currency: cart.currency ?? "USD",
       type: cart.type ?? "dine_in",
       tableNumber: (cart.tableNumber ?? "").trim(),
       notes: cart.notes ?? "",
@@ -76,14 +76,14 @@ export default function EditCheckoutPage() {
     }); // basado en tu handler previo. :contentReference[oaicite:1]{index=1}
 
     if (res.status === 401) {
-      setError("No autorizado. Inicia sesión.");
+      setError("Unauthorized. Sign in..");
       setSaving(false);
       router.replace("/login");
       return;
     }
     if (!res.ok) {
       const t = await res.text();
-      setError(`Error al guardar cambios: ${t}`);
+      setError(`Error saving changes: ${t}`);
       setSaving(false);
       return;
     }
@@ -92,18 +92,18 @@ export default function EditCheckoutPage() {
     router.replace("/admin/edit-orders");
   }
 
-  const currency = cart.currency ?? "GTQ";
+  const currency = cart.currency ?? "USD";
 
   return (
     <Protected>
           <RoleGate allow={['admin','waiter']}>
     <div className="container py-3">
       <div className="alert alert-warning mb-3">
-        Editando orden{" "}
+        Edit order{" "}
         <strong>#{(cart.orderId ?? "").slice(-6).toUpperCase()}</strong>
       </div>
 
-      <h2 className="h6 mb-3">Confirmar cambios</h2>
+      <h2 className="h6 mb-3">Confirm changes</h2>
 
       <form onSubmit={handleSubmit} className="vstack gap-3">
         <div className="card">
@@ -118,7 +118,7 @@ export default function EditCheckoutPage() {
               </strong>
             </div>
             <div className="mb-2">
-              Propina:{" "}
+              Tip:{" "}
               <strong>
                 {(amounts.tipCents / 100).toFixed(2)} {currency}
               </strong>
@@ -136,7 +136,7 @@ export default function EditCheckoutPage() {
 
         <div className="d-flex gap-2">
           <button className="btn btn-success" disabled={saving}>
-            Guardar cambios
+            Save changes
           </button>
           <button
             className="btn btn-outline-secondary"
@@ -144,7 +144,7 @@ export default function EditCheckoutPage() {
             onClick={() => history.back()}
             disabled={saving}
           >
-            Volver
+            Back
           </button>
         </div>
       </form>

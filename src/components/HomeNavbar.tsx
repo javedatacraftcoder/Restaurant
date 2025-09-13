@@ -32,12 +32,12 @@ export default function HomeNavbar() {
           <ul className="navbar-nav me-auto mb-2 mb-md-0">
             <li className="nav-item">
               <Link className="nav-link" href="/menu" onClick={() => setOpen(false)}>
-                Menú
+                Menu
               </Link>
             </li>
             <li className="nav-item">
               <Link className="nav-link" href="/promos" onClick={() => setOpen(false)}>
-                Promociones
+                Promotions
               </Link>
             </li>
           </ul>

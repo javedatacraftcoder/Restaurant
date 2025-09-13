@@ -34,15 +34,15 @@ const NEXT_BY_ROLE: Record<NonNullable<Props['role']>, string[]> = {
 
 // Etiquetas bonitas para UI
 const LABELS: Record<string,string> = {
-  placed: 'Aceptar',
-  kitchen_in_progress: 'En cocina',
-  kitchen_done: 'Cocina lista',
-  ready_to_close: 'Listo para cobrar',
-  assigned_to_courier: 'Asignar repartidor',
-  on_the_way: 'En camino',
-  delivered: 'Entregado',
-  closed: 'Cerrado',
-  cancelled: 'Cancelar',
+  placed: 'Accept',
+  kitchen_in_progress: 'In kitchen',
+  kitchen_done: 'Kitchen ready',
+  ready_to_close: 'Ready to close',
+  assigned_to_courier: 'Assign delivery',
+  on_the_way: 'In route',
+  delivered: 'Delivered',
+  closed: 'Closed',
+  cancelled: 'Cancelled',
 };
 
 export default function OrderStatusActions({
@@ -75,12 +75,12 @@ export default function OrderStatusActions({
 
       if (!resp.ok) {
         // Respuesta de error del backend (puede traer invalid, from, to)
-        setError(data?.message || 'No se pudo cambiar el estado.');
+        setError(data?.message || 'Can not change the status.');
       } else {
         onTransition?.(currentStatus, nextStatus);
       }
     } catch (e: any) {
-      setError(e?.message || 'Error de red.');
+      setError(e?.message || 'Network error.');
     } finally {
       setLoading(null);
     }
@@ -98,7 +98,7 @@ export default function OrderStatusActions({
           className={`px-3 py-1 rounded-md border
             ${loading === target ? 'opacity-60 cursor-wait' : 'hover:bg-gray-100'}
           `}
-          title={`Cambiar a: ${target}`}
+          title={`Change to: ${target}`}
         >
           {LABELS[target] || target}
         </button>

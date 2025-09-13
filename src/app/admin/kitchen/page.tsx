@@ -25,7 +25,7 @@ async function ensureFirebaseApp() {
     if (cfg.apiKey && cfg.authDomain && cfg.projectId && cfg.appId) {
       app.initializeApp(cfg);
     } else {
-      console.warn('[Firebase] Variables NEXT_PUBLIC_* faltantes; Auth no podrá inicializar.');
+      console.warn('[Firebase] Missing NEXT_PUBLIC_* variables; Auth will fail to initialize.');
     }
   }
 }
@@ -195,16 +195,16 @@ type OrderDoc = {
    Utils
 --------------------------------------------- */
 const TitleMap: Record<StatusSnake, string> = {
-  cart: 'Carrito',
-  placed: 'Recibido',
-  kitchen_in_progress: 'En cocina',
-  kitchen_done: 'Cocina lista',
-  ready_to_close: 'Listo para cerrar',
-  assigned_to_courier: 'Asignado a repartidor',
-  on_the_way: 'En camino',
-  delivered: 'Entregado',
-  closed: 'Cerrado',
-  cancelled: 'Cancelado',
+  cart: 'Cart',
+  placed: 'Received',
+  kitchen_in_progress: 'In kitchen',
+  kitchen_done: 'Kitchen ready',
+  ready_to_close: 'Ready to close',
+  assigned_to_courier: 'Assigned delivery',
+  on_the_way: 'In route',
+  delivered: 'Delivered',
+  closed: 'Closed',
+  cancelled: 'Cancelled',
 };
 function toDate(x: any): Date {
   if (x?.toDate?.() instanceof Date) return x.toDate();
@@ -214,8 +214,8 @@ function toDate(x: any): Date {
 function timeAgo(from: Date, now: Date) {
   const ms = Math.max(0, now.getTime() - from.getTime());
   const m = Math.floor(ms / 60000);
-  if (m < 1) return 'hace segundos';
-  if (m < 60) return `hace ${m} min`;
+  if (m < 1) return 'Seconds ago';
+  if (m < 60) return `min ${m} ago`;
   const h = Math.floor(m / 60);
   const rem = m % 60;
   return `hace ${h} h ${rem} m`;
@@ -297,7 +297,7 @@ function normalizeOptions(l: any): Array<{ label: string; values: string[] }> {
   const buckets = [
     { key: 'addons', label: 'Addons' },
     { key: 'extras', label: 'Extras' },
-    { key: 'modifiers', label: 'Modificadores' },
+    { key: 'modifiers', label: 'Modifiers' },
   ] as const;
   for (const b of buckets) {
     const arr = l?.[b.key];
@@ -404,21 +404,21 @@ function useKitchenOrders(
       const token = await getIdTokenSafe(false);
       if (!token) {
         setLoading(false);
-        setError('Debes iniciar sesión para ver órdenes.');
+        setError('You must log in to view orders..');
         return;
       }
       const url = `/api/orders?statusIn=${encodeURIComponent(STATUS_QUERY)}&typeIn=${encodeURIComponent(TYPE_QUERY)}&limit=100`;
       const res = await apiFetch(url);
-      if (res.status === 401) throw new Error('Unauthorized (401). Inicia sesión nuevamente.');
+      if (res.status === 401) throw new Error('Unauthorized (401). Log in again.');
       if (!res.ok) throw new Error(`GET /orders ${res.status}`);
 
       const data = await res.json();
       const rawList = (data.items ?? data.orders ?? []) as any[];
       if (!Array.isArray(rawList)) {
-        console.error('Formato inesperado en /api/orders:', data);
+        console.error('Unexpected format in /api/orders:', data);
         setOrders([]);
         setLoading(false);
-        setError('Respuesta inesperada del servidor.');
+        setError('Unexpected server response.');
         return;
       }
 
@@ -439,7 +439,7 @@ function useKitchenOrders(
       prevMapRef.current = nextMap;
 
     } catch (e: any) {
-      setError(e?.message || 'Error al cargar');
+      setError(e?.message || 'Loading error');
       setLoading(false);
     }
   };
@@ -492,8 +492,8 @@ function useBeep(enabled: boolean) {
 --------------------------------------------- */
 function nextActionsKitchen(order: OrderDoc, canAct: boolean) {
   const acts: Array<{ label: string; to: StatusSnake; show: boolean }> = [];
-  if (order.status === 'placed') acts.push({ label: 'Iniciar cocina', to: 'kitchen_in_progress', show: canAct });
-  if (order.status === 'kitchen_in_progress') acts.push({ label: 'Cocina lista', to: 'kitchen_done', show: canAct });
+  if (order.status === 'placed') acts.push({ label: 'Start Kitchen', to: 'kitchen_in_progress', show: canAct });
+  if (order.status === 'kitchen_in_progress') acts.push({ label: 'Kitchen ready', to: 'kitchen_done', show: canAct });
   return acts.filter((a) => a.show);
 }
 async function changeStatus(orderId: string, to: StatusSnake) {
@@ -616,7 +616,7 @@ function OrderCard({
       <div className="card-header d-flex align-items-center justify-content-between">
         <div className="d-flex flex-column">
           <div className="fw-semibold">#{o.orderNumber || o.id}</div>
-          {typeVal === 'dine_in' && tableVal && <div className="fw-semibold">Mesa {tableVal}</div>}
+          {typeVal === 'dine_in' && tableVal && <div className="fw-semibold">Table {tableVal}</div>}
           <small className="text-muted">
             {created.toLocaleString()} · {timeAgo(created, new Date())}
           </small>
@@ -627,7 +627,7 @@ function OrderCard({
           )}
           <span className="badge bg-outline-secondary text-dark">{typeVal}</span>
           {/* ➕ Badge adicional para pickup */}
-          {rawType === 'pickup' && <span className="badge bg-info text-dark">pickup</span>}
+          {rawType === 'pickup' && <span className="badge bg-info text-dark">Pickup</span>}
           <BadgeStatus s={o.status} />
         </div>
       </div>
@@ -635,7 +635,7 @@ function OrderCard({
       <div className="card-body">
         {notesVal ? (
           <div className="mb-2">
-            <em>Nota: {notesVal}</em>
+            <em>Note: {notesVal}</em>
           </div>
         ) : null}
 
@@ -665,17 +665,6 @@ function OrderCard({
         {/* Acciones (sin totales/precios/dirección) */}
         <div className="d-flex justify-content-end align-items-center">
           <div className="btn-group">
-            {prev && (
-              <button
-                type="button"
-                className="btn btn-outline-secondary btn-sm"
-                disabled={isBusy(prev)}
-                onClick={() => onAction(o.id, prev)}
-                title="Retroceder estado"
-              >
-                ← Atrás
-              </button>
-            )}
             {nexts.map((a) => (
               <button
                 key={a.to}
@@ -768,13 +757,13 @@ function KitchenBoardPage_Inner() {
 
     try {
       const order = orders.find((o) => o.id === id);
-      if (!order) throw new Error('Orden no encontrada');
+      if (!order) throw new Error('Order not found');
 
       const allowed = allowedNextKitchen(order.status);
       const prev = getPrevKitchen(order);
       const isRevert = prev === to;
       if (!isRevert && !allowed.includes(to)) {
-        alert(`Transición no permitida desde "${TitleMap[order.status]}" a "${TitleMap[to]}".`);
+        alert(`Transition not allowed from "${TitleMap[order.status]}" a "${TitleMap[to]}".`);
         // revertir cronómetro si hicimos algo
         if (to === 'kitchen_in_progress' && prevSnapshot) timersRef.current[id] = prevSnapshot;
         if (to === 'kitchen_done' && prevSnapshot) timersRef.current[id] = prevSnapshot;
@@ -836,51 +825,51 @@ function KitchenBoardPage_Inner() {
         style={{ top: 0, zIndex: 5, borderBottom: '1px solid #eee' }}
       >
         <div className="d-flex align-items-center gap-3">
-          <h1 className="h4 m-0">Cocina — Kitchen Display</h1>
+          <h1 className="h4 m-0">Kitchen Display</h1>
           <span className="text-muted small d-none d-md-inline">
-            Verás órdenes en estados: <strong>Recibido</strong> y <strong>En cocina</strong>.
+            You will see orders in status: <strong>Received</strong> & <strong>In kitchen</strong>.
           </span>
         </div>
         <div className="d-flex align-items-center gap-2">
           <div className="input-group input-group-sm" style={{ width: 260 }}>
-            <span className="input-group-text">Buscar</span>
+            <span className="input-group-text">Search</span>
             <input
               type="search"
               className="form-control"
-              placeholder="#orden, mesa, ítem, nota"
+              placeholder="#order, table, item, note"
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
           </div>
-          <button className="btn btn-outline-secondary btn-sm" onClick={() => refresh()}>Refrescar</button>
+          <button className="btn btn-outline-secondary btn-sm" onClick={() => refresh()}>Refresh</button>
           <div className="form-check form-switch">
             <input className="form-check-input" type="checkbox" id="soundSwitch" checked={soundOn} onChange={(e) => setSoundOn(e.target.checked)} />
-            <label className="form-check-label small" htmlFor="soundSwitch">Sonido</label>
+            <label className="form-check-label small" htmlFor="soundSwitch">Sound</label>
           </div>
           <button
             className="btn btn-outline-dark btn-sm"
             onClick={toggleFs}
-            title={isFs ? 'Salir de pantalla completa (Esc)' : 'Pantalla completa'}
+            title={isFs ? 'Exit full screen (Esc)' : 'Full Screen'}
           >
-            {isFs ? 'Salir pantalla completa' : 'Pantalla completa'}
+            {isFs ? 'Exit full screen' : 'Full Screen'}
           </button>
         </div>
       </div>
 
-      {!authReady && <div className="text-muted">Inicializando sesión…</div>}
-      {authReady && !user && <div className="text-danger">No has iniciado sesión. Inicia sesión para ver las órdenes.</div>}
+      {!authReady && <div className="text-muted">Initializing session…</div>}
+      {authReady && !user && <div className="text-danger">You are not logged in. Sign in to view orders..</div>}
       {error && <div className="text-danger">{error}</div>}
-      {user && loading && <div className="text-muted">Cargando pedidos…</div>}
+      {user && loading && <div className="text-muted">Loading orders…</div>}
 
       {user && (
         <section className="mb-4">
           <div className="d-flex align-items-center justify-content-between mb-2">
-            <h2 className="h5 m-0">Salón (Dine-in)</h2>
+            <h2 className="h5 m-0">Dine-in</h2>
             <span className="badge bg-secondary">{dineIn.length}</span>
           </div>
 
           {dineIn.length === 0 ? (
-            <div className="text-muted small">No hay órdenes dine-in.</div>
+            <div className="text-muted small">No dine-in orders.</div>
           ) : (
             <div className="row g-3">
               {dineIn.map((o) => (
@@ -908,7 +897,7 @@ function KitchenBoardPage_Inner() {
           </div>
 
           {delivery.length === 0 ? (
-            <div className="text-muted small">No hay órdenes de delivery.</div>
+            <div className="text-muted small">No delivery orders.</div>
           ) : (
             <div className="row g-3">
               {delivery.map((o) => (
