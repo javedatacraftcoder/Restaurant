@@ -62,6 +62,15 @@ function fmtQ(n?: number) {
   }
 }
 
+/* =========================
+   NUEVO: helpers de centavos
+   ========================= */
+function toCents(x: any): number {
+  const n = Number(x);
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(n * 100);
+}
+
 export default function SubcategoryClient({ catId, subId }: { catId: string; subId: string }) {
   const db = useMemo(() => getFirestore(), []);
   const [category, setCategory] = useState<Category | null>(null);
@@ -305,15 +314,38 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
       }
     });
 
+    // ===========================
+    // NUEVO: totales en CENTAVOS
+    // ===========================
+    const qty = 1; // aquí siempre agregas 1
+    const baseC = toCents(basePrice);
+
+    const addonsC = addonsPicked.reduce((s, ad) => s + toCents(ad.price), 0);
+
+    const optsC = optionGroups.reduce((sum, g) => {
+      const gSum = (g.items || []).reduce((s, it) => s + toCents(it.priceDelta || 0), 0);
+      return sum + gSum;
+    }, 0);
+
+    const unitPriceCents = baseC + addonsC + optsC;
+    const lineSubtotalCents = unitPriceCents * qty;
+
+    // Mantengo totalPrice numérico como antes para el resto del flujo/UI
     const totalPrice = computeTotal(mi);
+
     return {
       menuItemId: mi.id,
       menuItemName: mi.name,
       basePrice,
-      quantity: 1,
+      quantity: qty,
       addons: addonsPicked,
       optionGroups,
       totalPrice,
+
+      // 👇 NUEVO: campos exactos en centavos para el checkout / apply-promo
+      unitPriceCents,
+      lineSubtotalCents,
+      totalPriceCents: lineSubtotalCents,
     };
   }
 
@@ -323,6 +355,7 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
     setAddingId(mi.id);
     try {
       if (newCart && typeof newCart.add === "function") {
+        // Pasamos también los campos en centavos (no rompen nada si el cart los ignora)
         newCart.add({
           menuItemId: payload.menuItemId,
           menuItemName: payload.menuItemName,
@@ -331,7 +364,12 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
           addons: payload.addons || [],
           optionGroups: payload.optionGroups || [],
           totalPrice: payload.totalPrice,
-        });
+
+          // NUEVO: centavos
+          unitPriceCents: payload.unitPriceCents,
+          lineSubtotalCents: payload.lineSubtotalCents,
+          totalPriceCents: payload.totalPriceCents,
+        } as any);
       }
       // 👇 Dispara el mensaje “Agregado”
       setFlash({ id: mi.id, name: mi.name });

@@ -127,7 +127,7 @@ function LoginInner() {
 
   return (
     <main className="container py-4" style={{ maxWidth: 480 }}>
-      <h1 className="h3 mb-3 text-center">Iniciar sesión</h1>
+      <h1 className="h3 mb-3 text-center">Login</h1>
       <form onSubmit={onSubmit} className="card p-3 border-0 shadow-sm">
         <div className="mb-3">
           <label className="form-label">Email</label>
@@ -170,7 +170,7 @@ function LoginInner() {
 
       <p className="text-center mt-3 mb-0">
         Don't have an account?{" "}
-        <a href="/accounts" className="link-primary">
+        <a href="/account" className="link-primary">
           Sign up
         </a>
       </p>

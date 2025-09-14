@@ -30,6 +30,9 @@ type CustomerDoc = {
   };
   // ➕ Facturación
   billing?: Billing;
+  // ➕ Marketing consent
+  marketingOptIn?: boolean;
+
   createdAt?: any;
   updatedAt?: any;
 };
@@ -110,6 +113,11 @@ export async function PUT(req: NextRequest) {
       if (typeof b.name === "string") nextBilling.name = b.name;
       if (typeof b.taxId === "string") nextBilling.taxId = b.taxId;
       allowed.billing = nextBilling;
+    }
+
+    // ➕ Guardar consentimiento de marketing (marketingOptIn)
+    if (typeof body.marketingOptIn === "boolean") {
+      (allowed as any).marketingOptIn = body.marketingOptIn;
     }
 
     // Evitar cambios de email/uid desde aquí

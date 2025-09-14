@@ -5,7 +5,7 @@ import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { useNewCart } from '@/lib/newcart/context';
 import type { DineInInfo, DeliveryInfo } from '@/lib/newcart/types';
 import { useRouter } from 'next/navigation';
-import '@/lib/firebase/client'; // Asegúrate que importe tu inicializador
+import '@/lib/firebase/client';
 
 // Firestore
 import {
@@ -18,7 +18,8 @@ import {
   where,
   orderBy,
 } from 'firebase/firestore';
-// Leer usuario actual para tomar su email (si hay sesión)
+
+// Auth
 import { getAuth } from 'firebase/auth';
 
 function fmtQ(n?: number) {
@@ -50,7 +51,7 @@ type DeliveryOption = {
   id: string;
   title: string;
   description?: string;
-  price: number;        // GTQ
+  price: number;        // USD (visualización)
   isActive?: boolean;
   sortOrder?: number;
 };
@@ -63,7 +64,7 @@ type Addr = {
   notes?: string;
 };
 
-/** ---------- NUEVO: tipos y estado para promoción ---------- */
+/** ---------- Tipos y estado para promoción ---------- */
 type AppliedPromo = {
   promoId: string;
   code: string;
@@ -80,7 +81,7 @@ type AppliedPromo = {
 export default function CheckoutNewPage() {
   const cart = useNewCart();
 
-  // Subtotal = lo que hoy era tu "grand" (suma de productos + addons + groups)
+  // Subtotal = suma de productos + addons + groups (sin envío/propina/descuento)
   const subtotal = useMemo(() => cart.computeGrandTotal(), [cart, cart.items]);
 
   // Modo de pedido (agregamos 'pickup')
@@ -113,14 +114,14 @@ export default function CheckoutNewPage() {
   const router = useRouter();
   const db = getFirestore();
 
-  // ---------- NUEVO: estado de promoción ----------
+  // ---------- Estado de promoción ----------
   const [promoCode, setPromoCode] = useState('');
   const [promoApplying, setPromoApplying] = useState(false);
   const [promoError, setPromoError] = useState<string | null>(null);
   const [promo, setPromo] = useState<AppliedPromo | null>(null);
   const promoDiscountGTQ = useMemo(() => (promo?.discountTotalCents ?? 0) / 100, [promo]);
 
-  // Cargar datos del cliente para prellenar teléfono y direcciones (igual que el viejo)
+  // Cargar datos del cliente
   useEffect(() => {
     const run = async () => {
       try {
@@ -138,7 +139,6 @@ export default function CheckoutNewPage() {
         if (!c) return;
 
         setCustomerName(c.displayName || u.displayName || '');
-
         if (c.phone && !phone) setPhone(c.phone);
 
         const h: Addr | null = c.addresses?.home || null;
@@ -156,7 +156,7 @@ export default function CheckoutNewPage() {
           setAddress(String(o!.line1));
         }
       } catch {
-        // Silencioso
+        // silent
       }
     };
     run();
@@ -183,7 +183,7 @@ export default function CheckoutNewPage() {
         return;
       }
       try {
-        // Intento principal: where + orderBy (requiere índice compuesto)
+        // where + orderBy (requiere índice compuesto)
         const qRef = query(
           collection(db, 'deliveryOptions'),
           where('isActive', '==', true),
@@ -206,13 +206,10 @@ export default function CheckoutNewPage() {
         if (!selectedDeliveryOptionId && arr.length > 0) {
           setSelectedDeliveryOptionId(arr[0].id);
         }
-      } catch (e) {
+      } catch {
         // Fallback sin índice: solo where y ordenamos en memoria
         try {
-          const qRef = query(
-            collection(db, 'deliveryOptions'),
-            where('isActive', '==', true)
-          );
+          const qRef = query(collection(db, 'deliveryOptions'), where('isActive', '==', true));
           const snap = await getDocs(qRef);
           if (cancelled) return;
           const arr = snap.docs
@@ -264,13 +261,13 @@ export default function CheckoutNewPage() {
     return Number(opt?.price || 0);
   }, [mode, deliveryOptions, selectedDeliveryOptionId]);
 
-  // ---------- NUEVO: gran total con descuento aplicado ----------
+  // Gran total con descuento aplicado
   const grandTotal = useMemo(() => {
     const t = (mode === 'delivery' ? 0 : tip) || 0;
     return subtotal + deliveryFee + t - promoDiscountGTQ;
   }, [subtotal, deliveryFee, tip, mode, promoDiscountGTQ]);
 
-  // ---------- NUEVO: aplicar/quitar promoción ----------
+  // ---------- Aplicar / quitar promoción ----------
   const applyPromo = useCallback(async () => {
     setPromoError(null);
     const code = (promoCode || '').trim().toUpperCase();
@@ -280,28 +277,29 @@ export default function CheckoutNewPage() {
       const auth = getAuth();
       const u = auth.currentUser;
 
-      const lines = cart.items.map((ln: any, idx: number) => ({
-        lineId: String(idx),
-        menuItemId: ln.menuItemId,
-        totalPriceCents: Math.round(cart.computeLineTotal(ln) * 100),
-      }));
+      // 👉 Usamos el SUBTOTAL mostrado como base: lo mandamos en centavos
+      const subtotalCents = Math.round((subtotal + Number.EPSILON) * 100);
 
       const res = await fetch('/api/cart/apply-promo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           code,
-          orderType: mode,         // 'dine-in' | 'delivery' | 'pickup'
+          orderType: mode,        // 'dine-in' | 'delivery' | 'pickup'
           userUid: u?.uid || null,
-          lines,
+          subtotalCents,          // 👈 base única del descuento (exactamente lo que ves)
+          subtotal,               // (compat) por si el backend acepta monto en decimal
+          // ❌ ya no enviamos lines; dejamos que el backend calcule sobre el subtotal
         }),
       });
+
       const j = await res.json();
       if (!res.ok || !j?.ok) {
         setPromo(null);
         setPromoError(j?.reason || 'Invalid coupon.');
         return;
       }
+
       setPromo({
         promoId: j.promoId,
         code: j.code,
@@ -309,13 +307,13 @@ export default function CheckoutNewPage() {
         discountByLine: j.discountByLine || [],
       });
       setPromoError(null);
-    } catch (e: any) {
+    } catch {
       setPromo(null);
       setPromoError('The code could not be validated');
     } finally {
       setPromoApplying(false);
     }
-  }, [promoCode, cart.items, mode, cart]);
+  }, [promoCode, mode, subtotal]);
 
   const clearPromo = useCallback(() => {
     setPromo(null);
@@ -338,7 +336,7 @@ export default function CheckoutNewPage() {
     const userEmail = u?.email || undefined;
     const uid = u?.uid || undefined;
 
-    // Extra de orderInfo SOLO para delivery (exactamente como el viejo + envío)
+    // Extra de orderInfo SOLO para delivery
     let orderInfo: any = meta;
     if (mode === 'delivery') {
       const selectedAddr = addressLabel === 'home' ? homeAddr
@@ -356,13 +354,11 @@ export default function CheckoutNewPage() {
 
       orderInfo = {
         ...(meta as DeliveryInfo),
-        delivery: 'pending', // igual que antes
+        delivery: 'pending',
         customerName: customerName || u?.displayName || undefined,
         addressLabel: addressLabel || undefined,
-        addressInfo,                               // snapshot completo (como antes)
+        addressInfo,
         addressNotes: selectedAddr?.notes || undefined,
-
-        // NUEVO: opción de envío congelada en la orden
         deliveryOptionId: selectedOpt?.id || undefined,
         deliveryOption: selectedOpt
           ? {
@@ -377,7 +373,7 @@ export default function CheckoutNewPage() {
     // ✅ aplicar helper SOLO a orderInfo para evitar "undefined"
     const cleanOrderInfo = undefToNullDeep(orderInfo);
 
-    // ---------- NUEVO: snapshot de promo para la orden ----------
+    // Snapshot de promo para la orden
     const appliedPromotions = promo ? [{
       promoId: promo.promoId,
       code: promo.code,
@@ -405,21 +401,21 @@ export default function CheckoutNewPage() {
       // 🔁 orderTotal ahora es el GRAN TOTAL (subtotal + envío + propina - descuento)
       orderTotal: grandTotal,
 
-      // Estructura original (respetada) + nuevos campos solo cuando aplica
+      // Estructura original (respetada) + nuevos campos
       orderInfo: cleanOrderInfo,
 
-      // NUEVO: desglose (no rompe pantallas viejas)
+      // Desglose
       totals: {
         subtotal,
         deliveryFee,
         tip: mode === 'delivery' ? 0 : tip,
-        discount: promoDiscountGTQ,               // 👈 NUEVO
+        discount: promoDiscountGTQ,
         currency: 'USD',
       },
 
-      // NUEVO: snapshot de promociones aplicadas
-      appliedPromotions,                          // 👈 NUEVO
-      promotionCode: promo?.code || null,         // 👈 NUEVO (atalajo)
+      // Promos
+      appliedPromotions,
+      promotionCode: promo?.code || null,
 
       status: 'placed',
       createdAt: serverTimestamp(),
@@ -434,7 +430,7 @@ export default function CheckoutNewPage() {
       const ref = await addDoc(collection(db, 'orders'), orderPayload);
       console.log('[CHECKOUT] Order saved in orders with id:', ref.id);
 
-      // ---------- NUEVO: consumir límite global de la promoción (idempotente por orderId) ----------
+      // Consumir límite global de la promoción (idempotente por orderId)
       if (promo?.promoId) {
         try {
           await fetch('/api/promotions/consume', {
@@ -661,7 +657,7 @@ export default function CheckoutNewPage() {
                 </>
               )}
 
-              {/* ---------- NUEVO: Campo de CÓDIGO PROMO ---------- */}
+              {/* ---------- Código PROMO ---------- */}
               <div className="mb-3">
                 <label className="form-label fw-semibold">Promotion Coupon</label>
                 <div className="d-flex gap-2">
@@ -706,7 +702,7 @@ export default function CheckoutNewPage() {
               <div className="fw-semibold">Summary</div>
             </div>
             <div className="card-body">
-              {/* Bloque de resumen de entrega con alias y contacto (idéntico al viejo comportamiento) */}
+              {/* Resumen de entrega */}
               {mode === 'delivery' && (
                 <div className="border rounded p-2 mb-3 bg-light">
                   <div className="small text-muted">Deliver</div>
@@ -787,7 +783,7 @@ export default function CheckoutNewPage() {
                   <div className="fw-semibold">{fmtQ(subtotal)}</div>
                 </div>
 
-                {/* ---------- NUEVO: línea de descuento si hay promo ---------- */}
+                {/* Descuento si hay promo */}
                 {promo && (
                   <div className="d-flex justify-content-between text-success">
                     <div>Discount ({promo.code})</div>
@@ -835,7 +831,7 @@ export default function CheckoutNewPage() {
 
             <div className="card-footer d-flex justify-content-between">
               <div>Includes applied discount{promo ? ` (${promo.code})` : ''}.</div>
-              <div className="fw-semibold">{/* redundante, ya mostramos arriba */}</div>
+              <div className="fw-semibold">{/* redundante */}</div>
             </div>
           </div>
         </div>

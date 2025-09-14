@@ -180,6 +180,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <li className="nav-item">
                 <Link className={`nav-link ${isActive('/admin/delivery-options') ? 'active' : ''}`} href="/admin/delivery-options">Create Delivery</Link>
               </li>
+              <li className="nav-item">
+                <Link className={`nav-link ${isActive('/admin/marketing') ? 'active' : ''}`} href="/admin/marketing">Marketing</Link>
+              </li>
             </ul>
 
             <div className="d-flex align-items-center gap-2">

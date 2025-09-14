@@ -11,63 +11,97 @@ export default function AccountsRegisterPage() {
   const router = useRouter();
   const { user, loading } = useAuth();
 
-  const [name, setName] = useState("");
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [pass1, setPass1] = useState("");
   const [pass2, setPass2] = useState("");
+
+  // Required acknowledgement + optional marketing opt-in
+  const [ackMarketing, setAckMarketing] = useState(false);
+  const [marketingOptIn, setMarketingOptIn] = useState(false);
+
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // Si ya está logueado, fuera de aquí
   useEffect(() => {
-    if (!loading && user) {
-      router.replace("/");
-    }
+    if (!loading && user) router.replace("/");
   }, [loading, user, router]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setErr(null);
 
-    if (pass1 !== pass2) {
-      setErr("Passwords don{t match");
+    if (!ackMarketing) {
+      setErr("Please acknowledge the marketing notice to continue.");
       return;
     }
-    if (name.trim().length < 2) {
-      setErr("Enter your name.");
+    if (fullName.trim().length < 2) {
+      setErr("Please enter your full name.");
+      return;
+    }
+    if (!email.trim() || !email.includes("@")) {
+      setErr("Please enter a valid email address.");
+      return;
+    }
+    if (pass1 !== pass2) {
+      setErr("Passwords do not match.");
+      return;
+    }
+    if (pass1.length < 6) {
+      setErr("Password must be at least 6 characters long.");
       return;
     }
 
     setBusy(true);
     try {
-      const cred = await createUserWithEmailAndPassword(
-        auth,
-        email.trim(),
-        pass1
-      );
+      // 1) Create email+password account
+      const cred = await createUserWithEmailAndPassword(auth, email.trim(), pass1);
 
-      // Actualiza perfil (displayName)
-      await updateProfile(cred.user, {
-        displayName: name.trim(),
-      });
+      // 2) Update profile displayName
+      await updateProfile(cred.user, { displayName: fullName.trim() });
 
-      // 🔗 Inicializa/“sincroniza” el doc customers/{uid} llamando al endpoint protegido
+      // 3) Force-refresh ID token
+      const idToken = await cred.user.getIdToken(true);
+
+      // 4) Initialize customers/{uid} (stores AUTH email server-side)
       try {
-        const token = await cred.user.getIdToken();
         await fetch("/api/customers/me", {
           method: "GET",
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { Authorization: `Bearer ${idToken}` },
           cache: "no-store",
         });
-        // No es crítico manejar la respuesta aquí: el doc se crea/actualiza en el backend.
-      } catch {
-        // Ignorar cualquier error aquí; el doc también se creará al abrir /user-config
-      }
+      } catch {}
 
-      // Redirige al home (o donde gustes)
+      // 5) Save profile fields & marketing preference
+      try {
+        await fetch("/api/customers/me", {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            displayName: fullName.trim(),
+            marketingOptIn,
+          }),
+        });
+      } catch {}
+
+      // 6) Send welcome email (idempotent on server)
+      try {
+        await fetch("/api/tx/welcome", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+            "content-type": "application/json",
+          },
+        });
+      } catch {}
+
+      // 7) Redirect
       router.replace("/");
     } catch (e: any) {
-      setErr(e?.message || "The account could not be created.");
+      setErr(e?.message || "The account could not be created. Please try again.");
     } finally {
       setBusy(false);
     }
@@ -79,13 +113,13 @@ export default function AccountsRegisterPage() {
 
       <form onSubmit={onSubmit} className="card p-3 border-0 shadow-sm">
         <div className="mb-3">
-          <label className="form-label">Name</label>
+          <label className="form-label">Full name</label>
           <input
             className="form-control"
             type="text"
-            placeholder="Your name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            placeholder="John Doe"
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
             required
             disabled={busy}
           />
@@ -97,7 +131,7 @@ export default function AccountsRegisterPage() {
             className="form-control"
             type="email"
             autoComplete="email"
-            placeholder="you@youremail.com"
+            placeholder="you@example.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
@@ -121,12 +155,12 @@ export default function AccountsRegisterPage() {
         </div>
 
         <div className="mb-3">
-          <label className="form-label">Confirm Password</label>
+          <label className="form-label">Confirm password</label>
           <input
             className="form-control"
             type="password"
             autoComplete="new-password"
-            placeholder="Confirm password"
+            placeholder="Re-enter your password"
             value={pass2}
             onChange={(e) => setPass2(e.target.value)}
             required
@@ -134,6 +168,40 @@ export default function AccountsRegisterPage() {
             minLength={6}
           />
         </div>
+
+        {/* REQUIRED acknowledgement */}
+        <div className="form-check mb-2">
+          <input
+            className="form-check-input"
+            type="checkbox"
+            id="ackMarketing"
+            checked={ackMarketing}
+            onChange={(e) => setAckMarketing(e.target.checked)}
+            disabled={busy}
+            required
+          />
+          <label className="form-check-label" htmlFor="ackMarketing">
+            I understand that my email may be used for marketing communications if I opt in.
+          </label>
+        </div>
+
+        {/* OPTIONAL opt-in */}
+        <div className="form-check form-switch mb-1">
+          <input
+            className="form-check-input"
+            type="checkbox"
+            id="optInSwitch"
+            checked={marketingOptIn}
+            onChange={(e) => setMarketingOptIn(e.target.checked)}
+            disabled={busy}
+          />
+          <label className="form-check-label" htmlFor="optInSwitch">
+            Send me promotions and special offers.
+          </label>
+        </div>
+        <p className="text-muted small mb-3">
+          You can unsubscribe at any time using the links in our emails.
+        </p>
 
         <button className="btn btn-success w-100" disabled={busy}>
           {busy ? "Creating..." : "Create account"}

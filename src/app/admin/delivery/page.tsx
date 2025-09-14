@@ -377,6 +377,19 @@ async function updateDeliveryMeta(
 }
 
 /* --------------------------------------------
+   ✅ AGREGADO: disparar correo "Order Delivered"
+--------------------------------------------- */
+async function triggerDeliveredEmail(orderId: string) {
+  try {
+    await apiFetch(`/api/tx/order-delivered?id=${encodeURIComponent(orderId)}`, {
+      method: 'POST',
+    });
+  } catch {
+    // silencioso: no bloquear UI si el correo falla
+  }
+}
+
+/* --------------------------------------------
    UI helpers
 --------------------------------------------- */
 function BadgeStatus({ s }: { s: StatusSnake }) {
@@ -577,6 +590,8 @@ function DeliveryCard({
     try {
       setBusy(true);
       await updateDeliveryMeta(o.id, { delivery: 'delivered' });
+      // ✅ AGREGADO: disparar correo de "Order Delivered" (idempotente en el server)
+      await triggerDeliveredEmail(o.id);
       await onRefresh();
     } catch (e: any) {
       alert(e?.message || 'Error');

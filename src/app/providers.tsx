@@ -160,6 +160,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await hydrate(u, true);
   }, [hydrate]);
 
+  // ⬇️⬇️⬇️ AGREGADO: Welcome email para Google Auth (idempotente en el server)
+  useEffect(() => {
+    if (loading) return;
+    if (!user || !idToken) return;
+
+    const key = `oc-welcome-v1:${user.uid}`;
+    try {
+      if (typeof window !== "undefined" && window.sessionStorage.getItem(key)) return;
+      if (typeof window !== "undefined") window.sessionStorage.setItem(key, "1");
+    } catch {}
+
+    (async () => {
+      try {
+        // Asegura que el doc customers/{uid} exista y tenga email/displayName
+        await fetch("/api/customers/me", {
+          method: "GET",
+          headers: { Authorization: `Bearer ${idToken}` },
+          cache: "no-store",
+        });
+
+        // Dispara el welcome (en server es idempotente; solo envía una vez por usuario)
+        await fetch("/api/tx/welcome", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+            "content-type": "application/json",
+          },
+        });
+      } catch {
+        // silencioso
+      }
+    })();
+  }, [user, idToken, loading]);
+  // ⬆️⬆️⬆️ FIN AGREGADO
+
   const value = useMemo<Ctx>(
     () => ({ user, loading, idToken, claims, flags, refreshRoles }),
     [user, loading, idToken, claims, flags, refreshRoles]

@@ -108,6 +108,9 @@ type Promotion = {
   value: number;           // percent: 1-100; fixed: GTQ
   active: boolean;
 
+  // 🔹 Nuevo: visibilidad para clientes
+  secret?: boolean;        // true => no se muestra en el área de clientes
+
   // Vigencia
   startAt?: any | null;    // Firestore Timestamp/Date
   endAt?: any | null;
@@ -140,7 +143,7 @@ type Promotion = {
 function fmtQ(n?: number) {
   if (typeof n !== "number") return "—";
   try {
-    return new Intl.NumberFormat("es-GT", { style: "currency", currency: "GTQ" }).format(n);
+    return new Intl.NumberFormat("es-GT", { style: "currency", currency: "USD" }).format(n);
   } catch {
     return `Q ${n.toFixed(2)}`;
   }
@@ -223,6 +226,9 @@ function AdminPromotionsPage_Inner() {
   const [type, setType] = useState<"percent" | "fixed">("percent");
   const [value, setValue] = useState<string>(""); // string para campo controlado
   const [active, setActive] = useState(true);
+
+  // 🔹 Nuevo: secret
+  const [secret, setSecret] = useState<boolean>(false);
 
   const [startAt, setStartAt] = useState<string>(""); // datetime-local string
   const [endAt, setEndAt] = useState<string>("");
@@ -343,9 +349,23 @@ function AdminPromotionsPage_Inner() {
       const codeV = normalizeCode(code);
       if (!codeV) { alert("Code is required"); return; }
 
-      const valN = toNumber(value);
-      if (!valN || valN <= 0) { alert(type === "percent" ? "Invalid percentage" : "Invalid amount"); return; }
-      if (type === "percent" && (valN <= 0 || valN > 100)) { alert("Percentage must be 1–100"); return; }
+      // --------- ÚNICO CAMBIO: normalización robusta del valor ----------
+      let valN = Number(String(value).replace(',', '.'));
+      if (!Number.isFinite(valN) || valN <= 0) {
+        alert(type === "percent" ? "Invalid percentage" : "Invalid amount");
+        return;
+      }
+      if (type === "percent") {
+        // Redondea a 2 decimales y “snap” a entero si está muy cerca (evita 9.97 en lugar de 10)
+        valN = Math.round(valN * 100) / 100;
+        const near = Math.round(valN);
+        if (Math.abs(valN - near) < 0.05) valN = near;
+        if (valN <= 0 || valN > 100) { alert("Percentage must be 1–100"); return; }
+      } else {
+        // fixed: 2 decimales
+        valN = Math.round(valN * 100) / 100;
+      }
+      // ---------------------------------------------------------------
 
       // chequear unicidad de código
       if (await isCodeTaken(codeV, editingId || undefined)) {
@@ -384,6 +404,10 @@ function AdminPromotionsPage_Inner() {
         type,
         value: valN!,
         active: !!active,
+
+        // 🔹 Nuevo: persistir siempre el boolean (true/false)
+        secret: !!secret,
+
         startAt: startDate || null,
         endAt: endDate || null,
         scope,
@@ -425,6 +449,7 @@ function AdminPromotionsPage_Inner() {
     setType("percent");
     setValue("");
     setActive(true);
+    setSecret(false); // 🔹 reset
     setStartAt("");
     setEndAt("");
     setScopeCats([]);
@@ -445,6 +470,7 @@ function AdminPromotionsPage_Inner() {
     setType((p.type as any) || "percent");
     setValue(typeof p.value === "number" ? String(p.value) : "");
     setActive(p.active !== false);
+    setSecret(!!p.secret); // 🔹 cargar valor
 
     // Timestamps a datetime-local
     const toLocalStr = (d: any) => {
@@ -559,7 +585,26 @@ function AdminPromotionsPage_Inner() {
                 </div>
               </div>
 
-              <div className="row g-2 mt-1">
+              {/* 🔹 Nuevo: Secret coupon toggle */}
+              <div className="mt-2">
+                <div className="form-check">
+                  <input
+                    className="form-check-input"
+                    type="checkbox"
+                    id="secret"
+                    checked={secret}
+                    onChange={(e) => setSecret(e.target.checked)}
+                  />
+                  <label className="form-check-label" htmlFor="secret">
+                    Secret coupon (hide from customer lists)
+                  </label>
+                </div>
+                <div className="form-text">
+                  Customers won’t see this code in the promotions section, but it can still be applied manually at checkout.
+                </div>
+              </div>
+
+              <div className="row g-2 mt-3">
                 <div className="col-6">
                   <label className="form-label">Discount type</label>
                   <select className="form-select" value={type} onChange={(e) => setType(e.target.value as any)}>
@@ -784,7 +829,10 @@ function AdminPromotionsPage_Inner() {
                         <div className="card-body">
                           <div className="d-flex justify-content-between align-items-start">
                             <div>
-                              <div className="fw-semibold">{p.name}</div>
+                              <div className="fw-semibold">
+                                {p.name}{" "}
+                                {p.secret ? <span className="badge text-bg-warning align-middle ms-1">secret</span> : null}
+                              </div>
                               <div className="text-muted small">
                                 Code: <strong>{p.code}</strong> · {discountSummary(p)} · {p.active ? <span className="badge text-bg-success">active</span> : <span className="badge text-bg-secondary">inactive</span>}
                               </div>

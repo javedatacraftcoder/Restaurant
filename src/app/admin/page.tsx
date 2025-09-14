@@ -23,6 +23,7 @@ const TILES: AdminTile[] = [
   { title: "OPS",         subtitle: "admin/ops",         href: "/admin/ops",         emoji: "🛠️", hint: "Operations and tools" },
   { title: "Promotions",  subtitle: "admin/promotions",  href: "/admin/promotions",  emoji: "🎟️", hint: "Discount codes and conditions" },
   { title: "Delivery options",  subtitle: "admin/delivery-options",  href: "/admin/delivery-options",  emoji: "🛵", hint: "Manage delivery options" },
+  { title: "Marketing", subtitle: "admin/marketing", href: "/admin/marketing", emoji: "✉️", hint: "Brevo: contactos y campañas" },
 ];
 
 export default function AdminPage() {

@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import * as admin from "firebase-admin";
 
 // ---------------------------------------------------------------------------
-// Bootstrap Admin (usa tu variable con JSON del service account o ADC)
+// Bootstrap Admin
 // ---------------------------------------------------------------------------
 function ensureAdmin() {
   if (!admin.apps.length) {
@@ -14,7 +14,6 @@ function ensureAdmin() {
           credential: admin.credential.cert(JSON.parse(json)),
         });
       } else {
-        // Fallback a Application Default Credentials (Vercel Secret / GCP)
         admin.initializeApp({
           credential: admin.credential.applicationDefault(),
         });
@@ -36,15 +35,18 @@ function normalizeOrderType(t: any): "dine-in" | "delivery" | "pickup" | undefin
   return undefined;
 }
 
-// Centavos helpers
-const toCentsFromGTQ = (q: number | string | undefined): number => {
+// Helpers de centavos (agnósticos de moneda)
+const toCentsFromAmount = (q: number | string | undefined): number => {
   const n = Number(q);
   if (!Number.isFinite(n)) return 0;
   return Math.max(0, Math.round(n * 100));
 };
-const toCents = (v?: number): number => (Number.isFinite(v) ? Math.max(0, Math.round(v!)) : 0);
+const toCents = (v?: any): number => {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0;
+};
 
-// Proporcional con residuo para cuadrar centavos
+// Proporcional con residuo para cuadrar centavos (legacy - por líneas)
 function splitProportional(totalCents: number, weights: number[]) {
   const sum = weights.reduce((a, b) => a + b, 0);
   if (totalCents <= 0 || sum <= 0) return weights.map(() => 0);
@@ -52,7 +54,6 @@ function splitProportional(totalCents: number, weights: number[]) {
   const floors = raw.map((x) => Math.floor(x));
   let remainder = totalCents - floors.reduce((a, b) => a + b, 0);
 
-  // asigna 1 centavo a los mayores residuos hasta agotar remainder
   const residuals = raw.map((x, i) => ({ i, frac: x - Math.floor(x) }));
   residuals.sort((a, b) => b.frac - a.frac);
   for (let k = 0; k < residuals.length && remainder > 0; k++) {
@@ -62,19 +63,17 @@ function splitProportional(totalCents: number, weights: number[]) {
   return floors;
 }
 
-// Intenta obtener subtotal de la línea (centavos)
+// Intenta obtener subtotal de la línea (centavos) - legacy
 function getLineSubtotalCents(line: any): number {
-  // preferencia: total en centavos si viene
+  if (Number.isFinite(line?.lineSubtotalCents)) return toCents(line.lineSubtotalCents);
   if (Number.isFinite(line?.lineTotalCents)) return toCents(line.lineTotalCents);
   if (Number.isFinite(line?.totalPriceCents)) return toCents(line.totalPriceCents);
 
-  // o unitario * cantidad en centavos
   const qty = Number.isFinite(line?.quantity) ? Math.max(1, Math.floor(line.quantity)) : 1;
   if (Number.isFinite(line?.unitPriceCents)) return toCents(line.unitPriceCents) * qty;
 
-  // o total en GTQ
-  if (Number.isFinite(line?.totalPrice)) return toCentsFromGTQ(line.totalPrice);
-  if (Number.isFinite(line?.unitPrice)) return toCentsFromGTQ(line.unitPrice) * qty;
+  if (Number.isFinite(line?.totalPrice)) return toCentsFromAmount(line.totalPrice);
+  if (Number.isFinite(line?.unitPrice)) return toCentsFromAmount(line.unitPrice) * qty;
 
   return 0;
 }
@@ -101,21 +100,10 @@ export async function POST(req: NextRequest) {
 
     const userUid: string | undefined = body?.userUid || undefined;
 
-    // Líneas del carrito
-    const lines: any[] = Array.isArray(body?.lines) ? body.lines : [];
-    if (!lines.length) {
-      return NextResponse.json({ ok: false, reason: "Carrito vacío" }, { status: 400 });
-    }
-
     // -----------------------------------------------------------------------
     // Cargar promoción por code (y que esté activa)
     // -----------------------------------------------------------------------
-    const q = await db
-      .collection("promotions")
-      .where("code", "==", code)
-      .limit(1)
-      .get();
-
+    const q = await db.collection("promotions").where("code", "==", code).limit(1).get();
     if (q.empty) {
       return NextResponse.json({ ok: false, reason: "Código inválido o inexistente" }, { status: 404 });
     }
@@ -151,128 +139,174 @@ export async function POST(req: NextRequest) {
     }
 
     // (Opcional) límites — global / por usuario — se recomienda contar en cierre de orden
-    // Aquí sólo informamos, no bloqueamos definitivamente (para evitar abuso de 'probe'):
     const globalLimit = Number(promo?.constraints?.globalLimit);
     const perUserLimit = Number(promo?.constraints?.perUserLimit);
 
     // -----------------------------------------------------------------------
-    // Asegurar metadatos de categoría / subcategoría por línea
-    // (si no vienen, los resolvemos desde menuItems/{id})
+    // NUEVO: base por SUBTOTAL (si viene en el body)
     // -----------------------------------------------------------------------
-    const needLookupIdx: number[] = [];
-    const byMenuId: Record<string, any> = {};
+    const subtotalCentsFromBody = Number.isFinite(body?.subtotalCents)
+      ? toCents(body.subtotalCents)
+      : Number.isFinite(body?.subtotal)
+      ? toCentsFromAmount(body.subtotal)
+      : 0;
 
-    lines.forEach((ln, idx) => {
-      if (!ln?.menuItemId) return;
-      const hasCat = typeof ln.categoryId === "string" && ln.categoryId;
-      const hasSub = typeof ln.subcategoryId === "string" && ln.subcategoryId;
-      if (!hasCat || !hasSub) {
-        needLookupIdx.push(idx);
+    let baseCents = subtotalCentsFromBody;
+
+    // Si NO viene subtotal, caemos al flujo legacy por líneas (compatibilidad)
+    let discountByLine: Array<{
+      lineId: string;
+      menuItemId: string;
+      discountCents: number;
+      eligible: boolean;
+      lineSubtotalCents: number;
+    }> = [];
+
+    if (baseCents <= 0) {
+      // -------- LEGACY: calcular elegibilidad por alcance (scope) y sumar líneas --------
+      const lines: any[] = Array.isArray(body?.lines) ? body.lines : [];
+      if (!lines.length) {
+        return NextResponse.json({ ok: false, reason: "Carrito vacío o subtotal no enviado" }, { status: 400 });
       }
-    });
 
-    if (needLookupIdx.length > 0) {
-      // cargar los menuItems faltantes (deduplicado)
-      const missingIds = Array.from(new Set(needLookupIdx.map((i) => lines[i].menuItemId)));
-      const shots = await Promise.all(
-        missingIds.map((id) => db.collection("menuItems").doc(id).get())
-      );
-      shots.forEach((snap) => {
-        if (snap.exists) {
-          byMenuId[snap.id] = snap.data();
-        }
+      // Cargar metadatos faltantes (categoryId/subcategoryId)
+      const needLookupIdx: number[] = [];
+      const byMenuId: Record<string, any> = {};
+
+      lines.forEach((ln, idx) => {
+        if (!ln?.menuItemId) return;
+        const hasCat = typeof ln.categoryId === "string" && ln.categoryId;
+        const hasSub = typeof ln.subcategoryId === "string" && ln.subcategoryId;
+        if (!hasCat || !hasSub) needLookupIdx.push(idx);
       });
-      // hidratar líneas
-      for (const i of needLookupIdx) {
-        const ln = lines[i];
-        const d = byMenuId[ln.menuItemId] || {};
-        if (!ln.categoryId && d.categoryId) ln.categoryId = d.categoryId;
-        if (!ln.subcategoryId && d.subcategoryId) ln.subcategoryId = d.subcategoryId;
+
+      if (needLookupIdx.length > 0) {
+        const missingIds = Array.from(new Set(needLookupIdx.map((i) => lines[i].menuItemId)));
+        const shots = await Promise.all(missingIds.map((id) => db.collection("menuItems").doc(id).get()));
+        shots.forEach((snap) => {
+          if (snap.exists) byMenuId[snap.id] = snap.data();
+        });
+        for (const i of needLookupIdx) {
+          const ln = lines[i];
+          const d = byMenuId[ln.menuItemId] || {};
+          if (!ln.categoryId && d.categoryId) ln.categoryId = d.categoryId;
+          if (!ln.subcategoryId && d.subcategoryId) ln.subcategoryId = d.subcategoryId;
+        }
+      }
+
+      // Alcance
+      const scope = promo?.scope || {};
+      const cats: string[] = Array.isArray(scope.categories) ? scope.categories : [];
+      const subs: string[] = Array.isArray(scope.subcategories) ? scope.subcategories : [];
+      const mis : string[] = Array.isArray(scope.menuItems) ? scope.menuItems : [];
+      const isGlobal = cats.length === 0 && subs.length === 0 && mis.length === 0;
+
+      const eligibleFlags: boolean[] = lines.map((ln) => {
+        if (isGlobal) return true;
+        if (ln?.menuItemId && mis.includes(ln.menuItemId)) return true;
+        if (ln?.subcategoryId && subs.includes(ln.subcategoryId)) return true;
+        if (ln?.categoryId && cats.includes(ln.categoryId)) return true;
+        return false;
+      });
+
+      // Subtotal elegible
+      const subtotals = lines.map((ln) => getLineSubtotalCents(ln));
+      const targetSub = subtotals.reduce((acc, cents, i) => acc + (eligibleFlags[i] ? cents : 0), 0);
+      if (targetSub <= 0) {
+        return NextResponse.json({ ok: false, reason: "No hay ítems elegibles para este código" }, { status: 400 });
+      }
+
+      // Mínimo de subtotal elegible (si aplica)
+      const minTargetSubtotal = Number(promo?.constraints?.minTargetSubtotal);
+      if (Number.isFinite(minTargetSubtotal) && minTargetSubtotal > 0) {
+        const minCents = toCentsFromAmount(minTargetSubtotal);
+        if (targetSub < minCents) {
+          return NextResponse.json(
+            { ok: false, reason: `Subtotal elegible insuficiente (mínimo ${minTargetSubtotal.toFixed(2)})` },
+            { status: 400 }
+          );
+        }
+      }
+
+      baseCents = targetSub;
+
+      // Distribución proporcional (se completa luego de calcular discountTotal)
+      discountByLine = lines.map((ln, i) => ({
+        lineId: ln.lineId ?? String(i),
+        menuItemId: ln.menuItemId,
+        discountCents: 0,
+        eligible: !!eligibleFlags[i],
+        lineSubtotalCents: subtotals[i],
+      }));
+    } else {
+      // Si usamos subtotal directo, opcionalmente validar mínimo
+      const minTargetSubtotal = Number(promo?.constraints?.minTargetSubtotal);
+      if (Number.isFinite(minTargetSubtotal) && minTargetSubtotal > 0) {
+        const minCents = toCentsFromAmount(minTargetSubtotal);
+        if (baseCents < minCents) {
+          return NextResponse.json(
+            { ok: false, reason: `Subtotal insuficiente (mínimo ${minTargetSubtotal.toFixed(2)})` },
+            { status: 400 }
+          );
+        }
       }
     }
 
     // -----------------------------------------------------------------------
-    // Determinar elegibilidad por alcance (scope)
-    // -----------------------------------------------------------------------
-    const scope = promo?.scope || {};
-    const cats: string[] = Array.isArray(scope.categories) ? scope.categories : [];
-    const subs: string[] = Array.isArray(scope.subcategories) ? scope.subcategories : [];
-    const mis : string[] = Array.isArray(scope.menuItems) ? scope.menuItems : [];
-
-    const isGlobal = cats.length === 0 && subs.length === 0 && mis.length === 0;
-
-    const eligibleFlags: boolean[] = lines.map((ln) => {
-      if (isGlobal) return true;
-      if (ln?.menuItemId && mis.includes(ln.menuItemId)) return true;
-      if (ln?.subcategoryId && subs.includes(ln.subcategoryId)) return true;
-      if (ln?.categoryId && cats.includes(ln.categoryId)) return true;
-      return false;
-    });
-
-    // Subtotal elegible
-    const subtotals = lines.map((ln) => getLineSubtotalCents(ln));
-    const targetSub = subtotals.reduce((acc, cents, i) => acc + (eligibleFlags[i] ? cents : 0), 0);
-    if (targetSub <= 0) {
-      return NextResponse.json({ ok: false, reason: "No hay ítems elegibles para este código" }, { status: 400 });
-    }
-
-    // Mínimo de subtotal elegible (GTQ → cents)
-    const minTargetSubtotalGTQ = Number(promo?.constraints?.minTargetSubtotal);
-    if (Number.isFinite(minTargetSubtotalGTQ) && minTargetSubtotalGTQ > 0) {
-      const minCents = toCentsFromGTQ(minTargetSubtotalGTQ);
-      if (targetSub < minCents) {
-        return NextResponse.json(
-          { ok: false, reason: `Subtotal elegible insuficiente (mínimo Q ${minTargetSubtotalGTQ.toFixed(2)})` },
-          { status: 400 }
-        );
-      }
-    }
-
-    // -----------------------------------------------------------------------
-    // Calcular descuento total y prorratear por línea
+    // Calcular descuento total sobre baseCents
     // -----------------------------------------------------------------------
     const type = (promo?.type === "fixed" ? "fixed" : "percent") as "percent" | "fixed";
     const valueNum = Number(promo?.value || 0);
 
     let discountTotal = 0;
     if (type === "percent") {
-      if (!(valueNum > 0 && valueNum <= 100)) {
+      // 🔧 Normalización robusta del porcentaje (evita 9.97 cuando debería ser 10)
+      let percent = Math.round(valueNum * 100) / 100;
+      const near = Math.round(percent);
+      if (Math.abs(percent - near) < 0.05) percent = near;
+
+      if (!(percent > 0 && percent <= 100)) {
         return NextResponse.json({ ok: false, reason: "Porcentaje inválido en promoción" }, { status: 400 });
       }
-      discountTotal = Math.floor((targetSub * valueNum) / 100);
+      // ✅ Redondeo al centavo (no floor)
+      discountTotal = Math.round((baseCents * percent) / 100);
+
+      // Reescribimos valueNum normalizado en la respuesta (para consistencia con UI)
+      (promo as any)._normalizedPercent = percent;
     } else {
-      const fixedCents = toCentsFromGTQ(valueNum);
-      discountTotal = Math.min(fixedCents, targetSub);
+      const fixedCents = toCentsFromAmount(valueNum);
+      discountTotal = Math.min(fixedCents, baseCents);
     }
 
     if (discountTotal <= 0) {
       return NextResponse.json({ ok: false, reason: "El descuento calculado es cero" }, { status: 400 });
     }
 
-    // Distribución proporcional SOLO sobre líneas elegibles
-    const weights = lines.map((_, i) => (eligibleFlags[i] ? subtotals[i] : 0));
-    const perLineEligible = splitProportional(discountTotal, weights);
+    // Si venimos del flujo legacy por líneas, prorrateamos el descuento en elegibles
+    if (discountByLine.length > 0) {
+      const weights = discountByLine.map((d) => (d.eligible ? d.lineSubtotalCents : 0));
+      const perLineEligible = splitProportional(discountTotal, weights);
+      discountByLine = discountByLine.map((d, i) => ({
+        ...d,
+        discountCents: perLineEligible[i] || 0,
+      }));
+    }
 
-    const discountByLine = lines.map((ln, i) => ({
-      lineId: ln.lineId ?? String(i),
-      menuItemId: ln.menuItemId,
-      discountCents: perLineEligible[i] || 0,
-      eligible: !!eligibleFlags[i],
-      lineSubtotalCents: subtotals[i],
-    }));
+    const pctForMsg =
+      type === "percent"
+        ? (typeof (promo as any)?._normalizedPercent === "number"
+            ? (promo as any)._normalizedPercent
+            : valueNum)
+        : undefined;
 
-    // Información útil para UI
     const message =
       type === "percent"
-        ? `${valueNum}% aplicado sobre subtotal elegible`
-        : `Q ${valueNum.toFixed(2)} aplicado sobre subtotal elegible`;
+        ? `${pctForMsg}% aplicado sobre subtotal`
+        : `${(valueNum).toFixed(2)} aplicado sobre subtotal`;
 
-    // Nota sobre límites de uso (informativa aquí; cuenta final en cierre de orden)
     const infoLimits = {
       globalLimit: Number.isFinite(globalLimit) ? globalLimit : undefined,
       perUserLimit: Number.isFinite(perUserLimit) ? perUserLimit : undefined,
-      // Para chequear per-user real aquí, necesitaríamos UID verificado vía cookie/token.
-      // En checkout, podemos pasar userUid y leer promotions/{id}/usages/{userUid}.
     };
 
     return NextResponse.json({
@@ -280,14 +314,10 @@ export async function POST(req: NextRequest) {
       promoId: promo.id,
       code,
       type,
-      value: valueNum,
+      value: type === "percent" ? pctForMsg : valueNum,
       discountTotalCents: discountTotal,
-      discountByLine,
-      appliedScope: {
-        categories: cats,
-        subcategories: subs,
-        menuItems: mis,
-      },
+      discountByLine, // [] cuando viene subtotal directo
+      appliedScope: undefined, // opcional
       limits: infoLimits,
       message,
     });
@@ -297,5 +327,5 @@ export async function POST(req: NextRequest) {
       { ok: false, reason: e?.message || "Error interno" },
       { status: 500 }
     );
-    }
+  }
 }
