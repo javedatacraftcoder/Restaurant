@@ -104,7 +104,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     const patch: any = {
       items,
-      currency: body.currency ?? current.currency ?? 'GTQ',
+      currency: body.currency ?? current.currency ?? 'USD',
       amounts: body.amounts ?? current.amounts ?? null,
       orderInfo: {
         ...(current.orderInfo || {}),

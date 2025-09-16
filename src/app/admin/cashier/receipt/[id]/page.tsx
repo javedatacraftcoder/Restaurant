@@ -96,6 +96,16 @@ type Amounts = {
   tip?: number;
   total?: number;
 };
+
+// 🆕 Tipo ligero para snapshot de impuestos (solo campos usados en ticket)
+type TaxSnapshot = {
+  currency: string;
+  totals: { subTotalCents: number; taxCents: number; grandTotalCents: number };
+  summaryByRate: Array<{ code?: string; rateBps: number; taxCents: number }>;
+  surcharges?: Array<{ baseCents: number; taxCents: number }>;
+  customer?: { taxId?: string; name?: string };
+} | null | undefined;
+
 type OrderDoc = {
   id: string;
   orderNumber?: string;
@@ -131,8 +141,11 @@ type OrderDoc = {
 
   // 👇 importante para vincular al customer
   createdBy?: { uid?: string; email?: string | null } | null;
-  userEmail?: string | null;            // fallback antiguo
-  userEmail_lower?: string | null;      // fallback antiguo
+  userEmail?: string | null;
+  userEmail_lower?: string | null;
+
+  // 🆕 Snapshot fiscal guardado por Checkout
+  taxSnapshot?: TaxSnapshot;
 };
 
 const toNum = (x: any) => { const n = Number(x); return Number.isFinite(n) ? n : undefined; };
@@ -476,6 +489,11 @@ function ReceiptPage_Inner() {
             <div className="muted">#{order.orderNumber || order.id} · {toDate(order.createdAt ?? new Date()).toLocaleString()}</div>
             {table ? <div className="muted">Table: {table}</div> : null}
 
+            {/* ✅ NUEVO: mostrar número de factura si existe */}
+            {(order as any)?.invoiceNumber && (
+              <div className="muted">Invoice: {(order as any).invoiceNumber}</div>
+            )}
+
             {/* Cliente / entrega / teléfono (existente) */}
             {customerName ? <div className="muted">Client: {customerName}</div> : null}
             {fullAddress ? <div className="muted">Delivery: {fullAddress}</div> : (address ? <div className="muted">Delivery: {address}</div> : null)}
@@ -582,6 +600,41 @@ function ReceiptPage_Inner() {
             {Number(totals.tip || 0) > 0 && <div className="row"><div>Tip</div><div>{fmtCurrency(totals.tip)}</div></div>}
 
             <div className="row tot"><div>Gran total</div><div>{fmtCurrency(grandTotalShown)}</div></div>
+
+            {/* 🆕 Bloque fiscal (taxSnapshot) — imprime desglose exacto */}
+            {(() => {
+              const s = (order as any)?.taxSnapshot as TaxSnapshot;
+              return s && (
+                <>
+                  <div className="hr"></div>
+                  <div className="muted">Tax breakdown</div>
+                  <div className="row">
+                    <div>Subtotal</div>
+                    <div>{(s.totals.subTotalCents/100).toFixed(2)} {s.currency}</div>
+                  </div>
+                  {Array.isArray(s.summaryByRate) && s.summaryByRate.map((r, i) => (
+                    <div className="row" key={r?.code || i}>
+                      <div>Tax {(r.rateBps/100).toFixed(2)}%</div>
+                      <div>{(r.taxCents/100).toFixed(2)} {s.currency}</div>
+                    </div>
+                  ))}
+                  {Array.isArray(s.surcharges) && s.surcharges.map((x, i) => (
+                    <div className="row" key={i}>
+                      <div>Service charge</div>
+                      <div>
+                        {(x.baseCents/100).toFixed(2)} {s.currency}
+                        {x.taxCents>0 && ` (tax ${(x.taxCents/100).toFixed(2)} ${s.currency})`}
+                      </div>
+                    </div>
+                  ))}
+                  <div className="row tot">
+                    <div>Total</div>
+                    <div>{(s.totals.grandTotalCents/100).toFixed(2)} {s.currency}</div>
+                  </div>
+                  {s.customer?.taxId && <div className="muted">Customer Tax ID: {s.customer.taxId}</div>}
+                </>
+              );
+            })()}
 
             <div className="hr"></div>
             <div className="center muted">Thank you for your purchase!</div>

@@ -101,7 +101,7 @@ export default function CartViewNew() {
         <div className="fw-semibold">Total to pay</div>
         <div className="d-flex align-items-center gap-2">
           <div className="fw-bold fs-5">{fmtQ(grand)}</div>
-          <Link href="/checkout-new" className="btn btn-primary">Go to checkout</Link>
+          <Link href="/checkout-cards" className="btn btn-primary">Go to checkout</Link>
         </div>
       </div>
     </div>

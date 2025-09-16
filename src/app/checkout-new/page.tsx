@@ -7,6 +7,10 @@ import type { DineInInfo, DeliveryInfo } from '@/lib/newcart/types';
 import { useRouter } from 'next/navigation';
 import '@/lib/firebase/client';
 
+// ✅ NUEVO: impuestos
+import { getActiveTaxProfile } from '@/lib/tax/profile';
+import { calculateTaxSnapshot } from '@/lib/tax/engine';
+
 // Firestore
 import {
   getFirestore,
@@ -101,6 +105,10 @@ export default function CheckoutNewPage() {
   const [officeAddr, setOfficeAddr] = useState<Addr | null>(null);
   const [addressLabel, setAddressLabel] = useState<'' | 'home' | 'office'>('');
 
+  // ✅ NUEVO: datos de facturación del cliente para el snapshot fiscal
+  const [customerTaxId, setCustomerTaxId] = useState<string>('');
+  const [customerBillingName, setCustomerBillingName] = useState<string>('');
+
   // Opciones de envío (solo delivery)
   const [deliveryOptions, setDeliveryOptions] = useState<DeliveryOption[]>([]);
   const [selectedDeliveryOptionId, setSelectedDeliveryOptionId] = useState<string>('');
@@ -120,6 +128,17 @@ export default function CheckoutNewPage() {
   const [promoError, setPromoError] = useState<string | null>(null);
   const [promo, setPromo] = useState<AppliedPromo | null>(null);
   const promoDiscountGTQ = useMemo(() => (promo?.discountTotalCents ?? 0) / 100, [promo]);
+
+  // ✅ NUEVO: perfil activo y snapshot para UI de impuestos
+  const [activeProfile, setActiveProfile] = useState<any | null>(null);
+  const [taxUI, setTaxUI] = useState<{
+    pricesIncludeTax: boolean;
+    currency: string;
+    subTotalQ: number;
+    taxQ: number;
+    itemsGrandQ: number;
+    grandPayableQ: number; // itemsGrand + deliveryOutside + tip - discount
+  } | null>(null);
 
   // Cargar datos del cliente
   useEffect(() => {
@@ -141,6 +160,12 @@ export default function CheckoutNewPage() {
         setCustomerName(c.displayName || u.displayName || '');
         if (c.phone && !phone) setPhone(c.phone);
 
+        // ✅ NUEVO: tomar billing.taxId y billing.name para el snapshot de impuestos
+        const taxId = c?.taxID ? String(c.taxID) : (c?.billing?.taxId ? String(c.billing.taxId) : '');
+        if (taxId) setCustomerTaxId(taxId);
+        const bName = c?.billing?.name ? String(c.billing.name) : '';
+        if (bName) setCustomerBillingName(bName);
+
         const h: Addr | null = c.addresses?.home || null;
         const o: Addr | null = c.addresses?.office || null;
         setHomeAddr(h);
@@ -161,6 +186,14 @@ export default function CheckoutNewPage() {
     };
     run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ✅ NUEVO: cargar perfil ACTIVO (una vez)
+  useEffect(() => {
+    (async () => {
+      const p = await getActiveTaxProfile();
+      setActiveProfile(p || null);
+    })();
   }, []);
 
   const hasDropdown =
@@ -261,11 +294,107 @@ export default function CheckoutNewPage() {
     return Number(opt?.price || 0);
   }, [mode, deliveryOptions, selectedDeliveryOptionId]);
 
-  // Gran total con descuento aplicado
+  // Gran total visual (legacy) SIN impuestos
   const grandTotal = useMemo(() => {
     const t = (mode === 'delivery' ? 0 : tip) || 0;
     return subtotal + deliveryFee + t - promoDiscountGTQ;
   }, [subtotal, deliveryFee, tip, mode, promoDiscountGTQ]);
+
+  // ✅ NUEVO: calcular snapshot para la UI y total pagable con impuestos
+  useEffect(() => {
+    const toCents = (n: number | undefined | null) => Math.round(((n as number) || 0) * 100);
+
+    const zeroProfile: any = {
+      id: 'no-tax',
+      country: 'GT',
+      currency: process.env.NEXT_PUBLIC_PAY_CURRENCY || 'USD',
+      pricesIncludeTax: true,
+      rounding: 'half_up',
+      rates: [{ code: 'ALL', label: 'No tax', rateBps: 0, appliesTo: 'all' }],
+      surcharges: [],
+      delivery: { mode: 'as_line', taxable: false },
+    };
+
+    const profile = activeProfile || zeroProfile;
+
+    // mapear líneas del carrito → motor
+    const linesForTax = cart.items.map((ln: any) => {
+      const perUnitTotal = cart.computeLineTotal({ ...ln, quantity: 1 });
+      const perUnitExtras = perUnitTotal - ln.basePrice;
+      return {
+        lineId: ln.menuItemId + '-' + (Math.random().toString(36).slice(2)),
+        quantity: ln.quantity,
+        unitPriceCents: toCents(ln.basePrice),
+        addonsCents: 0,
+        optionsDeltaCents: toCents(perUnitExtras),
+        lineTotalCents: undefined,
+        taxExempt: false,
+        name: ln.menuItemName,
+      };
+    });
+
+    // dirección para jurisdicción
+    let addressInfo: any = undefined;
+    if (mode === 'delivery') {
+      const selectedAddr = addressLabel === 'home' ? homeAddr
+                        : addressLabel === 'office' ? officeAddr
+                        : null;
+      addressInfo = selectedAddr ? {
+        line1: selectedAddr.line1 || '',
+        city: selectedAddr.city || '',
+        country: selectedAddr.country || '',
+        zip: selectedAddr.zip || '',
+        notes: selectedAddr.notes || '',
+      } : {
+        line1: address || '',
+        city: homeAddr?.city || officeAddr?.city || '',
+        country: homeAddr?.country || officeAddr?.country || '',
+        zip: homeAddr?.zip || officeAddr?.zip || '',
+      };
+    }
+
+    const draftInput = {
+      currency: profile?.currency ?? 'USD',
+      orderType: mode, // 'dine-in' | 'delivery' | 'pickup'
+      lines: linesForTax,
+      customer: {
+        taxId: customerTaxId || undefined,
+        name: customerBillingName || customerName || undefined,
+      },
+      deliveryFeeCents:
+        (profile?.delivery?.mode === 'as_line' && mode === 'delivery')
+          ? toCents(deliveryFee)
+          : 0,
+      deliveryAddressInfo: mode === 'delivery' ? (addressInfo || null) : null,
+    };
+
+    const snap = calculateTaxSnapshot(draftInput as any, profile as any);
+    const subQ = (snap?.totals?.subTotalCents || 0) / 100;
+    const taxQ = (snap?.totals?.taxCents || 0) / 100;
+    const itemsGrandQ = (snap?.totals?.grandTotalCents || 0) / 100;
+
+    const tipQ = mode === 'delivery' ? 0 : tip;
+    const discountQ = promoDiscountGTQ;
+
+    // si delivery va fuera del engine (out_of_scope), lo sumamos aparte
+    const deliveryOutsideQ =
+      (profile?.delivery?.mode === 'as_line') ? 0 : deliveryFee;
+
+    const grandPayableQ = itemsGrandQ + deliveryOutsideQ + tipQ - discountQ;
+
+    setTaxUI({
+      pricesIncludeTax: !!profile?.pricesIncludeTax,
+      currency: snap?.currency || profile?.currency || 'USD',
+      subTotalQ: subQ,
+      taxQ,
+      itemsGrandQ,
+      grandPayableQ,
+    });
+  }, [
+    activeProfile, cart.items, mode, deliveryFee, tip, promoDiscountGTQ,
+    addressLabel, address, homeAddr, officeAddr, customerTaxId, customerBillingName, customerName,
+    cart
+  ]);
 
   // ---------- Aplicar / quitar promoción ----------
   const applyPromo = useCallback(async () => {
@@ -287,9 +416,8 @@ export default function CheckoutNewPage() {
           code,
           orderType: mode,        // 'dine-in' | 'delivery' | 'pickup'
           userUid: u?.uid || null,
-          subtotalCents,          // 👈 base única del descuento (exactamente lo que ves)
-          subtotal,               // (compat) por si el backend acepta monto en decimal
-          // ❌ ya no enviamos lines; dejamos que el backend calcule sobre el subtotal
+          subtotalCents,          // 👈 base única del descuento
+          subtotal,               // (compat)
         }),
       });
 
@@ -382,6 +510,100 @@ export default function CheckoutNewPage() {
       byLine: promo.discountByLine,
     }] : [];
 
+    // =========================
+    // ✅ NUEVO: TAX SNAPSHOT (persistencia)
+    // =========================
+    const toCents = (n: number | undefined | null) => Math.round(((n as number) || 0) * 100);
+
+    // Perfil fiscal activo (si no hay, usamos perfil 0% tasas)
+    const activeProfile = await getActiveTaxProfile();
+    const zeroProfile = {
+      id: 'no-tax',
+      country: 'GT',
+      currency: process.env.NEXT_PUBLIC_PAY_CURRENCY || 'USD',
+      pricesIncludeTax: true,
+      rounding: 'half_up',
+      rates: [
+        { code: 'ALL', label: 'No tax', rateBps: 0, appliesTo: 'all' }
+      ],
+      surcharges: [],
+      delivery: { mode: 'as_line', taxable: false },
+    } as const;
+
+    const profile = (activeProfile || (zeroProfile as any));
+
+    // Mapear líneas del carrito → motor de impuestos (por unidad)
+    const linesForTax = cart.items.map((ln: any) => {
+      const perUnitTotal = cart.computeLineTotal({ ...ln, quantity: 1 });
+      const perUnitExtras = perUnitTotal - ln.basePrice;
+      return {
+        lineId: ln.menuItemId + '-' + (Math.random().toString(36).slice(2)),
+        quantity: ln.quantity,
+        unitPriceCents: toCents(ln.basePrice),
+        addonsCents: 0,
+        optionsDeltaCents: toCents(perUnitExtras),
+        lineTotalCents: undefined,
+        taxExempt: false,
+        name: ln.menuItemName,
+      };
+    });
+
+    // ✅ orderType correcto para el engine (con guion)
+    const orderTypeForTax = mode; // 'dine-in' | 'delivery' | 'pickup'
+
+    // ⬇️ delivery como línea gravable si el perfil lo indica (evita doble conteo)
+    const draftInput = {
+      currency: profile?.currency ?? 'USD',
+      orderType: orderTypeForTax,
+      lines: linesForTax, 
+      customer: {
+        taxId: customerTaxId || undefined,
+        name: customerBillingName || customerName || undefined,
+      },
+      // Phase B: si el perfil dice "as_line", el engine suma el envío como línea
+      deliveryFeeCents:
+        (profile?.delivery?.mode === 'as_line' && mode === 'delivery')
+          ? toCents(deliveryFee)
+          : 0,
+      // Phase C: jurisdicción por dirección de entrega
+      deliveryAddressInfo:
+        mode === 'delivery'
+          ? ((orderInfo as any)?.addressInfo ?? {
+              country: homeAddr?.country || officeAddr?.country,
+              city: homeAddr?.city || officeAddr?.city,
+              zip: homeAddr?.zip || officeAddr?.zip,
+              line1: address || homeAddr?.line1 || officeAddr?.line1,
+              notes: (orderInfo as any)?.addressNotes || undefined,
+            })
+          : null,
+    };
+
+    const taxSnapshot = calculateTaxSnapshot(draftInput as any, profile as any);
+
+    // Composición final en centavos (items con impuesto ± delivery según perfil + tip - descuento)
+    const tipCents = toCents(mode === 'delivery' ? 0 : tip);
+    const discountCents = promo?.discountTotalCents ?? 0;
+
+    // Si el delivery NO va “as_line”, lo sumamos aquí fuera del engine
+    const deliveryOutsideCents =
+      (profile?.delivery?.mode === 'as_line')
+        ? 0
+        : (mode === 'delivery' ? toCents(deliveryFee) : 0);
+
+    const grandTotalWithTaxCents =
+      (taxSnapshot?.totals?.grandTotalCents || 0)
+      + deliveryOutsideCents
+      + tipCents
+      - discountCents;
+
+    // Versión decimal conveniente
+    const grandTotalWithTax =
+      (grandTotalWithTaxCents / 100);
+
+    // =========================
+    // FIN TAX SNAPSHOT
+    // =========================
+
     const orderPayload = {
       items: cart.items.map((ln) => ({
         menuItemId: ln.menuItemId,
@@ -398,20 +620,39 @@ export default function CheckoutNewPage() {
         lineTotal: cart.computeLineTotal(ln),
       })),
 
-      // 🔁 orderTotal ahora es el GRAN TOTAL (subtotal + envío + propina - descuento)
+      // 🔁 orderTotal actual (visual) — lo dejamos intacto
       orderTotal: grandTotal,
 
       // Estructura original (respetada) + nuevos campos
       orderInfo: cleanOrderInfo,
 
-      // Desglose
+      // Desglose (visual actual + impuestos)
       totals: {
         subtotal,
         deliveryFee,
         tip: mode === 'delivery' ? 0 : tip,
         discount: promoDiscountGTQ,
         currency: 'USD',
+        // ✅ NUEVO:
+        tax: (taxSnapshot?.totals?.taxCents || 0) / 100,
+        grandTotalWithTax, // items (+delivery si fuera de engine) + tip - descuento
       },
+
+      // ✅ NUEVO: Totales en CENTAVOS (para exactitud contable)
+      totalsCents: {
+        itemsSubTotalCents: taxSnapshot?.totals?.subTotalCents ?? 0,
+        itemsTaxCents: taxSnapshot?.totals?.taxCents ?? 0,
+        itemsGrandTotalCents: taxSnapshot?.totals?.grandTotalCents ?? 0,
+        // ojo: delivery puede ya venir dentro del engine si "as_line"; aun así persistimos ambos por claridad
+        deliveryFeeCents: (mode === 'delivery') ? Math.round(deliveryFee * 100) : 0,
+        tipCents,
+        discountCents,
+        grandTotalWithTaxCents,
+        currency: draftInput.currency,
+      },
+
+      // ✅ NUEVO: Snapshot fiscal completo — NORMALIZADO para Firestore
+      taxSnapshot: taxSnapshot ? undefToNullDeep(taxSnapshot) : null,
 
       // Promos
       appliedPromotions,
@@ -465,6 +706,9 @@ export default function CheckoutNewPage() {
     (mode === 'dine-in' ? !table.trim() :
      mode === 'delivery' ? !(address && phone && selectedDeliveryOptionId) :
      !phone);
+
+  const showTaxLine = !!taxUI && !taxUI.pricesIncludeTax && taxUI.taxQ > 0;
+  const grandToShow = taxUI?.grandPayableQ ?? grandTotal;
 
   return (
     <div className="container py-4">
@@ -798,6 +1042,14 @@ export default function CheckoutNewPage() {
                   </div>
                 )}
 
+                {/* ✅ NUEVO: Tax SOLO si el perfil es tax-exclusive */}
+                {showTaxLine && (
+                  <div className="d-flex justify-content-between">
+                    <div>Tax</div>
+                    <div className="fw-semibold">{fmtQ(taxUI?.taxQ || 0)}</div>
+                  </div>
+                )}
+
                 {mode !== 'delivery' && (
                   <div className="d-flex align-items-center justify-content-between gap-2 mt-2">
                     <label className="mb-0">Tip (suggested 10%)</label>
@@ -824,7 +1076,7 @@ export default function CheckoutNewPage() {
 
                 <div className="d-flex justify-content-between">
                   <div className="fw-semibold">Grand total</div>
-                  <div className="fw-bold">{fmtQ(grandTotal)}</div>
+                  <div className="fw-bold">{fmtQ(grandToShow)}</div>
                 </div>
               </div>
             </div>

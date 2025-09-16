@@ -105,13 +105,13 @@ type Subcategory = {
 
 type Addon = {
   name: string;
-  price: number; // GTQ
+  price: number; // USD
 };
 
 type MenuItem = {
   id: string;
   name: string;
-  price: number; // GTQ
+  price: number; // USD
   categoryId: string;
   subcategoryId: string;
   imageUrl?: string | null;
@@ -150,7 +150,7 @@ type OptionItem = {
 function fmtQ(n?: number) {
   if (typeof n !== 'number') return '—';
   try {
-    return new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(n);
+    return new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'USD' }).format(n);
   } catch {
     return `Q ${n.toFixed(2)}`;
   }

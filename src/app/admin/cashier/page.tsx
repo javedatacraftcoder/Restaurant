@@ -4,6 +4,7 @@
 import { OnlyCashier } from "@/components/Only";
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { getActiveTaxProfile } from '@/lib/tax/profile'; // ✅ NUEVO
 
 /* ===================================================
    Firebase (client) — igual que en OPS, sin tocar nada
@@ -160,6 +161,16 @@ type Amounts = {
   tip?: number;
   total?: number;
 };
+
+// 🆕 Tipo ligero para el snapshot de impuestos (solo lo que usamos en UI)
+type TaxSnapshot = {
+  currency: string;
+  totals: { subTotalCents: number; taxCents: number; grandTotalCents: number };
+  summaryByRate: Array<{ code?: string; rateBps: number; taxCents: number }>;
+  surcharges?: Array<{ baseCents: number; taxCents: number }>;
+  customer?: { taxId?: string };
+} | null | undefined;
+
 type OrderDoc = {
   id: string;
   orderNumber?: string;
@@ -210,6 +221,9 @@ type OrderDoc = {
     amount?: number;
     currency?: string;
   }>;
+
+  // 🆕 Snapshot fiscal (agregado por el Checkout nuevo)
+  taxSnapshot?: TaxSnapshot;
 };
 
 const TitleMap: Record<StatusSnake, string> = {
@@ -748,6 +762,29 @@ function OrderCard({
           </div>
         </div>
 
+        {/* 🆕 Bloque de Impuestos (taxSnapshot) */}
+        {(() => {
+          const s = (o as any).taxSnapshot as TaxSnapshot;
+          return s && (
+            <div className="small mt-2">
+              <div>Subtotal: {(s.totals.subTotalCents/100).toFixed(2)} {s.currency}</div>
+              {Array.isArray(s.summaryByRate) && s.summaryByRate.map((r, idx) => (
+                <div key={r?.code || idx}>
+                  Tax {(r.rateBps/100).toFixed(2)}%: {(r.taxCents/100).toFixed(2)} {s.currency}
+                </div>
+              ))}
+              {Array.isArray(s.surcharges) && s.surcharges.map((x, i) => (
+                <div key={i}>
+                  Service charge: {(x.baseCents/100).toFixed(2)} {s.currency}
+                  {x.taxCents>0 && <> (tax {(x.taxCents/100).toFixed(2)} {s.currency})</>}
+                </div>
+              ))}
+              <div className="fw-semibold">Total: {(s.totals.grandTotalCents/100).toFixed(2)} {s.currency}</div>
+              {s.customer?.taxId && <div>Customer Tax ID: {s.customer.taxId}</div>}
+            </div>
+          );
+        })()}
+
         {/* (Existente) línea compacta — se conserva */}
         <div className="d-flex justify-content-between align-items-center mt-2">
           <div className="small">
@@ -787,7 +824,25 @@ function CashierPage_Inner() {
     try {
       setBusyId(o.id);
       await advanceToClose(o, async () => {}); // encadena pasos permitidos hasta 'closed'
-      await refresh();
+
+      // ✅ NUEVO: emitir factura si la numeración está activa (no bloquea el cierre)
+      try {
+        const profile = await getActiveTaxProfile();
+        if (profile?.b2bConfig?.invoiceNumbering?.enabled) {
+          await apiFetch(`/api/invoices/issue`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderId: o.id }),
+          });
+          // refrescar para ver invoiceNumber en la tarjeta
+          await refresh();
+        } else {
+          await refresh();
+        }
+      } catch (e) {
+        console.warn('[invoice] issue failed (non-blocking):', e);
+        await refresh();
+      }
     } catch (e: any) {
       alert(e?.message || 'The order could not be closed.');
     } finally {
