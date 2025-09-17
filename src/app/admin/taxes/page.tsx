@@ -35,10 +35,9 @@ function arrayToCsv(arr?: string[]) {
   return (arr || []).join(', ');
 }
 
-/** 🔧 Limpia recursivamente: quita `undefined` y compacta arrays/objetos */
+/** 🔧 Clean recursively: remove `undefined` and compact arrays/objects */
 function deepStripUndefined<T>(value: T): T {
   if (Array.isArray(value)) {
-    // Limpia cada item y elimina los que queden como `undefined`
     const arr = value
       .map((v) => deepStripUndefined(v))
       .filter((v) => v !== undefined) as any[];
@@ -53,20 +52,19 @@ function deepStripUndefined<T>(value: T): T {
     }
     return out;
   }
-  // Primitivos (string/number/boolean/null) se devuelven tal cual
   return value;
 }
 
-/** Normaliza el perfil para Firestore: quita `id`, aplica limpieza y setea `active: true` */
+/** Normalize payload for Firestore: drop `id`, clean up and set `active: true` */
 function normalizeProfileForFirestore(form: TaxProfile) {
   const {
-    id: _drop, // no guardar el id dentro del doc
+    id: _drop,
     ...rest
   } = form as any;
 
   const cleaned = deepStripUndefined({
     ...rest,
-    active: true, // para que el listado lo muestre como activo
+    active: true,
   });
   return cleaned;
 }
@@ -75,7 +73,7 @@ export default function AdminTaxesPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // Editor state (perfil en edición)
+  // Editor state (profile being edited)
   const [form, setForm] = useState<TaxProfile>({
     country: 'GT',
     currency: 'USD',
@@ -86,12 +84,12 @@ export default function AdminTaxesPage() {
     delivery: { mode: 'out_of_scope', taxable: false },
   });
 
-  // Lista de perfiles en la colección
+  // Profiles list
   const [profiles, setProfiles] = useState<
     Array<{ id: string; data: any; active?: boolean }>
   >([]);
 
-  // Cargar perfil activo + lista de perfiles
+  // Load active profile + list
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -123,7 +121,7 @@ export default function AdminTaxesPage() {
   async function fetchProfilesList() {
     const db = getFirestore();
     const snap = await getDocs(collection(db, 'taxProfiles'));
-    // active primero
+    // active first
     const rows = snap.docs.map((d) => ({
       id: d.id,
       data: d.data(),
@@ -132,7 +130,7 @@ export default function AdminTaxesPage() {
     return rows.sort((a, b) => (a.active === b.active ? 0 : a.active ? -1 : 1));
   }
 
-  // Cargar un perfil por id dentro del editor
+  // Load a profile by id into the editor
   async function loadProfileIntoEditor(id: string) {
     try {
       const db = getFirestore();
@@ -140,7 +138,7 @@ export default function AdminTaxesPage() {
       if (!snap.exists()) return alert('Profile not found.');
       const raw: any = snap.data();
 
-      // Mapear a TaxProfile (similar a getActiveTaxProfile)
+      // Map to TaxProfile (similar to getActiveTaxProfile)
       const toRates = Array.isArray(raw.rates)
         ? raw.rates.map((r: any) => ({
             code: String(r.code),
@@ -184,13 +182,13 @@ export default function AdminTaxesPage() {
         b2bConfig: raw.b2bConfig || undefined,
       };
       setForm(profile);
-      alert(`Loaded profile "${snap.id}" into editor. Remember to Save to set it active.`);
+      alert(`Loaded profile "${snap.id}" into the editor. Remember to Save to set it active.`);
     } catch (e: any) {
       alert(e?.message || 'Could not load profile.');
     }
   }
 
-  // Marcar como ACTIVO copiando el doc seleccionado a taxProfiles/active
+  // Mark as ACTIVE by copying selected doc to taxProfiles/active
   async function setActiveProfile(id: string) {
     try {
       const db = getFirestore();
@@ -200,7 +198,7 @@ export default function AdminTaxesPage() {
 
       const payload = normalizeProfileForFirestore({
         ...(raw as TaxProfile),
-        // aseguramos defaults mínimos
+        // ensure minimal defaults
         country: String((raw as any).country || 'GT'),
         currency: String((raw as any).currency || 'USD'),
         pricesIncludeTax: Boolean((raw as any).pricesIncludeTax ?? true),
@@ -210,7 +208,7 @@ export default function AdminTaxesPage() {
       const dbRef = doc(getFirestore(), 'taxProfiles', 'active');
       await setDoc(dbRef, payload, { merge: false });
 
-      // refrescar listado + editor (cargamos el activo)
+      // refresh list + editor (load active)
       const [active, list] = await Promise.all([getActiveTaxProfile(), fetchProfilesList()]);
       if (active) setForm(active);
       setProfiles(list);
@@ -220,7 +218,7 @@ export default function AdminTaxesPage() {
     }
   }
 
-  // Borrar (bloquea si es activo)
+  // Delete (block if active)
   async function removeProfile(id: string, isActive?: boolean) {
     if (isActive) {
       return alert('You cannot delete the active profile. Set another profile active first.');
@@ -241,7 +239,7 @@ export default function AdminTaxesPage() {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  // Helpers de Service Charge (usamos el primer surcharge)
+  // Service Charge helpers (use first surcharge)
   const service = form.surcharges?.[0];
   const setService = (patch: Partial<NonNullable<TaxProfile['surcharges']>[number]>) => {
     const next = [...(form.surcharges || [])];
@@ -250,12 +248,12 @@ export default function AdminTaxesPage() {
     onChange('surcharges', next);
   };
 
-  // ➕ Helper para B2B
+  // ➕ B2B helper
   const setB2B = (patch: any) => {
     onChange('b2bConfig', { ...(form.b2bConfig || {}), ...patch });
   };
 
-  // Guardar editor → escribir doc activo limpio (sin undefined)
+  // Save editor → write active doc (clean)
   const save = async () => {
     setSaving(true);
     try {
@@ -286,8 +284,11 @@ export default function AdminTaxesPage() {
       <Protected>
         <AdminOnly>
           <main className="container py-4">
-            <h1>Taxes</h1>
-            <p>Loading…</p>
+            <div className="d-flex align-items-center justify-content-between mb-3">
+              <h1 className="h3 m-0">Taxes</h1>
+              <span className="spinner-border spinner-border-sm text-secondary" role="status" aria-hidden="true"></span>
+            </div>
+            <p className="text-muted">Loading…</p>
           </main>
         </AdminOnly>
       </Protected>
@@ -298,17 +299,21 @@ export default function AdminTaxesPage() {
     <Protected>
       <AdminOnly>
         <main className="container py-4">
-          <div className="d-flex align-items-center justify-content-between mb-3">
-            <h1 className="h3 m-0">Taxes</h1>
-            <button disabled={saving} className="btn btn-primary" onClick={save}>
+          {/* Top toolbar */}
+          <div className="d-flex align-items-center justify-content-between mb-3 sticky-top bg-body pt-2 pb-2" style={{ zIndex: 1 }}>
+            <div>
+              <h1 className="h3 m-0">Taxes</h1>
+              <div className="text-muted small">Configure VAT/GST, service charges, delivery and B2B options.</div>
+            </div>
+            <button disabled={saving} className="btn btn-primary shadow-sm" onClick={save}>
               {saving ? 'Saving…' : 'Save profile'}
             </button>
           </div>
 
           <div className="row g-3">
-            {/* Columna principal */}
+            {/* Main column */}
             <div className="col-12 col-lg-8">
-              {/* Básicos */}
+              {/* Basics */}
               <div className="card shadow-sm mb-3">
                 <div className="card-header"><strong>Basic settings</strong></div>
                 <div className="card-body">
@@ -339,7 +344,7 @@ export default function AdminTaxesPage() {
                           onChange={(e) => onChange('pricesIncludeTax', e.target.checked)}
                         />
                       </div>
-                      <div className="form-text">Inclusive: el IVA ya está dentro del precio.</div>
+                      <div className="form-text">Inclusive: tax is already included in the listed price.</div>
                     </div>
                     <div className="col-md-3 mb-3">
                       <label className="form-label">Rounding</label>
@@ -348,15 +353,15 @@ export default function AdminTaxesPage() {
                         value={(form.rounding || 'half_up') as RoundingMode}
                         onChange={(e) => onChange('rounding', e.target.value as RoundingMode)}
                       >
-                        <option value="half_up">Half up (5→arriba)</option>
-                        <option value="half_even">Half even (banco)</option>
+                        <option value="half_up">Half up (5 rounds up)</option>
+                        <option value="half_even">Half even (banker’s rounding)</option>
                       </select>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Editor de tasas */}
+              {/* Rates editor */}
               <RatesEditor
                 rates={form.rates || []}
                 onChange={(next) => onChange('rates', next)}
@@ -424,7 +429,7 @@ export default function AdminTaxesPage() {
                     </div>
                   </div>
                   <div className="form-text">
-                    Si es “Taxable”, se calculará IVA al cargo usando el <i>Tax code</i> elegido.
+                    If “Taxable” is enabled, tax will be calculated on the charge using the selected <i>Tax code</i>.
                   </div>
                 </div>
               </div>
@@ -446,8 +451,8 @@ export default function AdminTaxesPage() {
                           })
                         }
                       >
-                        <option value="out_of_scope">Out of scope (fuera del motor)</option>
-                        <option value="as_line">As line (línea sintética)</option>
+                        <option value="out_of_scope">Out of scope (outside the engine)</option>
+                        <option value="as_line">As line (synthetic line)</option>
                       </select>
                     </div>
                     <div className="col-md-4 mb-3">
@@ -487,7 +492,7 @@ export default function AdminTaxesPage() {
                     </div>
                   </div>
                   <div className="form-text">
-                    Con “As line”, el engine agrega una línea “delivery” y, si es taxable, aplica el código elegido.
+                    With “As line”, the engine adds a synthetic “delivery” line and, if taxable, applies the selected code.
                   </div>
                 </div>
               </div>
@@ -529,9 +534,7 @@ export default function AdminTaxesPage() {
                   ) : (
                     <div className="text-muted">
                       <div>No jurisdiction overrides configured.</div>
-                      <div className="small">
-                        (Edición avanzada pendiente: puedes cargar/editar estos documentos en <code>taxProfiles/*</code> desde Firestore o ampliamos este panel más adelante.)
-                      </div>
+                      <div className="small"></div>
                     </div>
                   )}
                 </div>
@@ -559,7 +562,7 @@ export default function AdminTaxesPage() {
                           onChange={(e) => setB2B({ taxExemptWithTaxId: e.target.checked })}
                         />
                       </div>
-                      <div className="form-text">Si está activo, un cliente con NIT marca la orden como exenta.</div>
+                      <div className="form-text">If enabled, an order with a valid Tax ID (NIT) is marked exempt.</div>
                     </div>
                     <div className="col-md-6 mb-3">
                       <label className="form-label">Invoice numbering enabled</label>
@@ -668,23 +671,23 @@ export default function AdminTaxesPage() {
                     </div>
                   )}
                   <div className="form-text">
-                    Para emitir, tu backend debe implementar <code>POST /api/invoices/issue</code> (ya lo usa Caja).
+                    To issue invoices, your backend must implement <code>POST /api/invoices/issue</code> (Cashier already uses it).
                   </div>
                 </div>
               </div>
 
-              {/* Nota Fase C */}
+              {/* Phase C note */}
               <div className="card shadow-sm">
                 <div className="card-body">
                   <div className="small text-muted">
-                    Fase C lista: múltiples tasas, delivery opcionalmente gravable, jurisdicción por dirección,
-                    exento/zero-rated, B2B con numeración opcional.
+                    Phase C ready: multiple rates, optionally taxable delivery, jurisdiction by address,
+                    exempt/zero-rated flags, and B2B with optional numbering.
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Columna lateral */}
+            {/* Side column */}
             <div className="col-12 col-lg-4">
               {/* Inline test */}
               <div className="card shadow-sm mb-3">
@@ -744,7 +747,7 @@ export default function AdminTaxesPage() {
                     </div>
                   )}
                   <div className="small text-muted mt-2">
-                    Usa “Load” para editarlo aquí y “Save profile” para activarlo. “Set active” lo activa tal cual está guardado.
+                    Use “Load” to edit here and “Save profile” to activate it. “Set active” activates the profile as currently stored.
                   </div>
                 </div>
               </div>
@@ -847,7 +850,7 @@ function RatesEditor({
                       <option value="filtered">Filtered</option>
                       <option value="all">All items</option>
                     </select>
-                    <div className="form-text">Si “All items”, se ignoran filtros.</div>
+                    <div className="form-text">If “All items” is selected, filters are ignored.</div>
                   </div>
                 </div>
 
@@ -858,7 +861,7 @@ function RatesEditor({
                         <label className="form-label">Categories (CSV)</label>
                         <input
                           className="form-control"
-                          placeholder="ej. food, beverage"
+                          placeholder="e.g., food, beverage"
                           value={arrayToCsv(r.itemCategoryIn)}
                           onChange={(e) => update(idx, { itemCategoryIn: csvToArray(e.target.value) })}
                         />
@@ -867,7 +870,7 @@ function RatesEditor({
                         <label className="form-label">Tags include (CSV)</label>
                         <input
                           className="form-control"
-                          placeholder="ej. gluten_free, promo"
+                          placeholder="e.g., gluten_free, promo"
                           value={arrayToCsv(r.itemTagIn)}
                           onChange={(e) => update(idx, { itemTagIn: csvToArray(e.target.value) })}
                         />
@@ -876,7 +879,7 @@ function RatesEditor({
                         <label className="form-label">Tags exclude (CSV)</label>
                         <input
                           className="form-control"
-                          placeholder="ej. non_taxable"
+                          placeholder="e.g., non_taxable"
                           value={arrayToCsv(r.excludeItemTagIn)}
                           onChange={(e) => update(idx, { excludeItemTagIn: csvToArray(e.target.value) })}
                         />
@@ -907,7 +910,7 @@ function RatesEditor({
                           );
                         })}
                       </div>
-                      <div className="form-text">Si está vacío, aplica a todos los tipos.</div>
+                      <div className="form-text">If empty, the rate applies to all order types.</div>
                     </div>
                   </div>
                 )}
@@ -1003,7 +1006,7 @@ function JurisdictionsEditor({
         {(!jurisdictions || jurisdictions.length === 0) && (
           <div className="text-muted">
             No jurisdiction overrides configured.
-            <div className="small">(Aquí puedes crearlas. Se guardan con “Save profile”.)</div>
+            <div className="small">(Create them here. They are saved with “Save profile”.)</div>
           </div>
         )}
 
@@ -1056,7 +1059,7 @@ function JurisdictionsEditor({
                         />
                       </div>
                     </div>
-                    <div className="small text-muted">Prioridad: zipPrefix &gt; city &gt; state &gt; country.</div>
+                    <div className="small text-muted">Priority: zipPrefix &gt; city &gt; state &gt; country.</div>
                   </div>
                 </div>
 
@@ -1227,7 +1230,7 @@ function JurisdictionsEditor({
       </div>
       <div className="card-footer">
         <div className="small text-muted">
-          Los overrides se guardan dentro del mismo <code>taxProfiles/*</code> al pulsar “Save profile”.
+          Overrides are stored in the same <code>taxProfiles/*</code> document when you click “Save profile”.
         </div>
       </div>
     </div>

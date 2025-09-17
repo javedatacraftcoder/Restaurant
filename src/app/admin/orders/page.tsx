@@ -397,6 +397,16 @@ function AdminOrdersPageInner() {
                   <div className="text-md-end mt-2 mt-md-0">
                     <div className="fw-bold">{fmtMoney(total, o.currency)}</div>
                     {o.notes ? <div className="small text-muted text-wrap" style={{ maxWidth: 420 }}>Note: {o.notes}</div> : null}
+                     {/* ➕ NEW: Print invoice button (opens printable ticket in new tab) */}
+                    <a
+                      href={`/admin/orders/invoice/${o.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-sm btn-outline-primary mt-2"
+                      title="Print invoice"
+                    >
+                      Print invoice
+                    </a>
                   </div>
                 </div>
 
@@ -483,6 +493,7 @@ function AdminOrdersPageInner() {
                       );
                     })}
                   </div>
+                  
                 )}
               </li>
             );
