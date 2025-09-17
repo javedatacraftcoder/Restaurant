@@ -56,11 +56,14 @@ async function apiFetch(path: string, init?: RequestInit) {
   return res;
 }
 
-/* ===== Firestore (solo para leer billing del cliente) ===== */
+/* ===== Firestore (solo para leer/guardar) ===== */
 async function getFirestoreMod() {
   await ensureFirebaseApp();
   return await import('firebase/firestore');
 }
+
+/* ===== Tax profile (para numeración de factura) ===== */
+import { getActiveTaxProfile } from '@/lib/tax/profile';
 
 /* ============ Tipos & utils ============ */
 type StatusSnake =
@@ -125,7 +128,6 @@ type OrderDoc = {
   notes?: string | null;
   createdAt?: any;
 
-  // checkout (nuevo)
   orderInfo?: {
     type?: 'dine-in' | 'delivery' | 'pickup';
     table?: string;
@@ -139,13 +141,15 @@ type OrderDoc = {
     deliveryOption?: { title: string; description?: string; price: number } | null;
   } | null;
 
-  // 👇 importante para vincular al customer
   createdBy?: { uid?: string; email?: string | null } | null;
   userEmail?: string | null;
   userEmail_lower?: string | null;
 
-  // 🆕 Snapshot fiscal guardado por Checkout
   taxSnapshot?: TaxSnapshot;
+
+  // Persistentes
+  invoiceNumber?: string;      // ahora formateado (Prefix-Series-Number-Suffix)
+  invoiceDate?: any | null;    // Timestamp de la primera emisión
 };
 
 const toNum = (x: any) => { const n = Number(x); return Number.isFinite(n) ? n : undefined; };
@@ -245,7 +249,6 @@ function preferredLines(o: OrderDoc): OrderItemLine[] {
 }
 
 function computeOrderTotalsQ(o: OrderDoc) {
-  // Checkout nuevo (ahora considera discount)
   if (o?.totals && (o.totals.subtotal !== undefined || (o.totals as any).deliveryFee !== undefined || (o.totals as any).tip !== undefined)) {
     const subtotal = Number(o.totals.subtotal || 0);
     const deliveryFee = Number((o.totals as any).deliveryFee || 0);
@@ -254,7 +257,6 @@ function computeOrderTotalsQ(o: OrderDoc) {
     const total = Number.isFinite(o.orderTotal) ? Number(o.orderTotal) : (subtotal + deliveryFee + tip - discount);
     return { subtotal, tax: 0, serviceFee: 0, discount, tip, deliveryFee, total };
   }
-  // amounts
   if (o?.amounts && Number.isFinite(o.amounts.total)) {
     return {
       subtotal: Number(o.amounts.subtotal || 0),
@@ -266,7 +268,6 @@ function computeOrderTotalsQ(o: OrderDoc) {
       total: Number(o.amounts.total || 0),
     };
   }
-  // cents
   if (o?.totals && Number.isFinite(o.totals.totalCents)) {
     return {
       subtotal: centsToQ(o.totals.subtotalCents),
@@ -278,7 +279,6 @@ function computeOrderTotalsQ(o: OrderDoc) {
       total: centsToQ(o.totals.totalCents) + Number(o.amounts?.tip || 0),
     };
   }
-  // fallback
   const lines = preferredLines(o);
   const subtotal = lines.reduce((acc, l) => acc + lineTotalQ(l), 0);
   const tip = Number(o.amounts?.tip || 0);
@@ -339,7 +339,6 @@ async function fetchOrder(id: string): Promise<OrderDoc | null> {
 async function fetchCustomerBillingForOrder(order: OrderDoc) {
   const { getFirestore, doc, getDoc, collection, query, where, limit, getDocs } = await getFirestoreMod();
 
-  // 1) Preferimos UID del creador de la orden
   const uid = order?.createdBy?.uid;
   if (uid) {
     const snap = await getDoc(doc(getFirestore(), 'customers', uid));
@@ -350,7 +349,6 @@ async function fetchCustomerBillingForOrder(order: OrderDoc) {
     }
   }
 
-  // 2) Fallback por email si no hay UID (para órdenes antiguas)
   const email = order?.userEmail || order?.userEmail_lower || order?.createdBy?.email || null;
   if (email) {
     const q = query(
@@ -370,6 +368,77 @@ async function fetchCustomerBillingForOrder(order: OrderDoc) {
   return { name: undefined, taxId: undefined };
 }
 
+/* ======= Emisión/guardado del número de factura ======= */
+/**
+ * Crea y persiste un número de factura **formateado** en:
+ *   - orders/{id}.invoiceNumber  (por ejemplo: "Test-A-0001-1")
+ *   - orders/{id}.invoiceDate    (timestamp de servidor)
+ *
+ * Usa 'counters/invoice' con campo 'next' (inicial 1 si no existe).
+ * Config toma de taxProfile.b2bConfig.invoiceNumbering (o taxProfile.invoiceNumbering como fallback):
+ *   { enabled, prefix, series, padding, suffix }
+ */
+async function ensureInvoiceNumber(orderId: string): Promise<string | null> {
+  const { getFirestore, doc, runTransaction, serverTimestamp } = await getFirestoreMod();
+  const db = getFirestore();
+
+  // Lee configuración del perfil activo (b2bConfig.invoiceNumbering por diseño)
+  let numberingCfg: any = null;
+  try {
+    const profile = await getActiveTaxProfile();
+    numberingCfg =
+      (profile as any)?.b2bConfig?.invoiceNumbering ??
+      (profile as any)?.invoiceNumbering ??
+      null;
+  } catch {
+    numberingCfg = null;
+  }
+
+  const enabled: boolean = !!(numberingCfg?.enabled ?? true);
+  const prefix: string = typeof numberingCfg?.prefix === 'string' ? numberingCfg.prefix : '';
+  const series: string = typeof numberingCfg?.series === 'string' ? numberingCfg.series : '';
+  const suffix: string = typeof numberingCfg?.suffix === 'string' ? numberingCfg.suffix : '';
+  const padding: number = Number.isFinite(Number(numberingCfg?.padding)) ? Math.max(1, Number(numberingCfg.padding)) : 8;
+
+  if (!enabled) return null;
+
+  const orderRef = doc(db, 'orders', orderId);
+  const counterRef = doc(db, 'counters', 'invoice');
+
+  const formatted = await runTransaction(db, async (tx) => {
+    const orderSnap = await tx.get(orderRef);
+    if (!orderSnap.exists()) throw new Error('Order not found');
+
+    const current = orderSnap.get('invoiceNumber') as string | undefined;
+    if (current && String(current).trim()) {
+      return String(current); // idempotente si ya existe
+    }
+
+    const ctrSnap = await tx.get(counterRef);
+    let next = 1;
+    if (ctrSnap.exists() && Number.isFinite(ctrSnap.get('next'))) {
+      next = Number(ctrSnap.get('next'));
+    }
+
+    const padded = String(next).padStart(padding, '0');
+
+    // Construye: [prefix, series, padded, suffix] unidos con '-'
+    const parts: string[] = [];
+    if (prefix) parts.push(prefix);
+    if (series) parts.push(series);
+    parts.push(padded);
+    if (suffix) parts.push(suffix);
+    const invoiceStr = parts.join('-');
+
+    tx.set(counterRef, { next: next + 1, updatedAt: serverTimestamp() }, { merge: true });
+    tx.set(orderRef, { invoiceNumber: invoiceStr, invoiceDate: serverTimestamp() } as any, { merge: true });
+
+    return invoiceStr;
+  });
+
+  return formatted;
+}
+
 /* ============ Página (sin <html>/<body>) ============ */
 function ReceiptPage_Inner() {
   const { id } = useParams<{ id: string }>();
@@ -387,17 +456,29 @@ function ReceiptPage_Inner() {
         const o = await fetchOrder(String(id));
         if (!alive) return;
         if (!o) { setError('Order not found'); return; }
+
+        // Emitir/guardar número de factura si no existe (bloquea antes de imprimir)
+        let inv: string | undefined = o.invoiceNumber;
+        try {
+          if (!inv || !String(inv).trim()) {
+            const issued = await ensureInvoiceNumber(o.id);
+            if (issued) {
+              inv = issued;
+              o.invoiceNumber = issued; // reflejar en estado local
+            }
+          }
+        } catch {
+          // si falla, continuamos para no bloquear el ticket
+        }
+
         setOrder(o);
 
-        // ➕ cargar facturación del customer (sin bloquear la impresión)
+        // cargar facturación del customer (no bloquea)
         fetchCustomerBillingForOrder(o)
-          .then((b) => {
-            if (!alive) return;
-            setBillingName(b?.name);
-            setBillingTaxId(b?.taxId);
-          })
-          .catch(() => { /* silencioso */ });
+          .then((b) => { if (!alive) return; setBillingName(b?.name); setBillingTaxId(b?.taxId); })
+          .catch(() => {});
 
+        // imprimir
         setTimeout(() => { try { window.print(); } catch {} }, 150);
       } catch (e: any) {
         if (!alive) return;
@@ -416,17 +497,14 @@ function ReceiptPage_Inner() {
   const lines = useMemo(() => (order ? preferredLines(order) : []), [order]);
   const totals = useMemo(() => (order ? computeOrderTotalsQ(order) : null), [order]);
 
-  // (existente)
   const address = order?.orderInfo?.address || order?.deliveryAddress || null;
   const phone   = order?.orderInfo?.phone || null;
   const table   = order?.orderInfo?.table || order?.tableNumber || null;
   const notes   = order?.orderInfo?.notes || order?.notes || null;
 
-  // (existente) nombre y dirección completa
   const customerName = order?.orderInfo?.customerName || null;
   const fullAddress  = fullAddressFrom(order);
 
-  // Envío mostrado para ticket
   const deliveryFeeShown = useMemo(() => {
     if (!order) return 0;
     const dfFromTotals = Number(((order as any)?.totals?.deliveryFee) ?? 0);
@@ -434,13 +512,11 @@ function ReceiptPage_Inner() {
     return Number(order.orderInfo?.deliveryOption?.price || 0);
   }, [order]);
 
-  // Gran total mostrado
   const grandTotalShown = useMemo(() => {
     if (!order || !totals) return 0;
     return Number.isFinite(order.orderTotal) ? Number(order.orderTotal) : Number(totals.total || 0);
   }, [order, totals]);
 
-  // ➕ NUEVO: etiqueta de promoción para el ticket
   const promoLabel = useMemo(() => {
     const promos = (order as any)?.appliedPromotions;
     if (Array.isArray(promos) && promos.length) {
@@ -450,7 +526,6 @@ function ReceiptPage_Inner() {
     return (order as any)?.promotionCode || null;
   }, [order]);
 
-  // ➕ NUEVO: detectar pickup para mostrar identificador
   const rawType = order?.orderInfo?.type?.toLowerCase?.();
 
   return (
@@ -483,28 +558,24 @@ function ReceiptPage_Inner() {
         {order && totals && (
           <>
             <h1>{type === 'delivery' ? 'Delivery' : 'Dine-in'}</h1>
-            {/* ➕ Badge "Pickup" agregado sin cambiar el encabezado existente */}
             {rawType === 'pickup' && <div className="muted" style={{ marginTop: 2 }}><span className="badge bg-dark-subtle text-dark">Pickup</span></div>}
 
             <div className="muted">#{order.orderNumber || order.id} · {toDate(order.createdAt ?? new Date()).toLocaleString()}</div>
             {table ? <div className="muted">Table: {table}</div> : null}
 
-            {/* ✅ NUEVO: mostrar número de factura si existe */}
+            {/* ✅ Muestra número de factura formateado */}
             {(order as any)?.invoiceNumber && (
               <div className="muted">Invoice: {(order as any).invoiceNumber}</div>
             )}
 
-            {/* Cliente / entrega / teléfono (existente) */}
             {customerName ? <div className="muted">Client: {customerName}</div> : null}
             {fullAddress ? <div className="muted">Delivery: {fullAddress}</div> : (address ? <div className="muted">Delivery: {address}</div> : null)}
             {phone ? <div className="muted">Phone: {phone}</div> : null}
 
-            {/* ➕ Facturación (si existe en customers/{uid}) */}
             {(billingName || billingTaxId) && <div className="hr"></div>}
             {billingName ? <div className="muted">Invoice to: {billingName}</div> : null}
             {billingTaxId ? <div className="muted">NIT: {billingTaxId}</div> : null}
 
-            {/* Nota de la ORDEN, no de la dirección */}
             {notes ? <div className="muted">Note: {notes}</div> : null}
 
             <div className="hr"></div>
@@ -515,7 +586,6 @@ function ReceiptPage_Inner() {
 
               const groupsHtml: React.ReactNode[] = [];
 
-              // optionGroups
               if (Array.isArray(l?.optionGroups)) {
                 for (const g of l.optionGroups) {
                   const its = Array.isArray(g?.items) ? g.items : [];
@@ -529,7 +599,6 @@ function ReceiptPage_Inner() {
                 }
               }
 
-              // options legacy
               if (Array.isArray(l?.options)) {
                 for (const g of l.options) {
                   const sels = Array.isArray(g?.selected) ? g.selected : [];
@@ -543,7 +612,6 @@ function ReceiptPage_Inner() {
                 }
               }
 
-              // buckets
               for (const key of ['addons', 'extras', 'modifiers'] as const) {
                 const arr = (l as any)[key];
                 if (Array.isArray(arr) && arr.length) {
@@ -577,7 +645,6 @@ function ReceiptPage_Inner() {
             <div className="hr"></div>
             <div className="row"><div>Subtotal</div><div>{fmtCurrency(totals.subtotal)}</div></div>
 
-            {/* ➕ Envío si es delivery */}
             {type === 'delivery' && (
               <div className="row">
                 <div>Delivery{ order?.orderInfo?.deliveryOption?.title ? ` — ${order.orderInfo.deliveryOption.title}` : '' }</div>
@@ -585,7 +652,6 @@ function ReceiptPage_Inner() {
               </div>
             )}
 
-            {/* ➕ Descuento con nombre/código */}
             {Number(totals.discount || 0) > 0 && (
               <div className="row">
                 <div>Discount{promoLabel ? ` (${promoLabel})` : ''}</div>
@@ -596,12 +662,10 @@ function ReceiptPage_Inner() {
             {totals.tax ? <div className="row"><div>Taxes</div><div>{fmtCurrency(totals.tax)}</div></div> : null}
             {totals.serviceFee ? <div className="row"><div>Service</div><div>{fmtCurrency(totals.serviceFee)}</div></div> : null}
 
-            {/* Propina solo si aplica (normalmente dine-in/pickup) */}
             {Number(totals.tip || 0) > 0 && <div className="row"><div>Tip</div><div>{fmtCurrency(totals.tip)}</div></div>}
 
             <div className="row tot"><div>Gran total</div><div>{fmtCurrency(grandTotalShown)}</div></div>
 
-            {/* 🆕 Bloque fiscal (taxSnapshot) — imprime desglose exacto */}
             {(() => {
               const s = (order as any)?.taxSnapshot as TaxSnapshot;
               return s && (

@@ -96,7 +96,7 @@ export async function getActiveTaxProfile(): Promise<TaxProfile | null> {
   const profile: TaxProfile = {
     id: docSnap.id,
     country: String(raw.country || 'GT'),
-    currency: String(raw.currency || 'GTQ'),
+    currency: String(raw.currency || 'USD'),
     pricesIncludeTax: Boolean(raw.pricesIncludeTax ?? true),
     rounding: (raw.rounding === 'half_even' ? 'half_even' : 'half_up'),
     rates: Array.isArray(raw.rates) ? raw.rates.map((r: any) => ({
@@ -241,7 +241,7 @@ export async function upsertActiveTaxProfile(input: Partial<TaxProfile> & { id?:
   // Normalización mínima (respetando tu esquema)
   const normalized: any = {
     country: toStr(input.country ?? (prev as any)?.country ?? 'GT'),
-    currency: toStr(input.currency ?? (prev as any)?.currency ?? 'GTQ'),
+    currency: toStr(input.currency ?? (prev as any)?.currency ?? 'USD'),
     pricesIncludeTax: toBool(input.pricesIncludeTax ?? (prev as any)?.pricesIncludeTax ?? true),
     rounding: (input.rounding === 'half_even' || (prev as any)?.rounding === 'half_even') ? 'half_even' : 'half_up',
 
