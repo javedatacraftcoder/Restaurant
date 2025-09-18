@@ -32,10 +32,12 @@ export function buildCSP({ isDev = false }: { isDev?: boolean } = {}) {
     `base-uri 'self'`,
     `img-src 'self' data: https://*.gstatic.com https://*.googleapis.com`,
     // Nota: 'unsafe-inline' y 'unsafe-eval' facilitan dev. En prod, intenta remover 'unsafe-eval'.
-    `script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com https://www.googletagmanager.com`,
+    // 👇 AGREGADO Turnstile: https://challenges.cloudflare.com
+    `script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com https://www.googletagmanager.com https://challenges.cloudflare.com`,
     `style-src 'self' 'unsafe-inline'`,
     `connect-src ${connectSrc.join(" ")}`,
-    `frame-src https://*.firebaseapp.com https://*.google.com https://*.gstatic.com`,
+    // 👇 AGREGADO Turnstile en frame-src
+    `frame-src https://*.firebaseapp.com https://*.google.com https://*.gstatic.com https://challenges.cloudflare.com`,
     `font-src 'self' data:`,
     `form-action 'self'`,
     `frame-ancestors 'self'`,

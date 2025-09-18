@@ -159,30 +159,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 </Link>
               </li>
 
-              <li className="nav-item">
-                <Link className={`nav-link ${isActive('/admin/menu') ? 'active' : ''}`} href="/admin/menu">Menu</Link>
-              </li>
-              <li className="nav-item">
-                <Link className={`nav-link ${isActive('/admin/orders') ? 'active' : ''}`} href="/admin/orders">Orders</Link>
-              </li>
-              <li className="nav-item">
-                <Link className={`nav-link ${isActive('/admin/roles') ? 'active' : ''}`} href="/admin/roles">Roles</Link>
-              </li>
-              <li className="nav-item">
-                <Link className={`nav-link ${isActive('/admin/ops') ? 'active' : ''}`} href="/admin/ops">Ops</Link>
-              </li>
-              <li className="nav-item">
-                <Link className={`nav-link ${isActive('/admin/edit-orders') ? 'active' : ''}`} href="/admin/edit-orders">Edit Orders</Link>
-              </li>
-              <li className="nav-item">
-                <Link className={`nav-link ${isActive('/admin/promotions') ? 'active' : ''}`} href="/admin/promotions">Promotions</Link>
-              </li>
-              <li className="nav-item">
-                <Link className={`nav-link ${isActive('/admin/delivery-options') ? 'active' : ''}`} href="/admin/delivery-options">Create Delivery</Link>
-              </li>
-              <li className="nav-item">
-                <Link className={`nav-link ${isActive('/admin/marketing') ? 'active' : ''}`} href="/admin/marketing">Marketing</Link>
-              </li>
+              
             </ul>
 
             <div className="d-flex align-items-center gap-2">

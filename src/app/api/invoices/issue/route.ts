@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getFirestore, doc, getDoc, runTransaction, serverTimestamp, updateDoc } from 'firebase/firestore';
+// ❌ (quitado) SDK web de Firestore en server
+// import { getFirestore, doc, getDoc, runTransaction, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { getAuth } from 'firebase-admin/auth'; // si usas admin; opcional según tu setup
+// ✅ Admin SDK helpers (server)
+import { getAdminDB, FieldValue } from "@/lib/firebase/admin";
 
 type InvoiceNumbering = {
   enabled?: boolean;
@@ -27,15 +30,11 @@ function composeInvoiceNumber(cfg: InvoiceNumbering, n: number) {
     num,
     cfg.suffix || ''
   ].filter(Boolean);
-  // une con separadores si quieres, o sin separadores:
   // return parts.join('-'); // ejemplo pref-ABC-000123-suf
   return parts.join('');
 }
 
 function counterDocPath(now = new Date()) {
-  // Sugerencia: 1 documento global + subcolecciones por policy
-  // o un único doc con claves por policy. Aquí: una sola clave.
-  // Si quieres reset por periodo, incluye año/mes/día en la clave.
   const y = now.getFullYear();
   const m = String(now.getMonth()+1).padStart(2,'0');
   const d = String(now.getDate()).padStart(2,'0');
@@ -47,11 +46,12 @@ export async function POST(req: NextRequest) {
     const { orderId } = await req.json();
     if (!orderId) return NextResponse.json({ ok:false, reason:'Missing orderId' }, { status:400 });
 
-    const db = getFirestore();
+    // ✅ Firestore Admin (server)
+    const db = getAdminDB();
 
-    // 1) Leer perfil activo (como ya haces en UI)
-    const profSnap = await getDoc(doc(db, 'taxProfiles', 'active'));
-    if (!profSnap.exists()) return NextResponse.json({ ok:false, reason:'No active tax profile' }, { status:400 });
+    // 1) Leer perfil activo (server/Admin)
+    const profSnap = await db.doc('taxProfiles/active').get();
+    if (!profSnap.exists) return NextResponse.json({ ok:false, reason:'No active tax profile' }, { status:400 });
     const profile = profSnap.data() as TaxProfile;
     const inv = profile?.b2bConfig?.invoiceNumbering;
     if (!inv?.enabled) return NextResponse.json({ ok:false, reason:'Invoice numbering disabled' }, { status:400 });
@@ -60,13 +60,13 @@ export async function POST(req: NextRequest) {
     const now = new Date();
     const { keyYear, keyMonth, keyDay } = counterDocPath(now);
 
-    const countersRef = doc(db, 'counters', 'invoiceNumbering'); // un único doc
-    const orderRef = doc(db, 'orders', orderId);
+    const countersRef = db.doc('counters/invoiceNumbering'); // un único doc
+    const orderRef = db.doc(`orders/${orderId}`);
 
-    const result = await runTransaction(db, async (tx) => {
+    const result = await db.runTransaction(async (tx) => {
       const countersSnap = await tx.get(countersRef);
       const orderSnap = await tx.get(orderRef);
-      if (!orderSnap.exists()) throw new Error('Order not found');
+      if (!orderSnap.exists) throw new Error('Order not found');
 
       const o: any = orderSnap.data() || {};
       if (o.invoiceNumber) {
@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
         inv.resetPolicy === 'yearly'  ? keyYear  :
         'global';
 
-      const data = countersSnap.exists() ? (countersSnap.data() as any) : {};
+      const data = countersSnap.exists ? (countersSnap.data() as any) : {};
       const current = Number(data[key]?.next ?? 1);
       const next = current + 1;
 
@@ -90,13 +90,13 @@ export async function POST(req: NextRequest) {
 
       tx.set(countersRef, {
         [key]: { next },              // guarda el siguiente
-        updatedAt: serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
 
       tx.update(orderRef, {
         invoiceNumber,
         invoiceSeries: inv.series || null,
-        invoiceIssuedAt: serverTimestamp(),
+        invoiceIssuedAt: FieldValue.serverTimestamp(),
       });
 
       return { invoiceNumber, issuedAt: new Date().toISOString(), series: inv.series || null };

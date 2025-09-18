@@ -96,3 +96,16 @@ export const adminDb = db;
 export const Timestamp = admin.firestore.Timestamp;
 export const FieldValue = admin.firestore.FieldValue;
 export const serverTimestamp = () => admin.firestore.FieldValue.serverTimestamp();
+
+/** Helpers solicitados (mínimo cambio) */
+export function ensureAdminApp() {
+  return adminApp;
+}
+
+export function getAdminAuth() {
+  return adminAuth;
+}
+
+export function getAdminDB() {
+  return db;
+}

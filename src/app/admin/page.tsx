@@ -26,7 +26,9 @@ const TILES: AdminTile[] = [
   { title: "Marketing", subtitle: "admin/marketing", href: "/admin/marketing", emoji: "✉️", hint: "Brevo: contactos y campañas" },
   { title: "Taxes", subtitle: "admin/taxes", href: "/admin/taxes", emoji: "🧾", hint: "Configure tax profile" },
   { title: "Reports", subtitle: "admin/reports/taxes", href: "/admin/reports/taxes", emoji: "📊", hint: "Create reports" },
+  { title: "AI Studio", subtitle: "admin/ai-studio", href: "/admin/ai-studio", emoji: "🤖", hint: "Create Dishes & Promots with AI" },
 ];
+
 
 export default function AdminPage() {
   return (

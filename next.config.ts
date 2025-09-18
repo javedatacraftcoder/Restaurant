@@ -9,9 +9,11 @@ const prodCsp = [
   "base-uri 'self'",
   // 👇 aquí agregamos 'unsafe-inline'
   // 👇 AGREGADO PayPal: https://www.paypal.com
-  "script-src 'self' 'unsafe-inline' https://www.gstatic.com https://www.googletagmanager.com https://apis.google.com https://accounts.google.com https://www.paypal.com",
+  // 👇 AGREGADO Turnstile: https://challenges.cloudflare.com
+  "script-src 'self' 'unsafe-inline' https://www.gstatic.com https://www.googletagmanager.com https://apis.google.com https://accounts.google.com https://www.paypal.com https://challenges.cloudflare.com",
   // 👇 AGREGADO PayPal: script-src-elem explícito (evita fallback)
-  "script-src-elem 'self' 'unsafe-inline' https://www.gstatic.com https://www.googletagmanager.com https://apis.google.com https://accounts.google.com https://www.paypal.com",
+  // 👇 AGREGADO Turnstile: https://challenges.cloudflare.com
+  "script-src-elem 'self' 'unsafe-inline' https://www.gstatic.com https://www.googletagmanager.com https://apis.google.com https://accounts.google.com https://www.paypal.com https://challenges.cloudflare.com",
   "style-src 'self' 'unsafe-inline'",
   // 👇 AGREGADO PayPal imágenes/recursos
   "img-src 'self' https: data: https://*.gstatic.com https://*.googleapis.com https://www.paypalobjects.com https://www.paypal.com https://www.sandbox.paypal.com",
@@ -19,7 +21,8 @@ const prodCsp = [
   // 👇 AGREGADO PayPal conexiones (XHR/fetch)
   "connect-src 'self' https://securetoken.googleapis.com https://www.googleapis.com https://identitytoolkit.googleapis.com https://firestore.googleapis.com https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://apis.google.com https://accounts.google.com https://www.gstatic.com https://www.paypal.com https://www.sandbox.paypal.com",
   // 👇 AGREGADO PayPal iframes
-  "frame-src 'self' https://*.firebaseapp.com https://*.google.com https://*.gstatic.com https://accounts.google.com https://apis.google.com https://www.paypal.com https://www.sandbox.paypal.com",
+  // 👇 AGREGADO Turnstile: https://challenges.cloudflare.com
+  "frame-src 'self' https://*.firebaseapp.com https://*.google.com https://*.gstatic.com https://accounts.google.com https://apis.google.com https://www.paypal.com https://www.sandbox.paypal.com https://challenges.cloudflare.com",
   "frame-ancestors 'none'",
   "form-action 'self' https://accounts.google.com",
   "upgrade-insecure-requests",
@@ -30,9 +33,11 @@ const devCsp = [
   "default-src 'self'",
   "base-uri 'self'",
   // 👇 AGREGADO PayPal en script-src
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://www.gstatic.com https://www.googletagmanager.com https://apis.google.com https://accounts.google.com https://www.paypal.com",
+  // 👇 AGREGADO Turnstile: https://challenges.cloudflare.com
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://www.gstatic.com https://www.googletagmanager.com https://apis.google.com https://accounts.google.com https://www.paypal.com https://challenges.cloudflare.com",
   // 👇 AGREGADO PayPal: script-src-elem explícito
-  "script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' blob: https://www.gstatic.com https://www.googletagmanager.com https://apis.google.com https://accounts.google.com https://www.paypal.com",
+  // 👇 AGREGADO Turnstile: https://challenges.cloudflare.com
+  "script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' blob: https://www.gstatic.com https://www.googletagmanager.com https://apis.google.com https://accounts.google.com https://www.paypal.com https://challenges.cloudflare.com",
   "style-src 'self' 'unsafe-inline'",
   // 👇 AGREGADO PayPal imágenes/recursos
   "img-src 'self' https: data: https://*.gstatic.com https://*.googleapis.com https://www.paypalobjects.com https://www.paypal.com https://www.sandbox.paypal.com",
@@ -40,7 +45,8 @@ const devCsp = [
   // 👇 AGREGADO PayPal conexiones
   "connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* https://securetoken.googleapis.com https://www.googleapis.com https://identitytoolkit.googleapis.com https://firestore.googleapis.com https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://apis.google.com https://accounts.google.com https://www.gstatic.com https://www.paypal.com https://www.sandbox.paypal.com",
   // 👇 AGREGADO PayPal iframes
-  "frame-src 'self' https://*.firebaseapp.com https://*.google.com https://*.gstatic.com https://accounts.google.com https://apis.google.com https://www.paypal.com https://www.sandbox.paypal.com",
+  // 👇 AGREGADO Turnstile: https://challenges.cloudflare.com
+  "frame-src 'self' https://*.firebaseapp.com https://*.google.com https://*.gstatic.com https://accounts.google.com https://apis.google.com https://www.paypal.com https://www.sandbox.paypal.com https://challenges.cloudflare.com",
   "frame-ancestors 'none'",
   "form-action 'self' https://accounts.google.com",
 ].join('; ');
