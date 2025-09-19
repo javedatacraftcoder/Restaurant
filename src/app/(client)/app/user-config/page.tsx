@@ -41,6 +41,28 @@ type Customer = {
 type ApiGet = { ok?: boolean; error?: string; customer?: Customer };
 type ApiPut = { ok?: boolean; error?: string; customer?: Customer };
 
+// ⬇️ Helper mínimo: reintenta una vez si hay 401 forzando refresh del ID token
+async function fetchWithRetryAuth(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  getFreshToken: () => Promise<string | null>
+) {
+  const res = await fetch(input, init);
+  if (res.status !== 401) return res;
+
+  const fresh = await getFreshToken();
+  if (!fresh) return res;
+
+  const nextInit: RequestInit = {
+    ...init,
+    headers: {
+      ...(init.headers || {}),
+      Authorization: `Bearer ${fresh}`,
+    } as HeadersInit,
+  };
+  return fetch(input, nextInit);
+}
+
 function useCustomer() {
   const { idToken } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -53,11 +75,27 @@ function useCustomer() {
     return h;
   }, [idToken]);
 
+  const getFreshToken = async () => {
+    try {
+      const auth = getAuth();
+      const u = auth.currentUser;
+      if (!u) return null;
+      const fresh = await u.getIdToken(true);
+      return fresh || null;
+    } catch {
+      return null;
+    }
+  };
+
   const refresh = async () => {
     try {
       setErr(null);
       setLoading(true);
-      const res = await fetch("/api/customers/me", { headers, cache: "no-store" });
+      const res = await fetchWithRetryAuth(
+        "/api/customers/me",
+        { headers, cache: "no-store" },
+        getFreshToken
+      );
       const data: ApiGet = await res.json().catch(() => ({} as any));
       if (!res.ok || data?.ok === false) throw new Error(data?.error || `HTTP ${res.status}`);
       setCust(data.customer || null);
@@ -70,11 +108,15 @@ function useCustomer() {
   };
 
   const saveProfile = async (payload: { displayName?: string; phone?: string }) => {
-    const res = await fetch("/api/customers/me", {
-      method: "PUT",
-      headers,
-      body: JSON.stringify(payload),
-    });
+    const res = await fetchWithRetryAuth(
+      "/api/customers/me",
+      {
+        method: "PUT",
+        headers,
+        body: JSON.stringify(payload),
+      },
+      getFreshToken
+    );
     const data: ApiPut = await res.json().catch(() => ({} as any));
     if (!res.ok || data?.ok === false) throw new Error(data?.error || `HTTP ${res.status}`);
     setCust(data.customer || null);
@@ -82,11 +124,15 @@ function useCustomer() {
   };
 
   const saveAddresses = async (addresses: { home?: Partial<Addr>; office?: Partial<Addr> }) => {
-    const res = await fetch("/api/customers/me", {
-      method: "PUT",
-      headers,
-      body: JSON.stringify({ addresses }),
-    });
+    const res = await fetchWithRetryAuth(
+      "/api/customers/me",
+      {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({ addresses }),
+      },
+      getFreshToken
+    );
     const data: ApiPut = await res.json().catch(() => ({} as any));
     if (!res.ok || data?.ok === false) throw new Error(data?.error || `HTTP ${res.status}`);
     setCust(data.customer || null);
@@ -95,11 +141,15 @@ function useCustomer() {
 
   // ➕ Guardar facturación
   const saveBilling = async (billing: { name?: string; taxId?: string }) => {
-    const res = await fetch("/api/customers/me", {
-      method: "PUT",
-      headers,
-      body: JSON.stringify({ billing }),
-    });
+    const res = await fetchWithRetryAuth(
+      "/api/customers/me",
+      {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({ billing }),
+      },
+      getFreshToken
+    );
     const data: ApiPut = await res.json().catch(() => ({} as any));
     if (!res.ok || data?.ok === false) throw new Error(data?.error || `HTTP ${res.status}`);
     setCust(data.customer || null);

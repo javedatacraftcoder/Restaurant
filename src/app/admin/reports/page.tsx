@@ -13,20 +13,12 @@ type AdminTile = {
 };
 
 const TILES: AdminTile[] = [
-  { title: "Kitchen",     subtitle: "admin/kitchen",     href: "/admin/kitchen",     emoji: "🍳", hint: "Orders and kitchen status" },
-  { title: "Cashier",     subtitle: "admin/cashier",     href: "/admin/cashier",     emoji: "💵", hint: "Collection, receipts and closing" },
-  { title: "Delivery",    subtitle: "admin/delivery",    href: "/admin/delivery",    emoji: "🚚", hint: "Allocation and monitoring" },
-  { title: "Menu",        subtitle: "admin/menu",        href: "/admin/menu",        emoji: "📋", hint: "Categories, subcategories and dishes" },
-  { title: "Orders",      subtitle: "admin/orders",      href: "/admin/orders",      emoji: "🧾", hint: "List and details of orders" },
-  { title: "Edit Orders", subtitle: "admin/edit-orders", href: "/admin/edit-orders", emoji: "✏️", hint: "Edit existing orders" },
-  { title: "Roles",       subtitle: "admin/roles",       href: "/admin/roles",       emoji: "👥", hint: "Management of permits and personnel" },
-  { title: "OPS",         subtitle: "admin/ops",         href: "/admin/ops",         emoji: "🛠️", hint: "Operations and tools" },
-  { title: "Promotions",  subtitle: "admin/promotions",  href: "/admin/promotions",  emoji: "🎟️", hint: "Discount codes and conditions" },
-  { title: "Delivery options",  subtitle: "admin/delivery-options",  href: "/admin/delivery-options",  emoji: "🛵", hint: "Manage delivery options" },
-  { title: "Marketing", subtitle: "admin/marketing", href: "/admin/marketing", emoji: "✉️", hint: "Brevo: contactos y campañas" },
-  { title: "Taxes", subtitle: "admin/taxes", href: "/admin/taxes", emoji: "🧾", hint: "Configure tax profile" },
-  { title: "Reports", subtitle: "admin/reports", href: "/admin/reports", emoji: "📊", hint: "Create reports" },
-  { title: "AI Studio", subtitle: "admin/ai-studio", href: "/admin/ai-studio", emoji: "🤖", hint: "Create Dishes & Promots with AI" },
+  { title: "Taxes",     subtitle: "/reports/taxes",     href: "/admin/reports/taxes",     emoji: "📊", hint: "Tax reports" },
+  { title: "Sales",     subtitle: "/reports/sales-reports",     href: "/admin/reports/sales-reports",     emoji: "💰", hint: "Sales reports" },
+  { title: "Products",     subtitle: "/reports/product-reports",     href: "/admin/reports/product-reports",     emoji: "🍽️", hint: "Product reports" },
+  { title: "Clients",     subtitle: "/reports/client-reports",     href: "/admin/reports/client-reports",     emoji: "👥", hint: "Client reports" },
+  { title: "Promotion",     subtitle: "/reports/promotion-reports",     href: "/admin/reports/promotion-reports",     emoji: "🏷️", hint: "Promotions reports" },
+  { title: "Delivery",     subtitle: "/reports/delivery-reports",     href: "/admin/reports/delivery-reports",     emoji: "🛵", hint: "Delivery reports" },
 ];
 
 
