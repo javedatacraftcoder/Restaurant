@@ -285,6 +285,15 @@ async function changeStatus(orderId: string, to: StatusSnake) {
   }
   return res.json();
 }
+
+/* 🆕 Actualiza payment.status a 'closed' en Firestore */
+async function setPaymentStatusClosed(orderId: string) {
+  await ensureFirebaseApp();
+  const { getFirestore, doc, updateDoc } = await import('firebase/firestore');
+  const db = getFirestore();
+  await updateDoc(doc(db, 'orders', orderId), { 'payment.status': 'closed' });
+}
+
 async function advanceToClose(order: OrderDoc, onStep?: (s: StatusSnake) => Promise<void>) {
   const type = (order.orderInfo?.type?.toLowerCase?.() === 'delivery')
     ? 'delivery'
@@ -696,7 +705,7 @@ function OrderCard({
                   if (typeof x === 'string') return <span key={i}>{x}{i < arr.length - 1 ? ', ' : ''}</span>;
                   const nm = x?.name ?? '';
                   const pr = extractDeltaQ(x);
-                  return <span key={i}>{nm}{pr ? ` (${fmtCurrency(pr)})` : ''}{i < arr.length - 1 ? ', ' : ''}</span>;
+                  return <span key={i}>{nm}{pr ? ` ({fmtCurrency(pr)})` : ''}{i < arr.length - 1 ? ', ' : ''}</span>;
                 });
                 groupRows.push(
                   <div className="ms-3 text-muted" key={`bk-${idx}-${key}`}>
@@ -724,7 +733,7 @@ function OrderCard({
           })}
         </div>
 
-        {/* ➕ Desglose (nuevo) — igual a Checkout */}
+        {/* ➕ Desglose (nuevo) — se conserva */}
         <div className="mt-2">
           <div className="d-flex justify-content-between">
             <div>Subtotal</div>
@@ -824,6 +833,15 @@ function CashierPage_Inner() {
     try {
       setBusyId(o.id);
       await advanceToClose(o, async () => {}); // encadena pasos permitidos hasta 'closed'
+
+      // 🆕 Si fue en efectivo, marcar también payment.status = 'closed'
+      try {
+        if (String(o?.payment?.provider || '').toLowerCase() === 'cash') {
+          await setPaymentStatusClosed(o.id);
+        }
+      } catch (e) {
+        console.warn('[cashier] setPaymentStatusClosed failed:', e);
+      }
 
       // ✅ NUEVO: emitir factura si la numeración está activa (no bloquea el cierre)
       try {

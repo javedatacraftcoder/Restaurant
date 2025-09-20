@@ -19,6 +19,8 @@ const TILES: AdminTile[] = [
   { title: "Clients",     subtitle: "/reports/client-reports",     href: "/admin/reports/client-reports",     emoji: "👥", hint: "Client reports" },
   { title: "Promotion",     subtitle: "/reports/promotion-reports",     href: "/admin/reports/promotion-reports",     emoji: "🏷️", hint: "Promotions reports" },
   { title: "Delivery",     subtitle: "/reports/delivery-reports",     href: "/admin/reports/delivery-reports",     emoji: "🛵", hint: "Delivery reports" },
+  { title: "Cashier",     subtitle: "/reports/cashier-reports",     href: "/admin/reports/cashier-reports",     emoji: "💵", hint: "Cashier reports" },
+    { title: "Time",     subtitle: "/reports/Time-reports",     href: "/admin/reports/time-reports",     emoji: "⏰", hint: "Time reports" },
 ];
 
 
