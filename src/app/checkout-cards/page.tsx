@@ -907,7 +907,7 @@ function CheckoutUI(props: {
                                 className="d-flex justify-content-between small"
                                 key={`gi-${idx}-${g.groupId}-${it.id}`}
                               >
-                                <div>— (groupitems) {it.name}</div>
+                                <div>— {it.name}</div>
                                 <div>{fmtQ(it.priceDelta)}</div>
                               </div>
                             ))

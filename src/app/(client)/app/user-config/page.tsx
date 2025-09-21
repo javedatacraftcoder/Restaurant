@@ -41,7 +41,7 @@ type Customer = {
 type ApiGet = { ok?: boolean; error?: string; customer?: Customer };
 type ApiPut = { ok?: boolean; error?: string; customer?: Customer };
 
-// ⬇️ Helper mínimo: reintenta una vez si hay 401 forzando refresh del ID token
+// Helper mínimo: reintenta una vez si hay 401 forzando refresh del ID token
 async function fetchWithRetryAuth(
   input: RequestInfo | URL,
   init: RequestInit,
@@ -299,7 +299,7 @@ function UserConfigInner() {
       // Manejo fino según código de Firebase
       const code: string = e?.code || "";
       if (code === "auth/wrong-password" || code === "auth/invalid-credential") {
-        // ❗️Marcar solo el campo de contraseña actual en rojo, sin alert global
+      // Marcar solo el campo de contraseña actual en rojo, sin alert global
         setCurrPassError("Incorrect current password");
       } else if (code === "auth/too-many-requests") {
         setCurrPassError("Too many attempts. Try again later.");

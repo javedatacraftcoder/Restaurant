@@ -37,8 +37,8 @@ type OrderDoc = {
   contact?: { email?: string | null } | null;
 };
 
-function fmtMoneyQ(n: number, cur = "GTQ") {
-  const c = (cur || "GTQ").toUpperCase();
+function fmtMoneyQ(n: number, cur = "USD") {
+  const c = (cur || "USD").toUpperCase();
   const sym = c === "GTQ" ? "Q" : c === "USD" ? "$" : `${c} `;
   return `${sym}${Number(n || 0).toFixed(2)}`;
 }
@@ -101,7 +101,7 @@ function PageInner() {
                   <div className="me-3">
                     <div className="fw-semibold">{it.menuItemName || it.menuItemId}</div>
 
-                    {/* ✅ Addons */}
+                    {/* Addons */}
                     {Array.isArray(it.addons) && it.addons.length > 0 && (
                       <ul className="small text-muted mt-1 ps-3">
                         {it.addons.map((ad, ai) => (
@@ -113,7 +113,7 @@ function PageInner() {
                       </ul>
                     )}
 
-                    {/* ✅ Option groups (new) */}
+                    {/* Option groups */}
                     {Array.isArray(it.optionGroups) && it.optionGroups.some(g => (g.items || []).length > 0) && (
                       <ul className="small text-muted mt-1 ps-3">
                         {it.optionGroups.map((g, gi) => (
@@ -129,7 +129,7 @@ function PageInner() {
                       </ul>
                     )}
 
-                    {/* Compat: old shape with 'options' */}
+                    {/* Compat: forma vieja con 'options' */}
                     {Array.isArray(it.options) && it.options.length > 0 && (
                       <ul className="small text-muted mt-1 ps-3">
                         {it.options.map((g, gi) => (

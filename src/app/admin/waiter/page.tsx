@@ -1,0 +1,669 @@
+/* src/app/admin/waiter/page.tsx */
+"use client";
+
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import Protected from "@/components/Protected";
+import "@/lib/firebase/client";
+import { useAuth } from "@/app/providers";
+import {
+  getFirestore,
+  doc,
+  getDoc,
+  setDoc,
+  onSnapshot,
+  collection,
+  query,
+  where,
+  orderBy,
+  limit,
+  Timestamp,
+  Unsubscribe,
+} from "firebase/firestore";
+
+// =================== Types ===================
+type FirestoreTS = Timestamp | { seconds: number; nanoseconds?: number } | Date | null | undefined;
+
+type OpsAddon = { name: string; price?: number };
+type OpsGroupItem = { id: string; name: string; priceDelta?: number };
+type OpsGroup = { groupId: string; groupName: string; type?: "single" | "multi"; items: OpsGroupItem[] };
+
+type OrderItem = {
+  menuItemId: string;
+  menuItemName?: string;
+  quantity: number;
+  basePrice?: number;
+  lineTotal?: number;
+  addons?: OpsAddon[];
+  optionGroups?: OpsGroup[];
+};
+
+type OrderDoc = {
+  id: string;
+  createdAt?: FirestoreTS;
+  updatedAt?: FirestoreTS;
+  status?: "placed" | "kitchen_in_progress" | "kitchen_done" | "ready_to_close" | "closed";
+  statusHistory?: Array<{ at?: string; by?: string; from?: string; to?: string }>;
+  orderInfo?: {
+    type?: "dine-in" | "delivery" | "pickup";
+    table?: string;
+    notes?: string;
+  };
+  items?: OrderItem[];
+  totals?: {
+    currency?: string;
+    subtotal?: number;
+    tax?: number;
+    tip?: number;
+    discount?: number;
+    deliveryFee?: number;
+    grandTotalWithTax?: number;
+  } | null;
+  totalsCents?: {
+    currency?: string;
+    itemsSubTotalCents?: number;
+    itemsTaxCents?: number;
+    grandTotalWithTaxCents?: number;
+    tipCents?: number;
+    discountCents?: number;
+    deliveryFeeCents?: number;
+  } | null;
+  invoiceNumber?: string | null;
+  invoiceDate?: FirestoreTS;
+};
+
+type WaiterSettings = {
+  numTables: number;
+  updatedAt?: FirestoreTS;
+  updatedBy?: string;
+};
+
+// =================== Helpers ===================
+function tsToDate(ts: FirestoreTS): Date | null {
+  if (!ts) return null;
+  if (ts instanceof Date) return ts;
+  if (typeof (ts as any)?.seconds === "number") {
+    return new Date(((ts as any).seconds as number) * 1000);
+  }
+  if (ts instanceof Timestamp) return ts.toDate();
+  return null;
+}
+
+function fmtMoney(n?: number, currency: string = "USD") {
+  const v = Number.isFinite(Number(n)) ? Number(n) : 0;
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(v);
+  } catch {
+    return `${currency} ${v.toFixed(2)}`;
+  }
+}
+
+function safeNum(n: any): number {
+  const v = Number(n);
+  return Number.isFinite(v) ? v : 0;
+}
+
+function getCurrency(order?: OrderDoc): string {
+  return order?.totals?.currency || order?.totalsCents?.currency || "USD";
+}
+
+function sumLine(ln: OrderItem): number {
+  // Usa lineTotal si viene; sino calcula: (base + addons + options) * qty
+  if (typeof ln.lineTotal === "number") return ln.lineTotal;
+  const qty = safeNum(ln.quantity || 1);
+  const base = safeNum(ln.basePrice);
+  const addons = (ln.addons || []).reduce((acc, a) => acc + safeNum(a.price), 0);
+  const opts =
+    (ln.optionGroups || []).reduce((acc, g) => {
+      return acc + (g.items || []).reduce((acc2, it) => acc2 + safeNum(it.priceDelta), 0);
+    }, 0);
+  return (base + addons + opts) * qty;
+}
+
+function computeSubtotalFromItems(order?: OrderDoc): number | undefined {
+  if (!order?.items || order.items.length === 0) return undefined;
+  return order.items.reduce((acc, ln) => acc + sumLine(ln), 0);
+}
+
+// ➕ NUEVO: subtotal “fresco” siempre que haya items; si no, cae a totals/totalsCents
+function getFreshSubtotal(order?: OrderDoc): number {
+  const fromItems = computeSubtotalFromItems(order);
+  if (typeof fromItems === "number") return fromItems;
+
+  const fromTotals = pickAmount(order, "subtotal");
+  return typeof fromTotals === "number" ? fromTotals : 0;
+}
+
+function pickAmount(
+  order: OrderDoc | undefined,
+  key: "subtotal" | "tax" | "tip" | "discount" | "deliveryFee" | "grandTotalWithTax"
+): number | undefined {
+  if (!order) return undefined;
+
+  // 1) totals
+  const t: any = order.totals || {};
+  if (typeof t[key] === "number") return t[key] as number;
+
+  // 2) totalsCents
+  const c: any = order.totalsCents || {};
+  const centsKey =
+    key === "subtotal" ? "itemsSubTotalCents"
+    : key === "tax" ? "itemsTaxCents"
+    : key === "tip" ? "tipCents"
+    : key === "discount" ? "discountCents"
+    : key === "deliveryFee" ? "deliveryFeeCents"
+    : key === "grandTotalWithTax" ? "grandTotalWithTaxCents"
+    : undefined;
+
+  if (centsKey && typeof c[centsKey] === "number") {
+    return (c[centsKey] as number) / 100;
+  }
+
+  // 3) fallback específico para subtotal: computar desde ítems
+  if (key === "subtotal") {
+    const sub = computeSubtotalFromItems(order);
+    if (typeof sub === "number") return sub;
+  }
+
+  return undefined;
+}
+
+// 🔁 ACTUALIZADO: usa siempre getFreshSubtotal si hay items; solo usa stored total si NO hay items
+function computeGrandTotal(order?: OrderDoc): number | undefined {
+  if (!order) return undefined;
+
+  const hasItems = Array.isArray(order.items) && order.items.length > 0;
+  const storedTotal = pickAmount(order, "grandTotalWithTax");
+  if (!hasItems && typeof storedTotal === "number") return storedTotal;
+
+  const sub = getFreshSubtotal(order);
+  const tax = pickAmount(order, "tax") ?? 0;
+  const tip = pickAmount(order, "tip") ?? 0;
+  const fee = pickAmount(order, "deliveryFee") ?? 0;
+  const disc = pickAmount(order, "discount") ?? 0;
+
+  const total = sub + tax + tip + fee - disc;
+  return Math.max(0, Number(total.toFixed(2)));
+}
+
+function updatedOrCreatedAt(d?: OrderDoc) {
+  return tsToDate(d?.updatedAt) || tsToDate(d?.createdAt) || new Date(0);
+}
+
+const OPEN_STATUSES: OrderDoc["status"][] = [
+  "placed",
+  "kitchen_in_progress",
+  "kitchen_done",
+  "ready_to_close",
+];
+
+const STATUS_BADGE: Record<string, "secondary" | "warning" | "success" | "primary"> = {
+  placed: "secondary",
+  kitchen_in_progress: "warning",
+  kitchen_done: "success",
+  ready_to_close: "primary",
+};
+
+// Max items allowed in a Firestore "in" filter
+const IN_FILTER_MAX = 30;
+
+// =================== Page ===================
+export default function WaiterPage() {
+  const db = useMemo(() => getFirestore(), []);
+  const { user, claims } = useAuth(); // claims?.role or claims?.roles
+  const [numTables, setNumTables] = useState<number>(12);
+  const [loadingSettings, setLoadingSettings] = useState(true);
+
+  // table -> order
+  const [activeByTable, setActiveByTable] = useState<Record<string, OrderDoc | undefined>>({});
+  const unsubRef = useRef<Unsubscribe[]>([]);
+  const [selectedTable, setSelectedTable] = useState<string | null>(null);
+
+  // ------------- Role gate -------------
+  const allowed = useMemo(() => {
+    const role = (claims as any)?.role;
+    const roles = (claims as any)?.roles;
+    const has =
+      role === "admin" ||
+      role === "waiter" ||
+      role === "cashier" ||
+      (Array.isArray(roles) && (roles.includes("admin") || roles.includes("waiter") || roles.includes("cashier")));
+    return !!has;
+  }, [claims]);
+
+  // ------------- Load & Save Settings -------------
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, "settings", "waiter"));
+        if (snap.exists()) {
+          const data = snap.data() as WaiterSettings;
+          if (mounted && typeof data?.numTables === "number" && data.numTables > 0) {
+            setNumTables(Math.min(200, Math.max(1, data.numTables)));
+          }
+        }
+      } finally {
+        if (mounted) setLoadingSettings(false);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [db]);
+
+  async function saveNumTables() {
+    const safe = Math.min(200, Math.max(1, Number(numTables) || 1));
+    await setDoc(
+      doc(db, "settings", "waiter"),
+      {
+        numTables: safe,
+        updatedAt: Timestamp.now(),
+        updatedBy: user?.uid ?? null,
+      },
+      { merge: true }
+    );
+    setNumTables(safe);
+    // Re-arm listeners with new table set
+    armOrderListeners(safe);
+  }
+
+  // ------------- Live Orders per Table -------------
+  useEffect(() => {
+    // First arm after settings load
+    if (!loadingSettings) {
+      armOrderListeners(numTables);
+    }
+    // cleanup on unmount
+    return () => {
+      unsubRef.current.forEach((u) => u && u());
+      unsubRef.current = [];
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadingSettings]);
+
+  function armOrderListeners(count: number) {
+    // cleanup old
+    unsubRef.current.forEach((u) => u && u());
+    unsubRef.current = [];
+
+    const allTables = Array.from({ length: count }, (_, i) => String(i + 1));
+
+    // chunk tables for "in" (≤30)
+    const chunks: string[][] = [];
+    for (let i = 0; i < allTables.length; i += IN_FILTER_MAX) {
+      chunks.push(allTables.slice(i, i + IN_FILTER_MAX));
+    }
+
+    // Prime state: todas vacías
+    const nextState: Record<string, OrderDoc | undefined> = {};
+    allTables.forEach((t) => (nextState[t] = undefined));
+    setActiveByTable(nextState);
+
+    // Una query por estado × chunk de mesas (evita disyunciones > 30)
+    OPEN_STATUSES.forEach((st) => {
+      chunks.forEach((tableChunk) => {
+        const qRef = query(
+          collection(db, "orders"),
+          where("orderInfo.type", "==", "dine-in"),
+          where("orderInfo.table", "in", tableChunk),
+          where("status", "==", st),
+          orderBy("createdAt", "desc"),
+          limit(200)
+        );
+
+        const unsub = onSnapshot(qRef, (snap) => {
+          const draft: Record<string, OrderDoc | undefined> = {};
+          for (const d of snap.docs) {
+            const data = d.data() as any;
+            const tbl = String(data?.orderInfo?.table ?? "");
+            if (!tbl) continue;
+
+            // Usa updatedAt || createdAt para determinar el más reciente
+            const incoming: OrderDoc = { id: d.id, ...data } as OrderDoc;
+            const ex = draft[tbl];
+            if (!ex) {
+              draft[tbl] = incoming;
+            } else {
+              const prevT = updatedOrCreatedAt(ex) as Date;
+              const incT = updatedOrCreatedAt(incoming) as Date;
+              if (incT >= prevT) draft[tbl] = incoming;
+            }
+          }
+
+          setActiveByTable((prev) => {
+            const merged = { ...prev };
+            tableChunk.forEach((t) => {
+              const incoming = draft[t];
+              if (!incoming) return merged;
+              const prevT = updatedOrCreatedAt(merged[t]) as Date;
+              const incT = updatedOrCreatedAt(incoming) as Date;
+              if (incT >= prevT) merged[t] = incoming;
+            });
+            return merged;
+          });
+        });
+
+        unsubRef.current.push(unsub);
+      });
+    });
+  }
+
+  // ------------- UI Helpers -------------
+  const tables = useMemo(() => Array.from({ length: numTables }, (_, i) => String(i + 1)), [numTables]);
+
+  function tableOccupied(t: string) {
+    return !!activeByTable[t];
+  }
+
+  function statusBadgeFor(t: string) {
+    const st = activeByTable[t]?.status;
+    if (!st) return null;
+    const variant = STATUS_BADGE[st] ?? "secondary";
+    const label = st.replaceAll("_", " ");
+    return <span className={`badge text-bg-${variant} ms-2 text-capitalize`}>{label}</span>;
+  }
+
+  function openTablePanel(t: string) {
+    setSelectedTable(t);
+  }
+
+  function closePanel() {
+    setSelectedTable(null);
+  }
+
+  const selectedOrder: OrderDoc | undefined = selectedTable ? activeByTable[selectedTable] : undefined;
+
+  // =================== Render ===================
+  return (
+    <Protected>
+      {!allowed ? (
+        <main className="container py-4">
+          <h1 className="h4">Waiter</h1>
+          <p className="text-danger">You don’t have permission to view this page.</p>
+        </main>
+      ) : (
+        <main className="container-fluid py-3">
+          {/* Top Controls */}
+          <div className="container mb-3">
+            <div className="d-flex flex-wrap align-items-end gap-3">
+              <div>
+                <label className="form-label mb-1">Tables</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={200}
+                  className="form-control"
+                  value={numTables}
+                  onChange={(e) => setNumTables(Math.min(200, Math.max(1, Number(e.target.value) || 1)))}
+                  style={{ width: 140 }}
+                />
+              </div>
+              <button className="btn btn-primary" onClick={saveNumTables}>
+                Save
+              </button>
+            </div>
+          </div>
+
+          {/* Floor (Desktop grid) */}
+          <div
+            className="container"
+            style={{
+              display: "grid",
+              gap: "12px",
+              gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
+            }}
+          >
+            {tables.map((t) => {
+              const occupied = tableOccupied(t);
+              const bg = occupied ? "#e8f5e9" : "#f2f2f2"; // greenish / grey
+              const border = occupied ? "1px solid #2e7d32" : "1px solid #bdbdbd";
+              const text = occupied ? "#1b5e20" : "#616161";
+              const order = activeByTable[t];
+              const currency = getCurrency(order);
+              const total = computeGrandTotal(order); // usa subtotal fresco si hay items
+
+              return (
+                <button
+                  key={t}
+                  className="card shadow-sm text-start"
+                  style={{
+                    background: bg,
+                    border,
+                    color: text,
+                    borderRadius: 16,
+                    cursor: "pointer",
+                  }}
+                  onClick={() => openTablePanel(t)}
+                >
+                  <div className="card-body d-flex flex-column justify-content-between" style={{ minHeight: 120 }}>
+                    <div className="d-flex align-items-center justify-content-between">
+                      <div className="d-flex align-items-center">
+                        <span
+                          className="me-2"
+                          style={{
+                            display: "inline-block",
+                            width: 12,
+                            height: 12,
+                            borderRadius: "50%",
+                            background: occupied ? "#2e7d32" : "#9e9e9e",
+                          }}
+                        />
+                        <span className="fw-bold" style={{ fontSize: 22 }}>
+                          Table {t}
+                        </span>
+                      </div>
+                      {statusBadgeFor(t)}
+                    </div>
+
+                    <div className="mt-3">
+                      {occupied ? (
+                        <>
+                          <div className="small text-muted">Open order</div>
+                          <div className="fw-semibold">
+                            {fmtMoney(total, currency)}
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-muted">Empty table</div>
+                      )}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Drawer / Panel */}
+          <div
+            className={`offcanvas offcanvas-end ${selectedTable ? "show" : ""}`}
+            style={{
+              visibility: selectedTable ? "visible" : "hidden",
+              transition: "visibility 0.2s",
+              width: "min(720px, 100vw)",
+            }}
+            tabIndex={-1}
+            aria-labelledby="tableDetailTitle"
+          >
+            <div className="offcanvas-header">
+              <h5 id="tableDetailTitle" className="offcanvas-title">
+                {selectedTable ? `Table ${selectedTable}` : "Table"}
+              </h5>
+              <button type="button" className="btn-close" onClick={closePanel} />
+            </div>
+            <div className="offcanvas-body">
+              {!selectedTable ? null : !selectedOrder ? (
+                <div className="text-muted">Empty table. No open order.</div>
+              ) : (
+                <OrderDetailCard order={selectedOrder} onClose={closePanel} />
+              )}
+            </div>
+          </div>
+
+          {/* Backdrop for offcanvas */}
+          {selectedTable && (
+            <div
+              className="offcanvas-backdrop fade show"
+              onClick={closePanel}
+              style={{ cursor: "pointer" }}
+            />
+          )}
+        </main>
+      )}
+    </Protected>
+  );
+}
+
+// =================== Detail Panel ===================
+function OrderDetailCard({ order, onClose }: { order: OrderDoc; onClose: () => void }) {
+  const currency = getCurrency(order);
+  const createdAt = tsToDate(order.createdAt);
+  const invoiceDate = tsToDate(order.invoiceDate);
+
+  const subtotal = getFreshSubtotal(order); // 👈 ahora siempre viene de items si existen
+  const tax = pickAmount(order, "tax");
+  const tip = pickAmount(order, "tip");
+  const discount = pickAmount(order, "discount");
+  const total = computeGrandTotal(order); // 👈 compuesto con subtotal fresco
+
+  return (
+    <div className="card border-0">
+      <div className="card-body">
+        <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+          <div>
+            <div className="fw-bold h5 mb-0">Order #{order.id.slice(-6)}</div>
+            <div className="text-muted small">
+              {createdAt ? createdAt.toLocaleString() : ""}
+            </div>
+          </div>
+          <div className="text-end">
+            <div className="small text-muted">Invoice</div>
+            <div className="fw-semibold">{order.invoiceNumber || "-"}</div>
+            <div className="text-muted small">
+              {invoiceDate ? invoiceDate.toLocaleString() : "-"}
+            </div>
+          </div>
+        </div>
+
+        {/* Status */}
+        {order.status && (
+          <div className="mb-3">
+            <span className={`badge text-bg-${STATUS_BADGE[order.status] ?? "secondary"} text-capitalize`}>
+              {String(order.status).replaceAll("_", " ")}
+            </span>
+          </div>
+        )}
+
+        {/* Items */}
+        <div className="mb-3">
+          <h6 className="fw-bold">Items</h6>
+          <div className="d-flex flex-column gap-2">
+            {(order.items ?? []).map((ln, idx) => (
+              <div key={`${ln.menuItemId}-${idx}`} className="border rounded p-2">
+                <div className="d-flex justify-content-between">
+                  <div>
+                    <div className="fw-semibold">
+                      {ln.menuItemName || "Item"}{" "}
+                      <span className="text-muted">× {ln.quantity}</span>
+                    </div>
+                    <div className="text-muted small">
+                      Base: {fmtMoney(ln.basePrice, currency)}{" "}
+                      {typeof ln.lineTotal === "number" && (
+                        <> • Line: {fmtMoney(ln.lineTotal, currency)}</>
+                      )}
+                    </div>
+                  </div>
+                  <div className="fw-semibold">
+                    {/* Si no viene lineTotal, calcula como fallback */}
+                    {fmtMoney(typeof ln.lineTotal === "number" ? ln.lineTotal : sumLine(ln), currency)}
+                  </div>
+                </div>
+
+                {/* Addons */}
+                {(ln.addons?.length ?? 0) > 0 && (
+                  <div className="mt-2 ps-2">
+                    <div className="small fw-semibold">Add-ons</div>
+                    <ul className="small mb-0">
+                      {ln.addons!.map((a, i) => (
+                        <li key={`a-${i}`}>
+                          {a.name}{" "}
+                          {typeof a.price === "number" ? `(${fmtMoney(a.price, currency)})` : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Option Groups */}
+                {(ln.optionGroups?.length ?? 0) > 0 && (
+                  <div className="mt-2 ps-2">
+                    <div className="small fw-semibold">Options</div>
+                    {(ln.optionGroups ?? []).map((g, gi) => (
+                      <div key={`g-${gi}`} className="small">
+                        <div className="text-muted">{g.groupName}</div>
+                        <ul className="mb-1">
+                          {(g.items ?? []).map((it, ii) => (
+                            <li key={`gi-${gi}-it-${ii}`}>
+                              {it.name}
+                              {typeof it.priceDelta === "number" && it.priceDelta !== 0
+                                ? ` (+${fmtMoney(it.priceDelta, currency)})`
+                                : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Notes */}
+        {order.orderInfo?.notes && (
+          <div className="mb-3">
+            <div className="small text-muted">Notes</div>
+            <div>{order.orderInfo.notes}</div>
+          </div>
+        )}
+
+        {/* Totals */}
+        <div className="mb-3">
+          <h6 className="fw-bold">Totals</h6>
+          <div className="d-flex flex-column gap-1 small">
+            <div className="d-flex justify-content-between">
+              <span>Subtotal</span>
+              <span>{fmtMoney(subtotal, currency)}</span>
+            </div>
+            <div className="d-flex justify-content-between">
+              <span>Tax</span>
+              <span>{fmtMoney(tax, currency)}</span>
+            </div>
+            <div className="d-flex justify-content-between">
+              <span>Tip</span>
+              <span>{fmtMoney(tip, currency)}</span>
+            </div>
+            <div className="d-flex justify-content-between">
+              <span>Discount</span>
+              <span>{fmtMoney(discount, currency)}</span>
+            </div>
+            <div className="d-flex justify-content-between fw-semibold border-top pt-2">
+              <span>Total</span>
+              <span>{fmtMoney(total, currency)}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="d-flex gap-2">
+          <a className="btn btn-outline-primary" href="/admin/edit-orders">
+            Edit order
+          </a>
+          <button className="btn btn-secondary" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

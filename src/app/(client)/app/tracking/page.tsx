@@ -3,9 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import Protected from "@/components/Protected";
 
-/* --------------------------------------------
-   Firebase (cliente)
---------------------------------------------- */
+/*Firebase (cliente)*/
 function getFirebaseClientConfig() {
   return {
     apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
@@ -23,14 +21,12 @@ async function ensureFirebaseApp() {
     if (cfg.apiKey && cfg.authDomain && cfg.projectId && cfg.appId) {
       app.initializeApp(cfg);
     } else {
-      console.warn("[Firebase] Falta configuración pública; Auth no podrá iniciar.");
+      console.warn("[Firebase] Missing public configuration; Auth is not able to initialize.");
     }
   }
 }
 
-/* --------------------------------------------
-   Auth helpers
---------------------------------------------- */
+/*Auth helpers*/
 async function getAuthMod() {
   await ensureFirebaseApp();
   return await import("firebase/auth");
@@ -68,9 +64,7 @@ async function getIdTokenSafe(forceRefresh = false): Promise<string | null> {
   }
 }
 
-/* --------------------------------------------
-   API fetch con reintento 401
---------------------------------------------- */
+/* API fetch con reintento 401*/
 async function apiFetch(path: string, init?: RequestInit) {
   let token = await getIdTokenSafe(false);
   let headers: HeadersInit = { ...(init?.headers || {}) };
@@ -86,9 +80,7 @@ async function apiFetch(path: string, init?: RequestInit) {
   return res;
 }
 
-/* --------------------------------------------
-   Tipos
---------------------------------------------- */
+/* Tipos */
 type StatusSnake =
   | "cart"
   | "placed"
@@ -138,9 +130,7 @@ type OrderDoc = {
   } | any;
 };
 
-/* --------------------------------------------
-   Helpers de presentación
---------------------------------------------- */
+/* Helpers de presentación */
 const TitleMap: Record<StatusSnake, string> = {
   cart: "Cart",
   placed: "Received",
@@ -192,10 +182,8 @@ function getDisplayNotes(o: OrderDoc): string | null {
   return o.notes ?? null;
 }
 
-/* --------------------------------------------
-   Datos: traer mis órdenes delivery, visibles
-   mientras subestado !== delivered
---------------------------------------------- */
+/* Datos: traer mis órdenes delivery, visibles mientras subestado !== delivered */
+
 const STATUS_QUERY_MAIN = [
   "placed",
   "kitchen_in_progress",
@@ -281,16 +269,15 @@ function useMyDeliveryOrders(enabled: boolean, pollMs = 4000) {
   return { orders, loading, error, refresh: fetchNow } as const;
 }
 
-/* --------------------------------------------
-   Timeline unificado (cocina + delivery)
+/* Timeline unificado (cocina + delivery)
    Pasos:
    1) Recibido
    2) En cocina
    3) Cocina lista
    4) Asignado a repartidor (visual si courierName)
    5) En ruta (delivery = inroute)
-   6) Entregado (delivery = delivered)
---------------------------------------------- */
+   6) Entregado (delivery = delivered) */
+
 type TimelineStepKey =
   | "placed"
   | "kitchen_in_progress"
@@ -342,9 +329,7 @@ function getStepState(
   return { steps, activeIndex: idx };
 }
 
-/* --------------------------------------------
-   Iconos simples
---------------------------------------------- */
+/* Iconos simples */
 function StepIcon({ name }: { name: TimelineStepKey }) {
   const map: Record<TimelineStepKey, string> = {
     placed: "🧾",
@@ -361,9 +346,7 @@ function StepIcon({ name }: { name: TimelineStepKey }) {
   );
 }
 
-/* --------------------------------------------
-   Componente: Timeline vertical
---------------------------------------------- */
+/* Componente: Timeline vertical */
 function VerticalTimeline({
   steps,
   activeIndex,
@@ -454,9 +437,7 @@ function VerticalTimeline({
   );
 }
 
-/* --------------------------------------------
-   Tarjeta de tracking
---------------------------------------------- */
+/* Tarjeta de tracking */
 function OrderTrackingCard({ o }: { o: OrderDoc }) {
   const address = getDisplayAddress(o);
   const phone = getDisplayPhone(o);
@@ -584,9 +565,7 @@ function TrackingPageInner() {
   );
 }
 
-/* --------------------------------------------
-   Export protegido
---------------------------------------------- */
+/* Export protegido */
 export default function TrackingPage() {
   return (
     <Protected>

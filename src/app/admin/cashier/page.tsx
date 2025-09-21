@@ -420,21 +420,33 @@ function preferredLines(o: OrderDoc): OrderItemLine[] {
  * luego amounts/totals en cents, y finalmente suma de líneas.
  */
 function computeOrderTotalsQ(o: OrderDoc) {
+  // Siempre que haya líneas, calculamos un subtotal "fresco" desde items,
+  // así refleja inmediatamente lo agregado, aunque totals/amounts aún no se hayan actualizado.
+  const lines = preferredLines(o);
+  const subtotalFresh = lines.length > 0
+    ? lines.reduce((acc, l) => acc + lineTotalQ(l), 0)
+    : undefined;
+
   // 0) Esquema nuevo (checkout)
   if (o?.totals && (o.totals.subtotal !== undefined || (o.totals as any).deliveryFee !== undefined || (o.totals as any).tip !== undefined)) {
-    const subtotal = Number(o.totals.subtotal || 0);
+    let subtotal = Number(o.totals.subtotal || 0);
+    if (typeof subtotalFresh === 'number') subtotal = subtotalFresh;
+
     const deliveryFee = Number((o.totals as any).deliveryFee || 0);
     const tip = Number((o.totals as any).tip || 0);
     const discount = Number((o.totals as any).discount || 0);
-    // Si no viene orderTotal, calculamos restando descuento:
     const total = Number.isFinite(o.orderTotal) ? Number(o.orderTotal) : (subtotal + deliveryFee + tip - discount);
+
     return { subtotal, tax: 0, serviceFee: 0, discount, tip, deliveryFee, total };
   }
 
   // 1) amounts (antiguo)
   if (o?.amounts && Number.isFinite(o.amounts.total)) {
+    let subtotal = Number(o.amounts.subtotal || 0);
+    if (typeof subtotalFresh === 'number') subtotal = subtotalFresh;
+
     return {
-      subtotal: Number(o.amounts.subtotal || 0),
+      subtotal,
       tax: Number(o.amounts.tax || 0),
       serviceFee: Number(o.amounts.serviceFee || 0),
       discount: Number(o.amounts.discount || 0),
@@ -443,24 +455,27 @@ function computeOrderTotalsQ(o: OrderDoc) {
       total: Number(o.amounts.total || 0),
     };
   }
+
   // 2) cents
   if (o?.totals && Number.isFinite(o.totals.totalCents)) {
-    return {
-      subtotal: centsToQ(o.totals.subtotalCents),
-      tax: centsToQ(o.totals.taxCents),
-      serviceFee: centsToQ(o.totals.serviceFeeCents),
-      discount: centsToQ(o.totals.discountCents),
-      tip: Number(o.amounts?.tip || 0),
-      deliveryFee: 0,
-      total: centsToQ(o.totals.totalCents) + Number(o.amounts?.tip || 0),
-    };
+    let subtotal = centsToQ(o.totals.subtotalCents);
+    if (typeof subtotalFresh === 'number') subtotal = subtotalFresh;
+
+    const tax = centsToQ(o.totals.taxCents);
+    const serviceFee = centsToQ(o.totals.serviceFeeCents);
+    const discount = centsToQ(o.totals.discountCents);
+    const tip = Number(o.amounts?.tip || 0);
+    const total = centsToQ(o.totals.totalCents) + tip;
+
+    return { subtotal, tax, serviceFee, discount, tip, deliveryFee: 0, total };
   }
-  // 3) fallback sumando líneas
-  const lines = preferredLines(o);
-  const subtotal = lines.reduce((acc, l) => acc + lineTotalQ(l), 0);
+
+  // 3) fallback sumando líneas (ya usa líneas)
+  const subtotal = subtotalFresh || 0;
   const tip = Number(o.amounts?.tip || 0);
   return { subtotal, tax: 0, serviceFee: 0, discount: 0, tip, deliveryFee: 0, total: subtotal + tip };
 }
+
 
 /* ======= Helpers para mostrar precio unitario/subtotal línea ======= */
 function safeLineTotalsQ(l: any) {

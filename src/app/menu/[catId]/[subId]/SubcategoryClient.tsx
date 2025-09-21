@@ -56,7 +56,7 @@ type OptionItem = {
 function fmtQ(n?: number) {
   const v = Number.isFinite(Number(n)) ? Number(n) : 0;
   try {
-    return new Intl.NumberFormat("es-GT", { style: "currency", currency: "GTQ" }).format(v);
+    return new Intl.NumberFormat("es-GT", { style: "currency", currency: "USD" }).format(v);
   } catch {
     return `Q ${v.toFixed(2)}`;
   }

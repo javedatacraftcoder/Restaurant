@@ -16,7 +16,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
     <>
       <nav className="navbar navbar-expand-md navbar-light bg-light border-bottom">
         <div className="container">
-          <Link className="navbar-brand fw-semibold" href="/app">Customer Portal</Link>
+          <Link className="navbar-brand fw-semibold" href="/app">Client Portal</Link>
 
           <button
             className="navbar-toggler"

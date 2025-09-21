@@ -102,12 +102,67 @@ function useNavCounts(pollMs = 15000) {
   return { counts, err, loading, reload: load } as const;
 }
 
+/* ======= NUEVO: hook para contar mesas activas (dine-in con estado abierto) ======= */
+function useActiveTablesCount(pollMs = 15000) {
+  const [count, setCount] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const OPEN_STATUSES = ['placed','kitchen_in_progress','kitchen_done','ready_to_close'] as const;
+
+  const load = async () => {
+    try {
+      setLoading(true);
+      await ensureFirebaseApp();
+      const { getFirestore, collection, query, where, getDocs, limit } = await import('firebase/firestore');
+      const db = getFirestore();
+
+      // Una sola 'in' por status (4 valores) — es válido y eficiente
+      const qRef = query(
+        collection(db, 'orders'),
+        where('orderInfo.type', '==', 'dine-in'),
+        where('status', 'in', OPEN_STATUSES as unknown as string[]),
+        limit(1000) // seguridad: evita descargar demasiado (ajusta si tu volumen es mayor)
+      );
+
+      const snap = await getDocs(qRef);
+      const tables = new Set<string>();
+      snap.forEach(doc => {
+        const data: any = doc.data();
+        const t = String(data?.orderInfo?.table ?? '').trim();
+        if (t) tables.add(t);
+      });
+      setCount(tables.size);
+    } catch {
+      // en error, no rompemos la UI
+      setCount(0);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!alive) return;
+      await load();
+      if (!alive) return;
+      const id = setInterval(load, pollMs);
+      return () => clearInterval(id);
+    })();
+    return () => { alive = false; };
+  }, [pollMs]);
+
+  return { count, loading, reload: load } as const;
+}
+
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const isActive = (href: string) => pathname?.startsWith(href);
 
   const { counts, loading } = useNavCounts(15000);
+
+  // ===== NUEVO: mesas activas =====
+  const { count: activeTables, loading: loadingTables } = useActiveTablesCount(15000);
 
   const kitch = counts?.kitchenPending ?? 0;
   const cashq = counts?.cashierQueue ?? 0;
@@ -159,6 +214,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 </Link>
               </li>
 
+              <li className="nav-item">
+                <Link className={`nav-link d-flex align-items-center gap-2 ${isActive('/admin/waiter') ? 'active' : ''}`} href="/admin/waiter">
+                  <span>Tables</span>
+                  {/* ===== NUEVO: badge de mesas activas ===== */}
+                  <span className="badge rounded-pill text-bg-secondary">
+                    {loadingTables && activeTables == null ? '…' : (activeTables ?? 0)}
+                  </span>
+                </Link>
+              </li>
+
               
             </ul>
 
@@ -173,4 +238,3 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     </>
   );
 }
-

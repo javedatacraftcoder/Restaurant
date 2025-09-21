@@ -5,9 +5,8 @@ import Link from "next/link";
 import Protected from "@/components/Protected";
 import { useAuth } from "@/app/providers";
 
-/** --------------------------
- *  Expected data types
- *  -------------------------- */
+/*Expected data types*/
+
 type FirestoreTS =
   | { seconds: number; nanoseconds?: number }
   | Date
@@ -16,7 +15,7 @@ type FirestoreTS =
 
 type OpsOption = { groupName: string; selected: Array<{ name: string; priceDelta?: number; priceDeltaCents?: number }> };
 
-// 🔧 NEW: shape used by checkout (addons + optionGroups.items)
+// shape used by checkout (addons + optionGroups.items)
 type OpsAddon = { name: string; price?: number; priceCents?: number };
 type OpsGroupItem = { id: string; name: string; priceDelta?: number; priceDeltaCents?: number };
 type OpsGroup = { groupId: string; groupName: string; type?: "single" | "multiple"; items: OpsGroupItem[] };
@@ -25,9 +24,7 @@ type OpsItem = {
   menuItemId: string;
   menuItemName?: string;
   quantity: number;
-  // Compat: old
   options?: OpsOption[];
-  // New (checkout)
   addons?: OpsAddon[];
   optionGroups?: OpsGroup[];
 
@@ -58,10 +55,10 @@ type Order = {
   updatedAt?: FirestoreTS;
   notes?: string | null;
 
-  // OPS (both variants)
+  // OPS (ambas variantes)
   items?: OpsItem[];
 
-  // Totals
+  // Totales
   amounts?: {
     subtotal: number;
     tax?: number;
@@ -81,29 +78,27 @@ type Order = {
   userEmail_lower?: string | null;
   contact?: { email?: string | null } | null;
 
-  // ✅ Invoice info (persistido en orders)
+  // Invoice info (persistido en orders)
   invoiceNumber?: string | null;
   invoiceDate?: FirestoreTS;
 };
 
 type ApiList = { ok?: boolean; orders?: Order[]; error?: string };
 
-/** --------------------------
- *  Format/date helpers
- *  -------------------------- */
+/* Helper para formateado de fechas*/
 function tsToDate(ts: any): Date | null {
   if (!ts) return null;
 
-  // 1) Date ready
+  // 1) Dia
   if (ts instanceof Date) return isNaN(ts.getTime()) ? null : ts;
 
-  // 2) Firestore Timestamp (client)
+  // 2) Tiempos en Firestoe(cliente)
   if (typeof ts?.toDate === "function") {
     const d = ts.toDate();
     return d instanceof Date && !isNaN(d.getTime()) ? d : null;
   }
 
-  // 3) Serialized object with seconds/nanoseconds (with or without underscore)
+  // 3) Objeto serializado con segundos y nano segundos (con o sin guionbajo)
   if (typeof ts === "object") {
     const seconds =
       ts.seconds ?? ts._seconds ?? ts.$seconds ?? null;
@@ -114,7 +109,7 @@ function tsToDate(ts: any): Date | null {
       const d = new Date(ms);
       if (!isNaN(d.getTime())) return d;
     }
-    // 3b) ISO serialized inside another common prop
+    // 3b) ISO serializado dentro de otro prop
     const iso = ts.$date ?? ts.iso ?? ts.date ?? null;
     if (typeof iso === "string") {
       const d = new Date(iso);
@@ -122,22 +117,22 @@ function tsToDate(ts: any): Date | null {
     }
   }
 
-  // 4) String: ISO or numeric string (ms/seconds)
+  // 4) String: ISO o string numerico (ms/seconds)
   if (typeof ts === "string") {
     const d = new Date(ts);
     if (!isNaN(d.getTime())) return d;
     const n = Number(ts);
     if (Number.isFinite(n)) {
-      const ms = n > 1e12 ? n : n * 1000; // ms vs s heuristic
+      const ms = n > 1e12 ? n : n * 1000; 
       const d2 = new Date(ms);
       if (!isNaN(d2.getTime())) return d2;
     }
     return null;
   }
 
-  // 5) Number: epoch in ms or s
+  // 5) Numero ms o s
   if (typeof ts === "number") {
-    const ms = ts > 1e12 ? ts : ts * 1000; // ms vs s heuristic
+    const ms = ts > 1e12 ? ts : ts * 1000; 
     const d = new Date(ms);
     return isNaN(d.getTime()) ? null : d;
   }
@@ -152,19 +147,17 @@ function fmtDate(ts?: FirestoreTS) {
 }
 
 function currencySymbol(cur?: string) {
-  const c = (cur || "GTQ").toUpperCase();
+  const c = (cur || "USD").toUpperCase();
   if (c === "GTQ") return "Q";
   if (c === "USD") return "$";
   return `${c} `;
 }
 
-function fmtMoneyQ(n: number, cur = "GTQ") {
+function fmtMoneyQ(n: number, cur = "USD") {
   return `${currencySymbol(cur)}${n.toFixed(2)}`;
 }
 
-/** --------------------------
- *  Pricing helpers (OPS)
- *  -------------------------- */
+/*Helper para precios (OPS) */
 const toNum = (x: any) => (Number.isFinite(Number(x)) ? Number(x) : undefined);
 const centsToQ = (c?: number) => (Number.isFinite(c) ? Number(c) / 100 : 0);
 
@@ -182,21 +175,18 @@ function priceQ(x: { price?: number; priceCents?: number } | any): number {
 function perUnitAddonsQ(it: OpsItem | any): number {
   let sum = 0;
 
-  // New checkout: optionGroups[].items[].priceDelta*
   if (Array.isArray(it?.optionGroups)) {
     for (const g of it.optionGroups) {
       for (const og of (g?.items || [])) sum += priceDeltaQ(og);
     }
   }
 
-  // Legacy: options[].selected[].priceDelta*
   if (Array.isArray(it?.options)) {
     for (const g of it.options) {
       for (const s of (g?.selected || [])) sum += priceDeltaQ(s);
     }
   }
 
-  // Addons: price / priceCents
   if (Array.isArray(it?.addons)) {
     for (const ad of it.addons) sum += priceQ(ad);
   }
@@ -302,7 +292,7 @@ function ClientOrdersPageInner() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
 
-  // Load orders and filter by current user (uid/email).
+  // Carga usuarios y filtra (uid/email).
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -333,7 +323,7 @@ function ClientOrdersPageInner() {
           return byUid || byMail;
         });
 
-        // Descending by date
+        // Desciende por fecha
         mine.sort((a, b) => {
           const da = tsToDate(a.createdAt)?.getTime() ?? 0;
           const db = tsToDate(b.createdAt)?.getTime() ?? 0;
@@ -375,7 +365,7 @@ function ClientOrdersPageInner() {
         <div className="list-group">
           {orders.map((o) => {
             const total = orderTotal(o);
-            const cur = (o.currency || "GTQ").toUpperCase();
+            const cur = (o.currency || "USD").toUpperCase();
             const isOpen = openId === o.id;
             const closed = !!closedStatus(o.status);
             const pillClass = closed ? "bg-danger" : "bg-primary";
@@ -422,7 +412,7 @@ function ClientOrdersPageInner() {
                     </Link>
                   </div>
 
-                  {/* Inline expandable detail */}
+                  {/* Detalle inline expandible */}
                   {isOpen && (
                     <div className="card-footer bg-white">
                       {/* OPS items */}
@@ -442,7 +432,7 @@ function ClientOrdersPageInner() {
                                         {it.menuItemName || it.menuItemId}
                                       </div>
 
-                                      {/* ✅ New: addons (price o priceCents) */}
+                                      {/* addons (price o priceCents) */}
                                       {Array.isArray(it.addons) && it.addons.length > 0 && (
                                         <ul className="small text-muted mt-1 ps-3">
                                           {it.addons.map((ad, ai) => {
@@ -475,7 +465,6 @@ function ClientOrdersPageInner() {
                                         </ul>
                                       )}
 
-                                      {/* Compat: old shape with 'options' */}
                                       {Array.isArray(it.options) && it.options.length > 0 && (
                                         <ul className="small text-muted mt-1 ps-3">
                                           {it.options.map((g, gi) => {
@@ -543,7 +532,7 @@ function ClientOrdersPageInner() {
                         </div>
                       )}
 
-                      {/* Notes and totals */}
+                      {/* Totales y notas */}
                       <div className="row g-2">
                         {o.notes ? (
                           <div className="col-12">
@@ -554,7 +543,7 @@ function ClientOrdersPageInner() {
                           </div>
                         ) : null}
 
-                        {/* Breakdown totals if provided in OPS */}
+                        {/* Breakdown de totales en OPS */}
                         {o.amounts ? (
                           <div className="col-12">
                             <div className="d-flex flex-column align-items-end gap-1">

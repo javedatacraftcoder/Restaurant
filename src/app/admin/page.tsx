@@ -17,6 +17,7 @@ const TILES: AdminTile[] = [
   { title: "Cashier",     subtitle: "admin/cashier",     href: "/admin/cashier",     emoji: "💵", hint: "Collection, receipts and closing" },
   { title: "Delivery",    subtitle: "admin/delivery",    href: "/admin/delivery",    emoji: "🚚", hint: "Allocation and monitoring" },
   { title: "Menu",        subtitle: "admin/menu",        href: "/admin/menu",        emoji: "📋", hint: "Categories, subcategories and dishes" },
+  { title: "Tables",      subtitle: "admin/waiter",      href: "/admin/waiter",      emoji: "🍴", hint: "Manage tables" },
   { title: "Orders",      subtitle: "admin/orders",      href: "/admin/orders",      emoji: "🧾", hint: "List and details of orders" },
   { title: "Edit Orders", subtitle: "admin/edit-orders", href: "/admin/edit-orders", emoji: "✏️", hint: "Edit existing orders" },
   { title: "Roles",       subtitle: "admin/roles",       href: "/admin/roles",       emoji: "👥", hint: "Management of permits and personnel" },

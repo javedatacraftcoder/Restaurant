@@ -13,26 +13,24 @@ type PromoDoc = {
   active?: boolean;
   startAt?: any;
   endAt?: any;
-  secret?: boolean; // used only to hide from customer list
+  secret?: boolean; // lo usamos solo para esconder del client list
 };
 
 function toDateMaybe(x: any): Date | null {
   if (!x) return null;
   if (typeof x?.toDate === 'function') {
-    try { return x.toDate(); } catch { /* ignore */ }
+    try { return x.toDate(); } catch { /* ignorar */ }
   }
   const d = new Date(x);
   return isNaN(d.getTime()) ? null : d;
 }
 
-/** Normalizes anything to array */
 function normalizeList<T = any>(x: unknown): T[] {
   if (Array.isArray(x)) return x as T[];
   if (x && typeof x === 'object') return Object.values(x as Record<string, T>);
   return [];
 }
 
-/** 🔁 Dedupe by document ID (not by code) */
 function uniqById(list: PromoDoc[]): PromoDoc[] {
   const seen = new Set<string>();
   const out: PromoDoc[] = [];
@@ -56,10 +54,6 @@ export default function AppHome() {
       try {
         let acc: PromoDoc[] = [];
         const now = new Date();
-
-        // ============================================================
-        // 1) Firestore: build visible list AND a set of secret ids/codes
-        // ============================================================
         const secretIdSet = new Set<string>();
         const secretCodeSet = new Set<string>();
         try {
@@ -74,13 +68,13 @@ export default function AppHome() {
             const code = data?.code ? String(data.code) : undefined;
             const isSecret = data?.secret === true;
 
-            // Track secrets to filter API results later as well
+            // Sigue secretos para filtrar los resultados del API despues tambien
             if (isSecret) {
               secretIdSet.add(id);
               if (code) secretCodeSet.add(code);
             }
 
-            // Only push visible (non-secret) and currently valid promotions
+            // solo hace push promociones visibles que tienen secret false
             const start = toDateMaybe(data?.startAt);
             const end = toDateMaybe(data?.endAt);
             const inWindow = (!start || now >= start) && (!end || now <= end);
@@ -101,11 +95,10 @@ export default function AppHome() {
           }
 
           acc = acc.concat(visibleFromFs);
-        } catch { /* silent */ }
+        } catch { /* silencio */ }
 
-        // ============================================================
-        // 2) Public endpoint (if present) — filter with secret sets too
-        // ============================================================
+        // 2) endpoint publico (if present) — se filtra por secreto
+        
         try {
           const res = await fetch('/api/promotions/public', { cache: 'no-store' });
           if (res.ok) {
@@ -119,32 +112,31 @@ export default function AppHome() {
                 const inWindow = (!start || now >= start) && (!end || now <= end);
                 const code = p?.code ? String(p.code) : undefined;
 
-                // If API exposes secret, honor it; otherwise guard with Firestore secret sets
+                // Si el API expone el secreto, se honra; sino se asegura con Firestore secret sets
                 const apiSaysSecret = p?.secret === true;
-                const idLike = p?.id || p?.promoId || code; // API may or may not provide Firestore id
+                const idLike = p?.id || p?.promoId || code; // El API puede o no puede proveer el ID de Firestore
                 const knownSecret = (idLike && secretIdSet.has(String(idLike))) || (code && secretCodeSet.has(code));
 
-                // Hide if API marks as secret OR Firestore knows it is secret
+                // Se esconde si el API lo marca como secreto o Firestore sabe que es secretoH
                 const isSecret = apiSaysSecret || knownSecret;
 
                 return active && inWindow && code && !isSecret;
               })
               .map((p) => ({
-                id: p.id || p.promoId || p.code, // keep a stable key for dedupe
+                id: p.id || p.promoId || p.code, 
                 name: p.name,
                 title: p.title,
                 code: p.code,
-                // carry the flag if the API sends it (not strictly needed after filtering)
                 secret: p?.secret === true,
               })) as PromoDoc[];
 
             acc = acc.concat(filtered);
           }
-        } catch { /* silent */ }
+        } catch { /* silencio */ }
 
-        // ============================================================
-        // 3) Dedupe by ID and finish
-        // ============================================================
+        
+        // 3) Dedupe por ID y termina
+        
         if (alive) {
           const deduped = uniqById(acc);
           setPromos(deduped);
@@ -212,7 +204,7 @@ export default function AppHome() {
 
               <hr className="my-4" />
 
-              {/* ======= Promotions ======= */}
+              {/* Promotions */}
               <h3 className="h6 text-body-secondary mb-2">Promotions</h3>
 
               <div
@@ -261,7 +253,6 @@ export default function AppHome() {
                   <div className="opacity-75">There are no active promotions at the moment.</div>
                 )}
               </div>
-              {/* ======= END Promotions ======= */}
             </div>
           </div>
         </div>
