@@ -168,7 +168,6 @@ function RolesPage_Inner() {
           <thead>
             <tr>
               <th>User</th>
-              <th>UID</th>
               {ROLES.map((r) => (
                 <th key={r.key}>{r.label}</th>
               ))}
@@ -182,7 +181,7 @@ function RolesPage_Inner() {
                   <div className="text-muted small">{u.email}</div>
                   {u.disabled && <span className="badge bg-warning text-dark">Disabled</span>}
                 </td>
-                <td className="text-muted small">{u.uid}</td>
+                
                 {ROLES.map((r) => {
                   const checked = !!u.claims?.[r.key];
                   return (

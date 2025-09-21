@@ -613,7 +613,8 @@ function OrderCard({
 
   return (
     <div className="card shadow-sm">
-      <div className="card-header d-flex align-items-center justify-content-between">
+      {/* ➕➕ Cambio mínimo: agregar flex-wrap para permitir salto de línea */}
+      <div className="card-header d-flex align-items-center justify-content-between flex-wrap">
         <div className="d-flex flex-column">
           <div className="fw-semibold">#{o.orderNumber || o.id}</div>
           {typeVal === 'dine_in' && tableVal && <div className="fw-semibold">Table {tableVal}</div>}
@@ -621,7 +622,8 @@ function OrderCard({
             {created.toLocaleString()} · {timeAgo(created, new Date())}
           </small>
         </div>
-        <div className="d-flex gap-2 align-items-center">
+        {/* ➕➕ Cambio mínimo: forzar que los badges bajen a una nueva línea */}
+        <div className="d-flex gap-2 align-items-center w-100 justify-content-end mt-2">
           {elapsedLabel && (
             <span className={`badge ${isElapsedAlert ? 'bg-danger' : 'bg-dark-subtle text-dark'}`}>{elapsedLabel}</span>
           )}

@@ -344,7 +344,7 @@ function AdminOrdersPageInner() {
                 )}
               </div>
               <div className="form-text">
-                Searches in <code>userEmail</code>, <code>userEmail_lower</code>, <code>createdBy.email</code> or <code>contact.email</code>.
+                User email search.
               </div>
             </div>
           </div>

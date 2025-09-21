@@ -1162,7 +1162,7 @@ export default function TaxesReportPage() {
               </div>
 
               <div className="small text-muted mt-2">
-                Snapshot/report usa los mismos campos que tu checkout y editor de taxes. Ajusta filtros y presiona <b>Run</b>.
+                Snapshot/report uses the same fields as your checkout and tax editor. Adjust filters and press Run.
               </div>
             </div>
           </div>

@@ -316,25 +316,21 @@ function getLineName(l: any) { return String(l?.menuItemName ?? l?.name ?? l?.me
 
 /** Precio base c/u del plato (sin addons). Incluye varios fallbacks. */
 function baseUnitPriceQ(l: any): number {
-  // Preferir campos "base"
   const baseCents = toNum(l?.basePriceCents) ?? toNum(l?.menuItemPriceCents);
   if (baseCents !== undefined) return baseCents / 100;
   const base = toNum(l?.basePrice) ?? toNum(l?.menuItemPrice);
   if (base !== undefined) return base;
 
-  // Fallback: menuItem?.price
   const miCents = toNum(l?.menuItem?.priceCents);
   if (miCents !== undefined) return miCents / 100;
   const mi = toNum(l?.menuItem?.price);
   if (mi !== undefined) return mi;
 
-  // Compat: unitPrice* suele ser base en algunos flujos
   const upc = toNum(l?.unitPriceCents);
   if (upc !== undefined) return upc / 100;
   const up = toNum(l?.unitPrice);
   if (up !== undefined) return up;
 
-  // Si solo tenemos totalCents y addons, derivar base (= total/qty - addons)
   const qty = getLineQty(l);
   const totC = toNum(l?.totalCents);
   if (totC !== undefined && qty > 0) {
@@ -344,7 +340,6 @@ function baseUnitPriceQ(l: any): number {
     return derived > 0 ? derived : 0;
   }
 
-  // Último fallback: price/priceCents (si en tu payload representan base)
   const pc = toNum(l?.priceCents);
   if (pc !== undefined) return pc / 100;
   const p = toNum(l?.price);
@@ -357,28 +352,23 @@ function baseUnitPriceQ(l: any): number {
 function perUnitAddonsQ(l: any): number {
   let sum = 0;
 
-  // 0) Checkout nuevo: optionGroups[].items[] (cada item con delta)
   if (Array.isArray(l?.optionGroups)) {
     for (const g of l.optionGroups) {
       const its = Array.isArray(g?.items) ? g.items : [];
       for (const it of its) sum += extractDeltaQ(it);
     }
   }
-
-  // 1) Legacy: options[].selected[]
   if (Array.isArray(l?.options)) {
     for (const g of l.options) {
       const sel = Array.isArray(g?.selected) ? g.selected : [];
       for (const s of sel) sum += extractDeltaQ(s);
     }
   }
-
-  // 2) Buckets: addons/extras/modifiers
   for (const key of ['addons', 'extras', 'modifiers'] as const) {
     const arr = l?.[key];
     if (Array.isArray(arr)) {
       for (const x of arr) {
-        if (typeof x === 'string') continue; // sin precio
+        if (typeof x === 'string') continue;
         sum += extractDeltaQ(x);
       }
     }
@@ -387,7 +377,6 @@ function perUnitAddonsQ(l: any): number {
 }
 
 function extractDeltaQ(x: any): number {
-  // soporta priceDelta, priceExtra, priceDeltaCents, priceExtraCents, price/priceCents
   const a = toNum(x?.priceDelta);
   if (a !== undefined) return a;
   const b = toNum(x?.priceExtra);
@@ -415,19 +404,13 @@ function preferredLines(o: OrderDoc): OrderItemLine[] {
   return (Array.isArray(o.items) && o.items.length ? o.items! : (Array.isArray(o.lines) ? o.lines! : [])) as OrderItemLine[];
 }
 
-/** 
- * 🔄 Totales: prioriza el esquema NUEVO (orderTotal + totals{subtotal,deliveryFee,tip,discount}),
- * luego amounts/totals en cents, y finalmente suma de líneas.
- */
+/** Totales (prioriza esquema nuevo) */
 function computeOrderTotalsQ(o: OrderDoc) {
-  // Siempre que haya líneas, calculamos un subtotal "fresco" desde items,
-  // así refleja inmediatamente lo agregado, aunque totals/amounts aún no se hayan actualizado.
   const lines = preferredLines(o);
   const subtotalFresh = lines.length > 0
     ? lines.reduce((acc, l) => acc + lineTotalQ(l), 0)
     : undefined;
 
-  // 0) Esquema nuevo (checkout)
   if (o?.totals && (o.totals.subtotal !== undefined || (o.totals as any).deliveryFee !== undefined || (o.totals as any).tip !== undefined)) {
     let subtotal = Number(o.totals.subtotal || 0);
     if (typeof subtotalFresh === 'number') subtotal = subtotalFresh;
@@ -440,7 +423,6 @@ function computeOrderTotalsQ(o: OrderDoc) {
     return { subtotal, tax: 0, serviceFee: 0, discount, tip, deliveryFee, total };
   }
 
-  // 1) amounts (antiguo)
   if (o?.amounts && Number.isFinite(o.amounts.total)) {
     let subtotal = Number(o.amounts.subtotal || 0);
     if (typeof subtotalFresh === 'number') subtotal = subtotalFresh;
@@ -456,7 +438,6 @@ function computeOrderTotalsQ(o: OrderDoc) {
     };
   }
 
-  // 2) cents
   if (o?.totals && Number.isFinite(o.totals.totalCents)) {
     let subtotal = centsToQ(o.totals.subtotalCents);
     if (typeof subtotalFresh === 'number') subtotal = subtotalFresh;
@@ -470,7 +451,6 @@ function computeOrderTotalsQ(o: OrderDoc) {
     return { subtotal, tax, serviceFee, discount, tip, deliveryFee: 0, total };
   }
 
-  // 3) fallback sumando líneas (ya usa líneas)
   const subtotal = subtotalFresh || 0;
   const tip = Number(o.amounts?.tip || 0);
   return { subtotal, tax: 0, serviceFee: 0, discount: 0, tip, deliveryFee: 0, total: subtotal + tip };
@@ -483,7 +463,6 @@ function safeLineTotalsQ(l: any) {
   let baseUnit = baseUnitPriceQ(l);
   const addonsUnit = perUnitAddonsQ(l);
 
-  // Si no tenemos base pero sí totalCents, derivar base = total/qty - addons
   if (baseUnit === 0) {
     const totC = toNum(l?.totalCents);
     if (totC !== undefined && qty > 0) {
@@ -598,17 +577,14 @@ function OrderCard({
     : (o.type || (o.deliveryAddress ? 'delivery' : 'dine_in'));
   const lines = preferredLines(o);
 
-  // 🆕 Mostrar etiqueta 'pickup' si aplica (agrupación sigue igual)
   const rawType = o.orderInfo?.type?.toLowerCase?.();
   const uiType = rawType === 'pickup' ? 'pickup' : type;
 
-  // Envío mostrado: primero totals.deliveryFee, luego deliveryOption.price
   const deliveryFeeShown =
     type === 'delivery'
       ? (Number.isFinite((totals as any)?.deliveryFee) ? Number((totals as any).deliveryFee) : Number(o.orderInfo?.deliveryOption?.price || 0))
       : 0;
 
-  // 🔎 NUEVO: descuento mostrado (de totals.discount o de appliedPromotions)
   const discountShown = (() => {
     const d = Number(((o as any)?.totals?.discount) ?? 0);
     if (Number.isFinite(d) && d > 0) return d;
@@ -624,7 +600,6 @@ function OrderCard({
     return 0;
   })();
 
-  // 🏷️ NUEVO: etiqueta/código de promoción
   const promoLabel = (() => {
     const promos = (o as any)?.appliedPromotions;
     if (Array.isArray(promos) && promos.length) {
@@ -634,19 +609,18 @@ function OrderCard({
     return (o as any)?.promotionCode || null;
   })();
 
-  // Gran total mostrado: primero orderTotal, luego totals.total
   const grandTotalShown = Number.isFinite(o.orderTotal) ? Number(o.orderTotal) : Number(totals.total || 0);
 
   return (
     <div className="card shadow-sm position-relative">
-      {/* 🆕 Badge PayPal (AGREGADO) */}
       {isPaypalPaid(o) && (
         <span className="badge bg-info text-dark position-absolute" style={{ right: 8, top: 8, zIndex: 2 }}>
           PayPal
         </span>
       )}
 
-      <div className="card-header d-flex align-items-center justify-content-between">
+      {/* ✅ Cambio visual mínimo: flex-wrap en header */}
+      <div className="card-header d-flex align-items-center justify-content-between flex-wrap">
         <div className="d-flex flex-column">
           <div className="fw-semibold">#{o.orderNumber || o.id}</div>
           {(type !== 'delivery' && (o.orderInfo?.table || o.tableNumber)) && (
@@ -656,7 +630,8 @@ function OrderCard({
             {created.toLocaleString()}
           </small>
         </div>
-        <div className="d-flex gap-2 align-items-center">
+        {/* ✅ Cambio visual mínimo: badges a nueva línea */}
+        <div className="d-flex gap-2 align-items-center w-100 justify-content-end mt-2">
           <span className="badge bg-outline-secondary text-dark">{uiType}</span>
           <BadgeStatus s={o.status} />
         </div>
@@ -676,7 +651,6 @@ function OrderCard({
 
             const groupRows: React.ReactNode[] = [];
 
-            // A) optionGroups (Checkout nuevo)
             if (Array.isArray(l?.optionGroups)) {
               for (const g of l.optionGroups) {
                 const its = Array.isArray(g?.items) ? g.items : [];
@@ -694,7 +668,6 @@ function OrderCard({
               }
             }
 
-            // B) options legacy
             if (Array.isArray(l?.options)) {
               for (const g of l.options) {
                 const sel = Array.isArray(g?.selected) ? g.selected : [];
@@ -712,7 +685,6 @@ function OrderCard({
               }
             }
 
-            // C) buckets: addons/extras/modifiers (cada item con precio si lo trae)
             for (const key of ['addons', 'extras', 'modifiers'] as const) {
               const arr: any[] = (l as any)[key];
               if (Array.isArray(arr) && arr.length) {
@@ -720,7 +692,7 @@ function OrderCard({
                   if (typeof x === 'string') return <span key={i}>{x}{i < arr.length - 1 ? ', ' : ''}</span>;
                   const nm = x?.name ?? '';
                   const pr = extractDeltaQ(x);
-                  return <span key={i}>{nm}{pr ? ` ({fmtCurrency(pr)})` : ''}{i < arr.length - 1 ? ', ' : ''}</span>;
+                  return <span key={i}>{nm}{pr ? ` (${fmtCurrency(pr)})` : ''}{i < arr.length - 1 ? ', ' : ''}</span>;
                 });
                 groupRows.push(
                   <div className="ms-3 text-muted" key={`bk-${idx}-${key}`}>
@@ -755,7 +727,6 @@ function OrderCard({
             <div className="fw-semibold">{fmtCurrency(totals.subtotal)}</div>
           </div>
 
-          {/* NUEVO: línea de descuento con nombre/código */}
           {discountShown > 0 && (
             <div className="d-flex justify-content-between text-success">
               <div>Discount{promoLabel ? ` (${promoLabel})` : ''}</div>
@@ -786,7 +757,6 @@ function OrderCard({
           </div>
         </div>
 
-        {/* 🆕 Bloque de Impuestos (taxSnapshot) */}
         {(() => {
           const s = (o as any).taxSnapshot as TaxSnapshot;
           return s && (
@@ -809,7 +779,6 @@ function OrderCard({
           );
         })()}
 
-        {/* (Existente) línea compacta — se conserva */}
         <div className="d-flex justify-content-between align-items-center mt-2">
           <div className="small">
             Total: <span className="fw-semibold">{fmtCurrency(grandTotalShown)}</span>
@@ -849,7 +818,6 @@ function CashierPage_Inner() {
       setBusyId(o.id);
       await advanceToClose(o, async () => {}); // encadena pasos permitidos hasta 'closed'
 
-      // 🆕 Si fue en efectivo, marcar también payment.status = 'closed'
       try {
         if (String(o?.payment?.provider || '').toLowerCase() === 'cash') {
           await setPaymentStatusClosed(o.id);
@@ -858,7 +826,6 @@ function CashierPage_Inner() {
         console.warn('[cashier] setPaymentStatusClosed failed:', e);
       }
 
-      // ✅ NUEVO: emitir factura si la numeración está activa (no bloquea el cierre)
       try {
         const profile = await getActiveTaxProfile();
         if (profile?.b2bConfig?.invoiceNumbering?.enabled) {
@@ -867,7 +834,6 @@ function CashierPage_Inner() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ orderId: o.id }),
           });
-          // refrescar para ver invoiceNumber en la tarjeta
           await refresh();
         } else {
           await refresh();
@@ -883,7 +849,6 @@ function CashierPage_Inner() {
     }
   };
 
-  // separar por tipo para columnas (pickup cae en dine_in)
   const dineIn = orders.filter(o => {
     const t = (o.orderInfo?.type?.toLowerCase?.() === 'delivery') ? 'delivery' : (o.type || (o.deliveryAddress ? 'delivery' : 'dine_in'));
     return t === 'dine_in';

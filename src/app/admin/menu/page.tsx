@@ -1012,7 +1012,7 @@ function AdminMenuPage_Inner() {
                 </div>
 
                 <div className="col-12">
-                  <label className="form-label">Option groups (option-groups)</label>
+                  <label className="form-label">Option groups </label>
                   <div className="d-flex align-items-center justify-content-between mb-2">
                     <small className="text-muted">Check the groups that apply to this dish.</small>
                     <button
@@ -1020,7 +1020,7 @@ function AdminMenuPage_Inner() {
                       className="btn btn-sm btn-outline-primary"
                       onClick={() => setShowOGCreator(s => !s)}
                     >
-                      {showOGCreator ? 'Hide' : 'New group + options'}
+                      {showOGCreator ? 'Hide' : 'Create new group & options'}
                     </button>
                   </div>
                   <div className="border rounded p-2" style={{ maxHeight: 160, overflow: 'auto' }}>

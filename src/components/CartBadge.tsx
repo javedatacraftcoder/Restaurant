@@ -85,7 +85,7 @@ export default function CartBadge({ className, href = '/cart-new', showTotal = f
       <Link href={href} className="position-relative d-inline-flex align-items-center text-decoration-none">
         {/* Reemplaza por tu SVG/ícono si lo tienes */}
         <span className="me-1">🛒</span>
-        <span>Carrito</span>
+        <span>Cart</span>
 
         {count > 0 && (
           <span

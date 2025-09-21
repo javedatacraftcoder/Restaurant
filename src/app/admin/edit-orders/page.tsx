@@ -28,7 +28,7 @@ type Line = {
 type Order = {
   id: string; orderNumber?: string|number; status?: string; currency?: string;
   createdAt?: TS;
-  orderInfo?: { type?: 'dine-in'|'delivery'; table?: string } | null;
+  orderInfo?: { type?: 'dine-in'|'delivery'|'pickup'; table?: string } | null;
   tableNumber?: string | null;
   items?: Line[]; lines?: any[];
   amounts?: { total?: number } | null; totals?: { totalCents?: number } | null; orderTotal?: number | null;
@@ -86,6 +86,23 @@ function displayType(o:Order){ const t=o.orderInfo?.type?.toLowerCase?.(); if(t=
 function getQty(l:Line){ return Number(l?.quantity ?? 1) || 1; }
 function getName(l:Line){ return String(l?.menuItemName ?? l?.name ?? 'Ítem'); }
 
+// ⏱️ helper para determinar cuándo se cerró (si está disponible)
+function closedAtMs(o:any): number | null {
+  // intenta statusHistory[].to === 'closed' con .at
+  const hist = Array.isArray(o?.statusHistory) ? o.statusHistory : [];
+  for (let i = hist.length - 1; i >= 0; i--) {
+    const e = hist[i];
+    const to = String(e?.to ?? e?.status ?? '').toLowerCase();
+    if (to === 'closed') {
+      const d = tsToDate(e?.at);
+      if (d) return d.getTime();
+    }
+  }
+  // intenta closedAt / updatedAt
+  const d = tsToDate(o?.closedAt) || tsToDate(o?.updatedAt) || tsToDate(o?.createdAt);
+  return d ? d.getTime() : null;
+}
+
 type ApiList = { ok?: boolean; orders?: Order[]; items?: Order[]; error?: string };
 
 export default function EditOrdersListPage() {
@@ -104,9 +121,29 @@ export default function EditOrdersListPage() {
   })(); return ()=>{alive=false}; },[]);
 
   const filtered = useMemo(()=>{
+    // 1) Solo dine-in y pickup
+    const dineInOrPickup = orders.filter(o=>{
+      const t = o.orderInfo?.type?.toLowerCase?.();
+      if (t === 'delivery') return false;
+      if (t === 'dine-in' || t === 'pickup') return true;
+      // fallback: si no hay tipo pero no tiene deliveryAddress, trátalo como dine-in
+      return !('deliveryAddress' in o) || !(o as any).deliveryAddress;
+    });
+
+    // 2) Ocultar cerradas después de 2 horas
+    const now = Date.now();
+    const TWO_HOURS = 2 * 60 * 60 * 1000;
+    const ttlFiltered = dineInOrPickup.filter(o=>{
+      const st = String(o.status || '').toLowerCase();
+      if (st !== 'closed') return true;
+      const tms = closedAtMs(o);
+      return tms === null ? true : (now - tms) <= TWO_HOURS;
+    });
+
+    // 3) Búsqueda existente (email o número)
     const s=q.trim().toLowerCase();
-    if(!s) return orders;
-    return orders.filter(o=>{
+    if(!s) return ttlFiltered;
+    return ttlFiltered.filter(o=>{
       const email = (o.userEmail || o.createdBy?.email || '').toLowerCase();
       const num = String(o.orderNumber ?? o.id).toLowerCase();
       return email.includes(s) || num.includes(s);

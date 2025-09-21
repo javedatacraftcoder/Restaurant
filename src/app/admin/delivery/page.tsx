@@ -145,7 +145,18 @@ type OrderDoc = {
       line1?: string; city?: string; country?: string; zip?: string; notes?: string;
     };
     addressNotes?: string;
+
+    // (podría venir un timestamp de delivered)
+    deliveredAt?: any;
+    deliveryAt?: any;
   } | any;
+
+  // (posibles campos a nivel raíz)
+  deliveredAt?: any;
+  deliveryDeliveredAt?: any;
+
+  // historial posible
+  statusHistory?: Array<{ at?: any; to?: string }>;
 };
 
 /* --------------------------------------------
@@ -188,6 +199,42 @@ function toSnakeStatus(s: string): StatusSnake {
     out_for_delivery: 'on_the_way',
   };
   return (aliasMap[snake] ?? (snake as StatusSnake)) as StatusSnake;
+}
+
+/* ✅ NUEVO: util para ms (Date | Firestore | string) */
+function tsMs(x: any): number {
+  try {
+    if (!x) return 0;
+    if (typeof x?.toDate === 'function') return x.toDate().getTime();
+    if (typeof x?.seconds === 'number') return x.seconds * 1000;
+    const t = new Date(x).getTime();
+    return Number.isFinite(t) ? t : 0;
+  } catch { return 0; }
+}
+
+/* ✅ NUEVO: detectar cuándo pasó a delivered (con fallbacks) */
+function getDeliveredAtMs(o: any): number | null {
+  const cand =
+    o?.orderInfo?.deliveredAt ??
+    o?.orderInfo?.deliveryAt ??
+    o?.deliveredAt ??
+    o?.deliveryDeliveredAt ??
+    null;
+
+  if (cand) {
+    const t = tsMs(cand);
+    if (t > 0) return t;
+  }
+
+  const hist: any[] = Array.isArray(o?.statusHistory) ? o.statusHistory : [];
+  const hit = hist.find((h) => String(h?.to || '').toLowerCase() === 'delivered');
+  if (hit?.at) {
+    const t = tsMs(hit.at);
+    if (t > 0) return t;
+  }
+
+  const created = tsMs(o?.createdAt);
+  return created > 0 ? created : null;
 }
 
 /* ---- Lectura de tipo/datos desde orderInfo (compat con Kitchen/Checkout) ---- */
@@ -579,18 +626,17 @@ function DeliveryCard({
     try {
       setBusy(true);
       await updateDeliveryMeta(o.id, { delivery: 'inroute' });
-      await onRefresh();
     } catch (e: any) {
       alert(e?.message || 'Error');
     } finally {
       setBusy(false);
+      await onRefresh();
     }
   };
   const doDelivered = async () => {
     try {
       setBusy(true);
       await updateDeliveryMeta(o.id, { delivery: 'delivered' });
-      // ✅ AGREGADO: disparar correo de "Order Delivered" (idempotente en el server)
       await triggerDeliveredEmail(o.id);
       await onRefresh();
     } catch (e: any) {
@@ -608,7 +654,8 @@ function DeliveryCard({
   return (
     <>
       <div className="card shadow-sm">
-        <div className="card-header d-flex align-items-center justify-content-between">
+        {/* ✅ Cambio visual mínimo: flex-wrap en el header */}
+        <div className="card-header d-flex align-items-center justify-content-between flex-wrap">
           <div className="d-flex flex-column">
             <div className="fw-semibold">#{o.orderNumber || o.id}</div>
             <small className="text-muted">
@@ -616,7 +663,8 @@ function DeliveryCard({
             </small>
             {courierName && <small className="text-muted">Delivery: <strong>{courierName}</strong></small>}
           </div>
-          <div className="d-flex gap-2 align-items-center">
+          {/* ✅ Cambio visual mínimo: badges bajan a nueva línea */}
+          <div className="d-flex gap-2 align-items-center w-100 justify-content-end mt-2">
             <span className="badge bg-outline-secondary text-dark">delivery</span>
             <BadgeStatus s={o.status} />
           </div>
@@ -631,7 +679,7 @@ function DeliveryCard({
             ) : null}
             <div><span className="fw-semibold">Phone:</span> {phone || <em className="text-muted">—</em>}</div>
             {notes ? <div><span className="fw-semibold">Order notes:</span> {notes}</div> : null}
-            <div className="small text-muted">Sub-state: {subState}</div>
+            <div className="small text-muted">Status: {subState}</div>
           </div>
 
           {/* Ítems con addons / option-groups */}
@@ -659,7 +707,6 @@ function DeliveryCard({
           {/* Acciones (solo sub-estado) */}
           <div className="d-flex justify-content-end">
             <div className="btn-group">
-              {/* Botón de impresión de ticket */}
               <button
                 className="btn btn-outline-dark btn-sm"
                 onClick={() => printDeliveryTicket(o)}
@@ -745,10 +792,17 @@ function DeliveryBoardPageInner() {
     [filtered]
   );
 
-  const entregados = useMemo(
-    () => filtered.filter(o => String(o?.orderInfo?.delivery ?? '') === 'delivered'),
-    [filtered]
-  );
+  // ✅ NUEVO: solo mostrar delivered de las últimas 24 horas
+  const entregados = useMemo(() => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    return filtered.filter(o => {
+      if (String(o?.orderInfo?.delivery ?? '') !== 'delivered') return false;
+      const whenMs = getDeliveredAtMs(o);
+      if (!whenMs) return false;
+      return (now - whenMs) < DAY_MS;
+    });
+  }, [filtered]);
 
   return (
     <div className="container py-3">

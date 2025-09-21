@@ -43,7 +43,10 @@ function hasRole(decoded: admin.auth.DecodedIdToken, ...roles: string[]) {
 // ---------------------------------------------------------------------------
 // PATCH /api/orders/[id]/delivery
 // ---------------------------------------------------------------------------
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> } // ⬅️ awaitable params
+) {
   try {
     const app = ensureAdmin();
     const db = app.firestore();
@@ -68,7 +71,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
 
     // ---------- Params / Body ----------
-    const orderId = params?.id;
+    const { id: orderId } = await params; // ⬅️ esperar params antes de usarlo
     if (!orderId) {
       return NextResponse.json({ error: "Missing order id" }, { status: 400 });
     }

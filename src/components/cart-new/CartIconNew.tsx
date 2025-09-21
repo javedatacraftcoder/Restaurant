@@ -15,7 +15,7 @@ export default function CartIconNew() {
     <Link href="/cart-new" className="position-relative d-inline-flex align-items-center text-decoration-none">
       {/* Ícono simple con Bootstrap; sustituye por tu SVG/ícono si deseas */}
       <span className="me-1">🛒</span>
-      <span>Carrito</span>
+      <span>Cart</span>
 
       {count > 0 && (
         <span

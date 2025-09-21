@@ -53,6 +53,84 @@ function undefToNullDeep<T>(value: T): T {
   return (value === undefined ? (null as any) : value) as T;
 }
 
+/** ✅ Detector robusto y a prueba de errores (no bloquea la orden) */
+function detectOrderSource() {
+  try {
+    if (typeof window === 'undefined') {
+      return {
+        orderSource: 'web:unknown',
+        deviceInfo: { os: 'unknown', isMobile: false, ua: '' as string, brands: [] as string[] },
+      };
+    }
+
+    const nav: any = window.navigator || {};
+    const ua: string = String(nav.userAgent || '');
+    const uaLower = ua.toLowerCase();
+
+    // Client Hints (UA Reduction)
+    const uaData = nav.userAgentData || null;
+    const chPlatform = String(uaData?.platform || '').toLowerCase();
+    const legacyPlatform = String(nav.platform || '').toLowerCase();
+    const brandsArr: string[] = Array.isArray(uaData?.brands)
+      ? uaData.brands.map((b: any) => String(b.brand || b.brandName || '')).filter(Boolean)
+      : [];
+
+    const hasTouch = (('maxTouchPoints' in nav) ? Number(nav.maxTouchPoints) > 0 : 'ontouchstart' in window);
+    const pointerCoarse = typeof window.matchMedia === 'function'
+      ? window.matchMedia('(pointer:coarse)').matches
+      : false;
+    const smallViewport = typeof window.matchMedia === 'function'
+      ? window.matchMedia('(max-width: 812px)').matches
+      : (window.innerWidth && window.innerWidth <= 812);
+
+    // OS detection
+    const isAndroid =
+      /android/.test(uaLower) ||
+      /android/.test(chPlatform) ||
+      /android/.test(legacyPlatform) ||
+      brandsArr.some((b) => /android|chrome on android/i.test(b));
+
+    // iPadOS puede reportar "MacIntel" pero touchpoints elevados
+    const isIOSFamily =
+      /iphone|ipad|ipod/.test(uaLower) ||
+      ((/mac/.test(chPlatform) || /mac/.test(legacyPlatform) || /mac os x|macintosh/.test(uaLower)) && Number(nav.maxTouchPoints || 0) > 2) ||
+      brandsArr.some((b) => /ios|safari on ios|mobile safari/i.test(b));
+
+    let os: 'android' | 'ios' | 'windows' | 'macos' | 'linux' | 'unknown' = 'unknown';
+    if (isAndroid) os = 'android';
+    else if (isIOSFamily) os = 'ios';
+    else if (/windows nt/.test(uaLower) || /win/.test(chPlatform) || /win/.test(legacyPlatform)) os = 'windows';
+    else if (/mac os x|macintosh/.test(uaLower) || /mac/.test(chPlatform) || /mac/.test(legacyPlatform)) os = 'macos';
+    else if (/linux/.test(uaLower) || /linux/.test(chPlatform) || /linux/.test(legacyPlatform)) os = 'linux';
+
+    // Heurística de "mobile"
+    const isMobile =
+      (uaData?.mobile === true) ||
+      /mobi|iphone|ipad|ipod|phone|tablet/.test(uaLower) ||
+      isAndroid || isIOSFamily ||
+      (hasTouch && (pointerCoarse || smallViewport));
+
+    const orderSource = `web:${isMobile ? 'mobile' : 'desktop'}`;
+
+    // Asegurar estructura JSON-safe y sin undefined
+    return {
+      orderSource,
+      deviceInfo: {
+        os,
+        isMobile: !!isMobile,
+        ua,
+        brands: brandsArr,
+      },
+    };
+  } catch {
+    // Pase lo que pase, nunca rompemos el flujo de compra
+    return {
+      orderSource: 'web:unknown',
+      deviceInfo: { os: 'unknown', isMobile: false, ua: '', brands: [] as string[] },
+    };
+  }
+}
+
 /** ------- Hook compartido con lógica de checkout (sin Stripe) ------- */
 function useCheckoutState() {
   const cart = useNewCart();
@@ -442,6 +520,12 @@ function useCheckoutState() {
           : undefined,
       };
     }
+
+    // ✅ NUEVO: canal y dispositivo (a prueba de fallos)
+    const { orderSource, deviceInfo } = detectOrderSource();
+    (orderInfo as any).orderSource = orderSource; // 'web:mobile' | 'web:desktop' | 'web:unknown'
+    (orderInfo as any).deviceInfo = deviceInfo;   // { os, isMobile, ua, brands[] }
+
     const cleanOrderInfo = undefToNullDeep(orderInfo);
 
     // --- NUEVO: snapshot de promociones aplicadas ---
@@ -666,7 +750,7 @@ function CheckoutUI(props: {
             <div className="card-body">
               {/* Tipo de pedido */}
               <div className="mb-3">
-                <label className="form-label fw-semibold">Tipo de pedido</label>
+                <label className="form-label fw-semibold">Order type</label>
                 <div className="d-flex gap-2">
                   <button className={`btn ${mode === 'dine-in' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => { setMode('dine-in'); setTipEdited(false); }} disabled={saving}>Dine-in</button>
                   <button className={`btn ${mode === 'delivery' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => { setMode('delivery'); setTipEdited(false); }} disabled={saving}>Delivery</button>

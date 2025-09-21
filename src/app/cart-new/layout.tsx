@@ -40,7 +40,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
                 <Link className={`nav-link ${isActive('/app/orders') ? 'active' : ''}`} href="/app/orders">Orders</Link>
               </li>
               <li className="nav-item">
-                <Link className={`nav-link ${isActive('/app/tracking') ? 'active' : ''}`} href="/app/tracking">Follow-up</Link>
+                <Link className={`nav-link ${isActive('/app/tracking') ? 'active' : ''}`} href="/app/tracking">Tracking</Link>
               </li>
             </ul>
 

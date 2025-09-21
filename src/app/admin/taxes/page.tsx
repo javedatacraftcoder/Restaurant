@@ -670,23 +670,10 @@ export default function AdminTaxesPage() {
                       </div>
                     </div>
                   )}
-                  <div className="form-text">
-                    To issue invoices, your backend must implement <code>POST /api/invoices/issue</code> (Cashier already uses it).
-                  </div>
-                </div>
-              </div>
-
-              {/* Phase C note */}
-              <div className="card shadow-sm">
-                <div className="card-body">
-                  <div className="small text-muted">
-                    Phase C ready: multiple rates, optionally taxable delivery, jurisdiction by address,
-                    exempt/zero-rated flags, and B2B with optional numbering.
-                  </div>
+                  
                 </div>
               </div>
             </div>
-
             {/* Side column */}
             <div className="col-12 col-lg-4">
               {/* Inline test */}
@@ -1229,9 +1216,6 @@ function JurisdictionsEditor({
         ))}
       </div>
       <div className="card-footer">
-        <div className="small text-muted">
-          Overrides are stored in the same <code>taxProfiles/*</code> document when you click “Save profile”.
-        </div>
       </div>
     </div>
   );
