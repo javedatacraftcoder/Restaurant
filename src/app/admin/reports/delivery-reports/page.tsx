@@ -15,6 +15,7 @@ import {
   Timestamp,
   DocumentData,
 } from "firebase/firestore";
+import { useFmtQ /* , fmtCents */ } from "@/lib/settings/money";
 
 /** ========= Types ========= */
 type Timeline = {
@@ -49,14 +50,13 @@ type OrderInfo = {
   statusHistory?: Array<{ status: string; at: Timestamp | { seconds: number } | Date }> | null;
 };
 
-
 type OrderDoc = {
   id: string;
   createdAt?: Timestamp | { seconds: number } | Date | null;
   orderInfo?: OrderInfo | null;
   totals?: { grandTotalWithTax?: number } | null;
   totalsCents?: { grandTotalWithTaxCents?: number } | null;
-  payment?: { amount?: number } | null;
+  payment?: { amount?: number; currency?: string | null } | null;
   orderTotal?: number | null;
 };
 
@@ -70,15 +70,9 @@ function toDate(v: any): Date | null {
   const d = new Date(v);
   return isNaN(d as any) ? null : d;
 }
-function money(n: number | undefined): string {
-  const v = Number.isFinite(Number(n)) ? Number(n) : 0;
-  try {
-    return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(v);
-  } catch {
-    return `$${v.toFixed(2)}`;
-  }
-}
-function getOrderRevenueUSD(o: OrderDoc): number {
+
+// ⬇️ Devolvemos monto en unidades (no USD fijo)
+function getOrderRevenue(o: OrderDoc): number {
   const cents = o.totalsCents?.grandTotalWithTaxCents;
   if (Number.isFinite(cents)) return (cents as number) / 100;
   const withTax = o.totals?.grandTotalWithTax;
@@ -231,6 +225,7 @@ function downloadExcelXml(filename: string, xml: string) {
 /** ========= Page ========= */
 export default function AdminDeliveryReportsPage() {
   const db = getFirestore();
+  const fmtQ = useFmtQ();
 
   // Filters
   const [preset, setPreset] = useState<"today" | "7d" | "30d" | "thisMonth" | "custom">("30d");
@@ -312,26 +307,29 @@ export default function AdminDeliveryReportsPage() {
   useEffect(() => { if (fromStr && toStr) load(); /* eslint-disable-next-line */ }, [fromStr, toStr]);
 
   /** ========= Aggregations ========= */
+  // Moneda detectada (si hay)
+  const currency = useMemo(() => orders[0]?.payment?.currency || "USD", [orders]);
+
   // Driver identity resolver (flex)
   function driverKeyAndName(oi?: OrderInfo | null): { key: string; name: string } {
-  // 1) principal: texto plano courierName
-  const cn = (oi?.courierName || "").trim();
-  if (cn) return { key: `name:${cn}`, name: cn };
+    // 1) principal: texto plano courierName
+    const cn = (oi?.courierName || "").trim();
+    if (cn) return { key: `name:${cn}`, name: cn };
 
-  // 2) objetos comunes con uid/name
-  const c = oi?.courier || oi?.deliveryDriver || oi?.assignedCourier || null;
-  if (c?.uid || c?.name) {
-    const key = c?.uid ? `uid:${c.uid}` : `name:${c?.name || "Unknown"}`;
-    return { key, name: c?.name || c?.uid || "Unknown" };
+    // 2) objetos comunes con uid/name
+    const c = oi?.courier || oi?.deliveryDriver || oi?.assignedCourier || null;
+    if (c?.uid || c?.name) {
+      const key = c?.uid ? `uid:${c.uid}` : `name:${c?.name || "Unknown"}`;
+      return { key, name: c?.name || c?.uid || "Unknown" };
+    }
+
+    // 3) campos planos legacy
+    if (oi?.driverName) return { key: `name:${oi.driverName}`, name: oi.driverName };
+    if (oi?.driverId)   return { key: `uid:${oi.driverId}`,   name: oi.driverId };
+
+    // 4) sin asignar
+    return { key: "unassigned", name: "Unassigned" };
   }
-
-  // 3) campos planos legacy
-  if (oi?.driverName) return { key: `name:${oi.driverName}`, name: oi.driverName };
-  if (oi?.driverId)   return { key: `uid:${oi.driverId}`,   name: oi.driverId };
-
-  // 4) sin asignar
-  return { key: "unassigned", name: "Unassigned" };
-}
 
   // Orders by driver
   const byDriver = useMemo(() => {
@@ -340,7 +338,7 @@ export default function AdminDeliveryReportsPage() {
       const d = driverKeyAndName(o.orderInfo);
       const cur = m.get(d.key) || { name: d.name, orders: 0, revenue: 0 };
       cur.orders += 1;
-      cur.revenue += getOrderRevenueUSD(o);
+      cur.revenue += getOrderRevenue(o);
       m.set(d.key, cur);
     }
     return Array.from(m.entries()).map(([key, v]) => ({ key, ...v })).sort((a, b) => b.orders - a.orders);
@@ -410,13 +408,13 @@ export default function AdminDeliveryReportsPage() {
 
   // KPIs
   const totalOrders = orders.length;
-  const totalRevenue = useMemo(() => orders.reduce((s, o) => s + getOrderRevenueUSD(o), 0), [orders]);
+  const totalRevenue = useMemo(() => orders.reduce((s, o) => s + getOrderRevenue(o), 0), [orders]);
 
   /** ========= Export ========= */
   function onExportExcel() {
     const driversSheet: Sheet = {
       name: "Drivers",
-      headers: ["Driver", "Orders", "Revenue (USD)"],
+      headers: ["Driver", "Orders", `Revenue (${currency})`],
       rows: byDriver.map(d => [d.name, d.orders, Number(d.revenue.toFixed(2))]),
     };
     const timesSheet: Sheet = {
@@ -441,7 +439,7 @@ export default function AdminDeliveryReportsPage() {
     };
     const ordersSheet: Sheet = {
       name: "Orders",
-      headers: ["OrderId", "CreatedAt (UTC)", "Driver", "City", "ZIP", "Revenue (USD)"],
+      headers: ["OrderId", "CreatedAt (UTC)", "Driver", "City", "ZIP", `Revenue (${currency})`],
       rows: orders.map(o => {
         const d = driverKeyAndName(o.orderInfo);
         const city = o.orderInfo?.addressInfo?.city || "";
@@ -452,7 +450,7 @@ export default function AdminDeliveryReportsPage() {
           d.name,
           city,
           zip,
-          Number(getOrderRevenueUSD(o).toFixed(2)),
+          Number(getOrderRevenue(o).toFixed(2)),
         ];
       }),
     };
@@ -524,7 +522,7 @@ export default function AdminDeliveryReportsPage() {
             <div className="col-6 col-md-3">
               <div className="card border-0 shadow-sm"><div className="card-body">
                 <div className="text-muted small">Revenue</div>
-                <div className="h4 mb-0">{money(totalRevenue)}</div>
+                <div className="h4 mb-0">{fmtQ(totalRevenue)}</div>
               </div></div>
             </div>
             <div className="col-12 col-md-6">
@@ -559,7 +557,7 @@ export default function AdminDeliveryReportsPage() {
                           <tr key={d.key}>
                             <td>{d.name}</td>
                             <td className="text-end">{d.orders}</td>
-                            <td className="text-end">{money(d.revenue)}</td>
+                            <td className="text-end">{fmtQ(d.revenue)}</td>
                           </tr>
                         ))}
                       </tbody>

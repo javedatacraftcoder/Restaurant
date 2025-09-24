@@ -15,6 +15,7 @@ import {
   Timestamp,
   DocumentData,
 } from "firebase/firestore";
+import { useFmtQ } from "@/lib/settings/money";
 
 /** ========= Types ========= */
 type AppliedPromotion = {
@@ -32,7 +33,7 @@ type OrderDoc = {
 
   totals?: { grandTotalWithTax?: number } | null;
   totalsCents?: { grandTotalWithTaxCents?: number } | null;
-  payment?: { amount?: number } | null;
+  payment?: { amount?: number; currency?: string | null } | null;
   orderTotal?: number | null;
 
   userEmail?: string | null;
@@ -50,15 +51,9 @@ function toDate(v: any): Date | null {
   const d = new Date(v);
   return isNaN(d as any) ? null : d;
 }
-function money(n: number | undefined): string {
-  const v = Number.isFinite(Number(n)) ? Number(n) : 0;
-  try {
-    return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(v);
-  } catch {
-    return `$${v.toFixed(2)}`;
-  }
-}
-function getOrderRevenueUSD(o: OrderDoc): number {
+
+/** Totales en unidades (no fija USD) */
+function getOrderRevenue(o: OrderDoc): number {
   const cents = o.totalsCents?.grandTotalWithTaxCents;
   if (Number.isFinite(cents)) return (cents as number) / 100;
   const withTax = o.totals?.grandTotalWithTax;
@@ -211,6 +206,7 @@ function downloadExcelXml(filename: string, xml: string) {
 /** ========= Page ========= */
 export default function AdminPromotionReportsPage() {
   const db = getFirestore();
+  const fmtQ = useFmtQ();
 
   // Filters
   const [preset, setPreset] = useState<"today" | "7d" | "30d" | "thisMonth" | "custom">("30d");
@@ -305,7 +301,7 @@ export default function AdminPromotionReportsPage() {
 
   /** ========= Aggregations ========= */
   const totalOrders = orders.length;
-  const totalRevenue = useMemo(() => orders.reduce((s, o) => s + getOrderRevenueUSD(o), 0), [orders]);
+  const totalRevenue = useMemo(() => orders.reduce((s, o) => s + getOrderRevenue(o), 0), [orders]);
 
   // Split orders: with promo vs without
   const withPromoOrders = useMemo(
@@ -318,11 +314,11 @@ export default function AdminPromotionReportsPage() {
   );
 
   const avgTicketWithPromo = useMemo(
-    () => withPromoOrders.length ? withPromoOrders.reduce((s, o) => s + getOrderRevenueUSD(o), 0) / withPromoOrders.length : 0,
+    () => withPromoOrders.length ? withPromoOrders.reduce((s, o) => s + getOrderRevenue(o), 0) / withPromoOrders.length : 0,
     [withPromoOrders]
   );
   const avgTicketWithoutPromo = useMemo(
-    () => withoutPromoOrders.length ? withoutPromoOrders.reduce((s, o) => s + getOrderRevenueUSD(o), 0) / withoutPromoOrders.length : 0,
+    () => withoutPromoOrders.length ? withoutPromoOrders.reduce((s, o) => s + getOrderRevenue(o), 0) / withoutPromoOrders.length : 0,
     [withoutPromoOrders]
   );
 
@@ -333,9 +329,9 @@ export default function AdminPromotionReportsPage() {
   ], [withPromoOrders, withoutPromoOrders]);
 
   // Usage by coupon (code)
-  type CouponAgg = { code: string; uses: number; savedUSD: number; share: number };
+  type CouponAgg = { code: string; uses: number; saved: number; share: number };
   const couponsAgg: CouponAgg[] = useMemo(() => {
-    const map = new Map<string, { uses: number; savedUSD: number }>();
+    const map = new Map<string, { uses: number; saved: number }>();
     const sumDiscount = (p: AppliedPromotion | undefined | null): number => {
       if (!p) return 0;
       if (Number.isFinite(p.discountTotalCents)) return Number(p.discountTotalCents) / 100;
@@ -344,9 +340,7 @@ export default function AdminPromotionReportsPage() {
     };
 
     for (const o of orders) {
-      // prefer appliedPromotions snapshot (pueden venir múltiples por orden)
       if (o.appliedPromotions && o.appliedPromotions.length > 0) {
-        // Dedupe por code por si llega duplicado en snapshot
         const byCode = new Map<string, number>();
         for (const p of o.appliedPromotions) {
           const code = (p.code || o.promotionCode || "").toString().toUpperCase();
@@ -355,18 +349,16 @@ export default function AdminPromotionReportsPage() {
           byCode.set(code, (byCode.get(code) || 0) + add);
         }
         for (const [code, saved] of byCode.entries()) {
-          const prev = map.get(code) || { uses: 0, savedUSD: 0 };
-          prev.uses += 1;            // cuenta la orden como 1 “uso” por code
-          prev.savedUSD += saved;    // ahorro total registrado por snapshot
+          const prev = map.get(code) || { uses: 0, saved: 0 };
+          prev.uses += 1;
+          prev.saved += saved;
           map.set(code, prev);
         }
       } else {
-        // fallback: solo promotionCode (sin snapshot detallado)
         const code = (o.promotionCode || "").toString().toUpperCase();
         if (code) {
-          const prev = map.get(code) || { uses: 0, savedUSD: 0 };
+          const prev = map.get(code) || { uses: 0, saved: 0 };
           prev.uses += 1;
-          // si no hay descuento detallado, no sumamos “saved”
           map.set(code, prev);
         }
       }
@@ -374,10 +366,9 @@ export default function AdminPromotionReportsPage() {
     const arr = Array.from(map.entries()).map(([code, v]) => ({
       code,
       uses: v.uses,
-      savedUSD: Number(v.savedUSD.toFixed(2)),
+      saved: Number(v.saved.toFixed(2)),
       share: totalOrders > 0 ? v.uses / totalOrders : 0,
     }));
-    // ordenar por usos desc
     return arr.sort((a, b) => b.uses - a.uses);
   }, [orders, totalOrders]);
 
@@ -387,10 +378,13 @@ export default function AdminPromotionReportsPage() {
     return top.map(c => ({ label: c.code, value: c.uses }));
   }, [couponsAgg]);
 
-  // "Más efectiva" = mayor conversión (share de órdenes del rango con ese cupón)
+  // "Más efectiva" = mayor conversión
   const mostEffective = couponsAgg.length > 0
     ? [...couponsAgg].sort((a, b) => b.share - a.share)[0]
     : null;
+
+  // Moneda (para Excel headers)
+  const currency = useMemo(() => orders[0]?.payment?.currency || "USD", [orders]);
 
   /** ========= Export ========= */
   function onExportExcel() {
@@ -407,23 +401,23 @@ export default function AdminPromotionReportsPage() {
     };
     const couponsSheet: Sheet = {
       name: "CouponsUsage",
-      headers: ["Code", "Uses (orders)", "Saved (USD)", "Conversion share (%)"],
-      rows: couponsAgg.map(c => [c.code, c.uses, Number(c.savedUSD.toFixed(2)), Number((c.share * 100).toFixed(2))]),
+      headers: ["Code", "Uses (orders)", `Saved (${currency})`, "Conversion share (%)"],
+      rows: couponsAgg.map(c => [c.code, c.uses, Number(c.saved.toFixed(2)), Number((c.share * 100).toFixed(2))]),
     };
     const topConv: Sheet = {
       name: "TopPromosByConversion",
-      headers: ["Code", "Conversion share (%)", "Uses (orders)", "Saved (USD)"],
+      headers: ["Code", "Conversion share (%)", "Uses (orders)", `Saved (${currency})`],
       rows: [...couponsAgg]
         .sort((a,b)=> b.share - a.share)
-        .map(c => [c.code, Number((c.share * 100).toFixed(2)), c.uses, Number(c.savedUSD.toFixed(2))]),
+        .map(c => [c.code, Number((c.share * 100).toFixed(2)), c.uses, Number(c.saved.toFixed(2))]),
     };
     const withSheet: Sheet = {
       name: "OrdersWithPromo",
-      headers: ["OrderId", "CreatedAt (UTC)", "Revenue (USD)", "Codes"],
+      headers: ["OrderId", "CreatedAt (UTC)", `Revenue (${currency})`, "Codes"],
       rows: withPromoOrders.map(o => [
         o.id,
         toDate(o.createdAt)?.toISOString().replace("T"," ").slice(0,19) || "",
-        Number(getOrderRevenueUSD(o).toFixed(2)),
+        Number(getOrderRevenue(o).toFixed(2)),
         Array.from(new Set([
           ...(o.appliedPromotions?.map(p => (p.code || o.promotionCode || "").toString().toUpperCase()) || []),
           (o.promotionCode || "").toString().toUpperCase(),
@@ -432,11 +426,11 @@ export default function AdminPromotionReportsPage() {
     };
     const withoutSheet: Sheet = {
       name: "OrdersWithoutPromo",
-      headers: ["OrderId", "CreatedAt (UTC)", "Revenue (USD)"],
+      headers: ["OrderId", "CreatedAt (UTC)", `Revenue (${currency})`],
       rows: withoutPromoOrders.map(o => [
         o.id,
         toDate(o.createdAt)?.toISOString().replace("T"," ").slice(0,19) || "",
-        Number(getOrderRevenueUSD(o).toFixed(2)),
+        Number(getOrderRevenue(o).toFixed(2)),
       ]),
     };
 
@@ -489,7 +483,7 @@ export default function AdminPromotionReportsPage() {
               </div>
               {error && <div className="text-danger small mt-2">{error}</div>}
               <div className="text-muted small mt-2">
-               {/* Totals computed like checkout (grand total with tax → payment.amount → orderTotal). Coupons read from <code>appliedPromotions[]</code> and <code>promotionCode</code>. If in the future you track “attempts”/“impressions”, we’ll refine the conversion metric. :contentReference[oaicite:1]{index=1}*/}
+                {/* Totals computed like checkout (grand total with tax → payment.amount → orderTotal). Coupons read from <code>appliedPromotions[]</code> and <code>promotionCode</code>. If in the future you track “attempts”/“impressions”, we’ll refine the conversion metric. */}
               </div>
             </div>
           </div>
@@ -505,19 +499,19 @@ export default function AdminPromotionReportsPage() {
             <div className="col-6 col-md-3">
               <div className="card border-0 shadow-sm"><div className="card-body">
                 <div className="text-muted small">Revenue</div>
-                <div className="h4 mb-0">{money(totalRevenue)}</div>
+                <div className="h4 mb-0">{fmtQ(totalRevenue)}</div>
               </div></div>
             </div>
             <div className="col-6 col-md-3">
               <div className="card border-0 shadow-sm"><div className="card-body">
                 <div className="text-muted small">Avg ticket (with promo)</div>
-                <div className="h5 mb-0">{money(avgTicketWithPromo)}</div>
+                <div className="h5 mb-0">{fmtQ(avgTicketWithPromo)}</div>
               </div></div>
             </div>
             <div className="col-6 col-md-3">
               <div className="card border-0 shadow-sm"><div className="card-body">
                 <div className="text-muted small">Avg ticket (without promo)</div>
-                <div className="h5 mb-0">{money(avgTicketWithoutPromo)}</div>
+                <div className="h5 mb-0">{fmtQ(avgTicketWithoutPromo)}</div>
               </div></div>
             </div>
           </div>
@@ -534,7 +528,7 @@ export default function AdminPromotionReportsPage() {
                         <tr>
                           <th>Code</th>
                           <th className="text-end">Uses (orders)</th>
-                          <th className="text-end">Saved (USD)</th>
+                          <th className="text-end">Saved</th>
                           <th className="text-end">Conversion share</th>
                         </tr>
                       </thead>
@@ -544,7 +538,7 @@ export default function AdminPromotionReportsPage() {
                           <tr key={c.code}>
                             <td>{c.code}</td>
                             <td className="text-end">{c.uses}</td>
-                            <td className="text-end">{money(c.savedUSD)}</td>
+                            <td className="text-end">{fmtQ(c.saved)}</td>
                             <td className="text-end">{(c.share * 100).toFixed(1)}%</td>
                           </tr>
                         ))}
@@ -577,12 +571,12 @@ export default function AdminPromotionReportsPage() {
                         <tr>
                           <td>With promo</td>
                           <td className="text-end">{withPromoOrders.length}</td>
-                          <td className="text-end">{money(avgTicketWithPromo)}</td>
+                          <td className="text-end">{fmtQ(avgTicketWithPromo)}</td>
                         </tr>
                         <tr>
                           <td>Without promo</td>
                           <td className="text-end">{withoutPromoOrders.length}</td>
-                          <td className="text-end">{money(avgTicketWithoutPromo)}</td>
+                          <td className="text-end">{fmtQ(avgTicketWithoutPromo)}</td>
                         </tr>
                       </tbody>
                     </table>

@@ -3,7 +3,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/app/providers';
-import { q } from '@/lib/currency';
+// CurrencyUpdate: reemplazar import de moneda fija por el formateador global
+import { useFmtQ } from '@/lib/settings/money';
 
 type OrderRow = {
   id: string;
@@ -38,6 +39,9 @@ export default function OrdersPage() {
     () => orders.filter(o => (filter ? o.status === filter : true)),
     [orders, filter]
   );
+
+  // CurrencyUpdate: hook de formateo (usa currency/locale del SettingsProvider)
+  const fmtQ = useFmtQ();
 
   async function load() {
     if (!idToken) return;
@@ -132,7 +136,8 @@ export default function OrdersPage() {
                     <td>
                       <span className="badge text-bg-primary">{o.status}</span>
                     </td>
-                    <td>{q(o.totalCents)}</td>
+                    {/* CurrencyUpdate: totalCents -> dividir entre 100 y formatear */}
+                    <td>{fmtQ(o.totalCents / 100)}</td>
                     <td>{o.createdAt ? new Date(o.createdAt).toLocaleString() : '-'}</td>
                     <td>{o.updatedAt ? new Date(o.updatedAt).toLocaleString() : '-'}</td>
                   </tr>

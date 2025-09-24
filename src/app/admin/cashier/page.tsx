@@ -5,6 +5,7 @@ import { OnlyCashier } from "@/components/Only";
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { getActiveTaxProfile } from '@/lib/tax/profile'; // ✅ NUEVO
+import { useFmtQ } from '@/lib/settings/money'; // ✅ usar formateador global (sin fmtCents)
 
 /* ===================================================
    Firebase (client) — igual que en OPS, sin tocar nada
@@ -244,14 +245,7 @@ function toDate(x: any): Date {
   const d = new Date(x);
   return isNaN(d.getTime()) ? new Date() : d;
 }
-function fmtCurrency(n?: number, currency = 'USD') {
-  if (typeof n !== 'number') return '—';
-  try {
-    return new Intl.NumberFormat('es-GT', { style: 'currency', currency }).format(n);
-  } catch {
-    return n.toFixed(2);
-  }
-}
+
 const toNum = (x: any) => {
   const n = Number(x);
   return Number.isFinite(n) ? n : undefined;
@@ -570,6 +564,7 @@ function OrderCard({
   onClose: (o: OrderDoc) => Promise<void>;
   busy: boolean;
 }) {
+  const fmtQ = useFmtQ(); // ✅ formateador global
   const created = toDate(o.createdAt ?? new Date());
   const totals = computeOrderTotalsQ(o);
   const type = (o.orderInfo?.type?.toLowerCase?.() === 'delivery')
@@ -658,7 +653,7 @@ function OrderCard({
                 const rows = its.map((it, i) => {
                   const nm = it?.name ?? '';
                   const pr = extractDeltaQ(it);
-                  return <span key={i}>{nm}{pr ? ` (${fmtCurrency(pr)})` : ''}{i < its.length - 1 ? ', ' : ''}</span>;
+                  return <span key={i}>{nm}{pr ? ` (${fmtQ(pr)})` : ''}{i < its.length - 1 ? ', ' : ''}</span>;
                 });
                 groupRows.push(
                   <div className="ms-3 text-muted" key={`og-${idx}-${g.groupId || g.groupName}`}>
@@ -675,7 +670,7 @@ function OrderCard({
                 const rows = sel.map((s, i) => {
                   const nm = s?.name ?? '';
                   const pr = extractDeltaQ(s);
-                  return <span key={i}>{nm}{pr ? ` (${fmtCurrency(pr)})` : ''}{i < sel.length - 1 ? ', ' : ''}</span>;
+                  return <span key={i}>{nm}{pr ? ` (${fmtQ(pr)})` : ''}{i < sel.length - 1 ? ', ' : ''}</span>;
                 });
                 groupRows.push(
                   <div className="ms-3 text-muted" key={`op-${idx}-${g.groupName}`}>
@@ -692,7 +687,7 @@ function OrderCard({
                   if (typeof x === 'string') return <span key={i}>{x}{i < arr.length - 1 ? ', ' : ''}</span>;
                   const nm = x?.name ?? '';
                   const pr = extractDeltaQ(x);
-                  return <span key={i}>{nm}{pr ? ` (${fmtCurrency(pr)})` : ''}{i < arr.length - 1 ? ', ' : ''}</span>;
+                  return <span key={i}>{nm}{pr ? ` (${fmtQ(pr)})` : ''}{i < arr.length - 1 ? ', ' : ''}</span>;
                 });
                 groupRows.push(
                   <div className="ms-3 text-muted" key={`bk-${idx}-${key}`}>
@@ -706,13 +701,13 @@ function OrderCard({
               <div key={idx} className="small mb-2">
                 <div className="d-flex justify-content-between">
                   <div>• {qty} × {name}</div>
-                  <div className="text-muted">({fmtCurrency(baseUnit)} c/u)</div>
+                  <div className="text-muted">({fmtQ(baseUnit)} c/u)</div>
                 </div>
                 {groupRows}
                 {lineTotal > 0 && (
                   <div className="d-flex justify-content-between">
                     <span className="text-muted">Subtotal line</span>
-                    <span className="text-muted">{fmtCurrency(lineTotal)}</span>
+                    <span className="text-muted">{fmtQ(lineTotal)}</span>
                   </div>
                 )}
               </div>
@@ -724,13 +719,13 @@ function OrderCard({
         <div className="mt-2">
           <div className="d-flex justify-content-between">
             <div>Subtotal</div>
-            <div className="fw-semibold">{fmtCurrency(totals.subtotal)}</div>
+            <div className="fw-semibold">{fmtQ(totals.subtotal)}</div>
           </div>
 
           {discountShown > 0 && (
             <div className="d-flex justify-content-between text-success">
               <div>Discount{promoLabel ? ` (${promoLabel})` : ''}</div>
-              <div className="fw-semibold">- {fmtCurrency(discountShown)}</div>
+              <div className="fw-semibold">- {fmtQ(discountShown)}</div>
             </div>
           )}
 
@@ -739,21 +734,21 @@ function OrderCard({
               <div>
                 Delivery{ o.orderInfo?.deliveryOption?.title ? ` — ${o.orderInfo.deliveryOption.title}` : '' }
               </div>
-              <div className="fw-semibold">{fmtCurrency(deliveryFeeShown)}</div>
+              <div className="fw-semibold">{fmtQ(deliveryFeeShown)}</div>
             </div>
           )}
 
           {type !== 'delivery' && Number(totals.tip || 0) > 0 && (
             <div className="d-flex justify-content-between">
               <div>Tip</div>
-              <div className="fw-semibold">{fmtCurrency(totals.tip)}</div>
+              <div className="fw-semibold">{fmtQ(totals.tip)}</div>
             </div>
           )}
 
           <hr />
           <div className="d-flex justify-content-between">
             <div className="fw-semibold">Grand total</div>
-            <div className="fw-bold">{fmtCurrency(grandTotalShown)}</div>
+            <div className="fw-bold">{fmtQ(grandTotalShown)}</div>
           </div>
         </div>
 
@@ -761,19 +756,19 @@ function OrderCard({
           const s = (o as any).taxSnapshot as TaxSnapshot;
           return s && (
             <div className="small mt-2">
-              <div>Subtotal: {(s.totals.subTotalCents/100).toFixed(2)} {s.currency}</div>
+              <div>Subtotal: {fmtQ(s.totals.subTotalCents / 100)}</div>
               {Array.isArray(s.summaryByRate) && s.summaryByRate.map((r, idx) => (
                 <div key={r?.code || idx}>
-                  Tax {(r.rateBps/100).toFixed(2)}%: {(r.taxCents/100).toFixed(2)} {s.currency}
+                  Tax {(r.rateBps/100).toFixed(2)}%: {fmtQ(r.taxCents / 100)}
                 </div>
               ))}
               {Array.isArray(s.surcharges) && s.surcharges.map((x, i) => (
                 <div key={i}>
-                  Service charge: {(x.baseCents/100).toFixed(2)} {s.currency}
-                  {x.taxCents>0 && <> (tax {(x.taxCents/100).toFixed(2)} {s.currency})</>}
+                  Service charge: {fmtQ(x.baseCents / 100)}
+                  {x.taxCents>0 && <> (tax {fmtQ(x.taxCents / 100)})</>}
                 </div>
               ))}
-              <div className="fw-semibold">Total: {(s.totals.grandTotalCents/100).toFixed(2)} {s.currency}</div>
+              <div className="fw-semibold">Total: {fmtQ(s.totals.grandTotalCents / 100)}</div>
               {s.customer?.taxId && <div>Customer Tax ID: {s.customer.taxId}</div>}
             </div>
           );
@@ -781,8 +776,8 @@ function OrderCard({
 
         <div className="d-flex justify-content-between align-items-center mt-2">
           <div className="small">
-            Total: <span className="fw-semibold">{fmtCurrency(grandTotalShown)}</span>
-            {totals.tip ? <span className="text-muted"> · tip {fmtCurrency(totals.tip)}</span> : null}
+            Total: <span className="fw-semibold">{fmtQ(grandTotalShown)}</span>
+            {totals.tip ? <span className="text-muted"> · tip {fmtQ(totals.tip)}</span> : null}
           </div>
 
           <div className="btn-group">

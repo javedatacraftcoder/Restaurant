@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Protected from "@/components/Protected";
 import { useAuth } from "@/app/providers";
+// CurrencyUpdate: usar formateador centralizado
+import { useFmtQ } from "@/lib/settings/money";
 
 /*Expected data types*/
 
@@ -146,16 +148,7 @@ function fmtDate(ts?: FirestoreTS) {
   return `${d.toLocaleDateString()} ${d.toLocaleTimeString()}`;
 }
 
-function currencySymbol(cur?: string) {
-  const c = (cur || "USD").toUpperCase();
-  if (c === "GTQ") return "Q";
-  if (c === "USD") return "$";
-  return `${c} `;
-}
-
-function fmtMoneyQ(n: number, cur = "USD") {
-  return `${currencySymbol(cur)}${n.toFixed(2)}`;
-}
+// CurrencyUpdate: eliminar currencySymbol / fmtMoneyQ locales y usar useFmtQ
 
 /*Helper para precios (OPS) */
 const toNum = (x: any) => (Number.isFinite(Number(x)) ? Number(x) : undefined);
@@ -292,6 +285,9 @@ function ClientOrdersPageInner() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
 
+  // CurrencyUpdate: formateador de moneda desde settings
+  const fmtQ = useFmtQ();
+
   // Carga usuarios y filtra (uid/email).
   useEffect(() => {
     let alive = true;
@@ -365,7 +361,6 @@ function ClientOrdersPageInner() {
         <div className="list-group">
           {orders.map((o) => {
             const total = orderTotal(o);
-            const cur = (o.currency || "USD").toUpperCase();
             const isOpen = openId === o.id;
             const closed = !!closedStatus(o.status);
             const pillClass = closed ? "bg-danger" : "bg-primary";
@@ -394,7 +389,8 @@ function ClientOrdersPageInner() {
                       )}
                     </div>
                     <div className="mt-2 mt-md-0 fw-bold">
-                      {fmtMoneyQ(total, cur)}
+                      {/* CurrencyUpdate */}
+                      {fmtQ(total)}
                     </div>
                   </div>
 
@@ -439,7 +435,9 @@ function ClientOrdersPageInner() {
                                             const q = priceQ(ad);
                                             return (
                                               <li key={ai}>
-                                                (addon) {ad.name}{q ? ` — ${fmtMoneyQ(q, o.currency)}` : ""}
+                                                (addon) {ad.name}
+                                                {/* CurrencyUpdate */}
+                                                {q ? ` — ${fmtQ(q)}` : ""}
                                               </li>
                                             );
                                           })}
@@ -454,7 +452,8 @@ function ClientOrdersPageInner() {
                                             if (!list.length) return null;
                                             const rows = list.map((og, i) => {
                                               const d = priceDeltaQ(og);
-                                              return `${og.name}${d ? ` (${fmtMoneyQ(d, o.currency)})` : ""}`;
+                                              // CurrencyUpdate
+                                              return `${og.name}${d ? ` (${fmtQ(d)})` : ""}`;
                                             }).join(", ");
                                             return (
                                               <li key={gi}>
@@ -470,7 +469,8 @@ function ClientOrdersPageInner() {
                                           {it.options.map((g, gi) => {
                                             const rows = (g.selected || []).map((s) => {
                                               const d = priceDeltaQ(s);
-                                              return `${s.name}${d ? ` (${fmtMoneyQ(d, o.currency)})` : ""}`;
+                                              // CurrencyUpdate
+                                              return `${s.name}${d ? ` (${fmtQ(d)})` : ""}`;
                                             }).join(", ");
                                             return (
                                               <li key={gi}>
@@ -491,7 +491,8 @@ function ClientOrdersPageInner() {
 
                                     {/* ✅ Monto por línea */}
                                     <div className="ms-3 text-nowrap">
-                                      {fmtMoneyQ(lineTotal, o.currency)}
+                                      {/* CurrencyUpdate */}
+                                      {fmtQ(lineTotal)}
                                       <div className="small text-muted text-end">x{qty}</div>
                                     </div>
                                   </div>
@@ -522,7 +523,8 @@ function ClientOrdersPageInner() {
                                       <div className="small text-muted">x{qty}</div>
                                     </div>
                                     <div className="ms-3 text-nowrap">
-                                      {fmtMoneyQ(totalQ, o.currency)}
+                                      {/* CurrencyUpdate */}
+                                      {fmtQ(totalQ)}
                                     </div>
                                   </div>
                                 </li>
@@ -549,40 +551,46 @@ function ClientOrdersPageInner() {
                             <div className="d-flex flex-column align-items-end gap-1">
                               <div className="small text-muted">
                                 Subtotal: <span className="fw-semibold">
-                                  {fmtMoneyQ(Number(o.amounts.subtotal || 0), o.currency)}
+                                  {/* CurrencyUpdate */}
+                                  {fmtQ(Number(o.amounts.subtotal || 0))}
                                 </span>
                               </div>
                               {!!o.amounts.tax && (
                                 <div className="small text-muted">
                                   Taxes: <span className="fw-semibold">
-                                    {fmtMoneyQ(Number(o.amounts.tax || 0), o.currency)}
+                                    {/* CurrencyUpdate */}
+                                    {fmtQ(Number(o.amounts.tax || 0))}
                                   </span>
                                 </div>
                               )}
                               {!!o.amounts.serviceFee && (
                                 <div className="small text-muted">
                                   Service: <span className="fw-semibold">
-                                    {fmtMoneyQ(Number(o.amounts.serviceFee || 0), o.currency)}
+                                    {/* CurrencyUpdate */}
+                                    {fmtQ(Number(o.amounts.serviceFee || 0))}
                                   </span>
                                 </div>
                               )}
                               {!!o.amounts.discount && (
                                 <div className="small text-muted">
                                   Discount: <span className="fw-semibold">
-                                    −{fmtMoneyQ(Number(o.amounts.discount || 0), o.currency)}
+                                    {/* CurrencyUpdate */}
+                                    −{fmtQ(Number(o.amounts.discount || 0))}
                                   </span>
                                 </div>
                               )}
                               {!!o.amounts.tip && (
                                 <div className="small text-muted">
                                   Tip: <span className="fw-semibold">
-                                    {fmtMoneyQ(Number(o.amounts.tip || 0), o.currency)}
+                                    {/* CurrencyUpdate */}
+                                    {fmtQ(Number(o.amounts.tip || 0))}
                                   </span>
                                 </div>
                               )}
                               <div className="mt-1">
                                 Total: <span className="fw-bold">
-                                  {fmtMoneyQ(Number(o.amounts.total || total), o.currency)}
+                                  {/* CurrencyUpdate */}
+                                  {fmtQ(Number(o.amounts.total || total))}
                                 </span>
                               </div>
                             </div>
@@ -593,12 +601,14 @@ function ClientOrdersPageInner() {
                             <div className="d-flex flex-column align-items-end gap-1">
                               <div className="small text-muted">
                                 Subtotal: <span className="fw-semibold">
-                                  {fmtMoneyQ(Number(computed?.subtotal || 0), o.currency)}
+                                  {/* CurrencyUpdate */}
+                                  {fmtQ(Number(computed?.subtotal || 0))}
                                 </span>
                               </div>
                               <div className="mt-1">
                                 Total: <span className="fw-bold">
-                                  {fmtMoneyQ(Number(computed?.total || total), o.currency)}
+                                  {/* CurrencyUpdate */}
+                                  {fmtQ(Number(computed?.total || total))}
                                 </span>
                               </div>
                             </div>

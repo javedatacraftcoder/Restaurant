@@ -23,6 +23,9 @@ import { getAuth } from 'firebase/auth';
 import { getActiveTaxProfile } from '@/lib/tax/profile';
 import { calculateTaxSnapshot } from '@/lib/tax/engine';
 
+// CurrencyUpdate: usar formateador global conectado a SettingsProvider
+import { useFmtQ } from '@/lib/settings/money';
+
 type PickupInfo = { type: 'pickup'; phone: string; notes?: string };
 type DeliveryOption = { id: string; title: string; description?: string; price: number; isActive?: boolean; sortOrder?: number; };
 type Addr = { line1?: string; city?: string; country?: string; zip?: string; notes?: string };
@@ -36,11 +39,7 @@ type AppliedPromo = {
   discountByLine: Array<{ lineId: string; menuItemId: string; discountCents: number; eligible: boolean; lineSubtotalCents: number; }>;
 };
 
-function fmtQ(n?: number) {
-  const v = Number.isFinite(Number(n)) ? Number(n) : 0;
-  try { return new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'USD' }).format(v); }
-  catch { return `Q ${v.toFixed(2)}`; }
-}
+// CurrencyUpdate: eliminada la función local fmtQ con "USD/es-GT" hardcodeado
 
 /** Convierte undefined -> null (solo para `orderInfo`) */
 function undefToNullDeep<T>(value: T): T {
@@ -730,6 +729,9 @@ function CheckoutUI(props: {
     onChangeAddressLabel, setPromoCode, applyPromo, clearPromo,
   } = actions;
 
+  // CurrencyUpdate: obtener formateador por tenant
+  const fmtQ = useFmtQ();
+
   const disableSubmit =
     saving ||
     (mode === 'dine-in' ? !table.trim() :
@@ -821,7 +823,7 @@ function CheckoutUI(props: {
                             <div className="w-100">
                               <div className="d-flex justify-content-between">
                                 <div className="fw-semibold">{opt.title}</div>
-                                <div className="fw-semibold">{fmtQ(opt.price)}</div>
+                                <div className="fw-semibold">{fmtQ(opt.price)}</div> {/* CurrencyUpdate */}
                               </div>
                               {opt.description && <div className="text-muted small">{opt.description}</div>}
                             </div>
@@ -975,14 +977,14 @@ function CheckoutUI(props: {
                         <div className="fw-semibold">
                           {ln.menuItemName} <span className="text-muted">× {ln.quantity}</span>
                         </div>
-                        <div className="fw-semibold">{fmtQ(lineSum)}</div>
+                        <div className="fw-semibold">{fmtQ(lineSum)}</div> {/* CurrencyUpdate */}
                       </div>
                       {(ln.addons.length > 0 || ln.optionGroups.some((g: any) => g.items.length > 0)) && (
                         <div className="mt-2">
                           {ln.addons.map((ad: any, i: number) => (
                             <div className="d-flex justify-content-between small" key={`ad-${idx}-${i}`}>
                               <div>— (addons) {ad.name}</div>
-                              <div>{fmtQ(ad.price)}</div>
+                              <div>{fmtQ(ad.price)}</div> {/* CurrencyUpdate */}
                             </div>
                           ))}
                           {ln.optionGroups.map((g: any) =>
@@ -992,14 +994,14 @@ function CheckoutUI(props: {
                                 key={`gi-${idx}-${g.groupId}-${it.id}`}
                               >
                                 <div>— {it.name}</div>
-                                <div>{fmtQ(it.priceDelta)}</div>
+                                <div>{fmtQ(it.priceDelta)}</div> {/* CurrencyUpdate */}
                               </div>
                             ))
                           )}
                         </div>
                       )}
                       <div className="text-muted small mt-1">
-                        ({fmtQ(ln.basePrice + unitExtras)} each)
+                        ({fmtQ(ln.basePrice + unitExtras)} each) {/* CurrencyUpdate */}
                       </div>
                     </div>
                   );
@@ -1011,21 +1013,21 @@ function CheckoutUI(props: {
               <div className="mt-3">
                 <div className="d-flex justify-content-between">
                   <div>Subtotal</div>
-                  <div className="fw-semibold">{fmtQ(subtotal)}</div>
+                  <div className="fw-semibold">{fmtQ(subtotal)}</div> {/* CurrencyUpdate */}
                 </div>
 
                 {/* NUEVO: línea de descuento si hay promo */}
                 {promo && (
                   <div className="d-flex justify-content-between text-success">
                     <div>Discount ({promo.code})</div>
-                    <div className="fw-semibold">- {fmtQ((promo.discountTotalCents||0)/100)}</div>
+                    <div className="fw-semibold">- {fmtQ((promo.discountTotalCents||0)/100)}</div> {/* CurrencyUpdate */}
                   </div>
                 )}
 
                 {mode === 'delivery' && (
                   <div className="d-flex justify-content-between">
                     <div>Delivery</div>
-                    <div className="fw-semibold">{fmtQ(deliveryFee)}</div>
+                    <div className="fw-semibold">{fmtQ(deliveryFee)}</div> {/* CurrencyUpdate */}
                   </div>
                 )}
 
@@ -1033,7 +1035,7 @@ function CheckoutUI(props: {
                 {showTaxLine && (
                   <div className="d-flex justify-content-between">
                     <div>Tax</div>
-                    <div className="fw-semibold">{fmtQ(taxUI?.taxQ || 0)}</div>
+                    <div className="fw-semibold">{fmtQ(taxUI?.taxQ || 0)}</div> {/* CurrencyUpdate */}
                   </div>
                 )}
 
@@ -1044,14 +1046,14 @@ function CheckoutUI(props: {
                       <input type="number" min="0" step="0.01" className="form-control form-control-sm" style={{ width: 120 }}
                         value={Number.isFinite(tip) ? tip : 0}
                         onChange={(e) => { setTipEdited(true); const v = Number(e.target.value); setTip(Number.isFinite(v) ? v : 0); }} />
-                      <span className="text-muted small">{fmtQ(tip)}</span>
+                      <span className="text-muted small">{fmtQ(tip)}</span> {/* CurrencyUpdate */}
                     </div>
                   </div>
                 )}
                 <hr />
                 <div className="d-flex justify-content-between">
                   <div className="fw-semibold">Grand total</div>
-                  <div className="fw-bold">{fmtQ(grandToShow)}</div>
+                  <div className="fw-bold">{fmtQ(grandToShow)}</div> {/* CurrencyUpdate */}
                 </div>
               </div>
             </div>

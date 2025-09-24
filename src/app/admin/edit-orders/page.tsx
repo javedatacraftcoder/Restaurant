@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from 'react';
 /* 🔐 NOTA: Agregado para seguridad */
 import Protected from '@/components/Protected';
 import { RoleGate } from '@/components/RoleGate'; // allow={['admin','waiter']}
+import { useFmtQ } from '@/lib/settings/money'; // ✅ usar formateador global
 
 type TS = any;
 
@@ -43,7 +44,8 @@ function tsToDate(ts:TS){ if(!ts) return null; try{
   if (typeof ts === 'number') return new Date(ts);
   const d = new Date(ts); return isNaN(d.getTime())? null : d;
 }catch{return null;} }
-function fmtMoney(n?:number, cur='USD'){ const v=Number(n||0); try{ return new Intl.NumberFormat('es-GT',{style:'currency',currency:cur}).format(v);}catch{return `Q ${v.toFixed(2)}`;} }
+// (mantengo esta función aunque ya no se usa, para no tocar nada más de la estructura)
+// function fmtMoney(n?:number, cur='USD'){ const v=Number(n||0); try{ return new Intl.NumberFormat('es-GT',{style:'currency',currency:cur}).format(v);}catch{return `Q ${v.toFixed(2)}`;} }
 function extractDeltaQ(x:any){ const a=toNum(x?.priceDelta); if(a!==undefined) return a;
   const b=toNum(x?.priceExtra); if(b!==undefined) return b;
   const ac=toNum(x?.priceDeltaCents); if(ac!==undefined) return ac/100;
@@ -109,6 +111,9 @@ export default function EditOrdersListPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
+
+  // ✅ formateador global para toda la página
+  const fmtQ = useFmtQ();
 
   useEffect(()=>{ let alive=true;(async()=>{
     try{
@@ -182,7 +187,7 @@ export default function EditOrdersListPage() {
                         <div className="small text-muted">Date: {d}</div>
                       </div>
                       <div className="d-flex align-items-center gap-2 mt-2 mt-md-0">
-                        <div className="fw-bold">{fmtMoney(total, o.currency)}</div>
+                        <div className="fw-bold">{fmtQ(total)}</div>
                         <Link href={`/admin/edit-orders/${o.id}/menu`} className="btn btn-primary btn-sm">Edit</Link>
                       </div>
                     </div>
@@ -198,14 +203,14 @@ export default function EditOrdersListPage() {
                           <div key={idx} className="small mb-2 border-top pt-2">
                             <div className="d-flex justify-content-between">
                               <div>• {qty} × {name}</div>
-                              <div className="text-muted">({fmtMoney(base, o.currency)} c/u)</div>
+                              <div className="text-muted">({fmtQ(base)} c/u)</div>
                             </div>
 
                             {/* optionGroups / options con precio */}
                             {Array.isArray(l.optionGroups) && l.optionGroups.map((g,gi)=>{
                               const rows = (g.items||[]).map((it,ii)=>{
                                 const p = extractDeltaQ(it);
-                                return <span key={ii}>{it?.name}{p?` (${fmtMoney(p, o.currency)})`:''}{ii<(g.items!.length-1)?', ':''}</span>;
+                                return <span key={ii}>{it?.name}{p?` (${fmtQ(p)})`:''}{ii<(g.items!.length-1)?', ':''}</span>;
                               });
                               return rows.length?(
                                 <div key={gi} className="ms-3 text-muted">
@@ -217,7 +222,7 @@ export default function EditOrdersListPage() {
                             {Array.isArray(l.options) && l.options.map((g,gi)=>{
                               const rows = (g.selected||[]).map((it,ii)=>{
                                 const p = extractDeltaQ(it);
-                                return <span key={ii}>{it?.name}{p?` (${fmtMoney(p, o.currency)})`:''}{ii<(g.selected!.length-1)?', ':''}</span>;
+                                return <span key={ii}>{it?.name}{p?` (${fmtQ(p)})`:''}{ii<(g.selected!.length-1)?', ':''}</span>;
                               });
                               return rows.length?(
                                 <div key={`op-${gi}`} className="ms-3 text-muted">
@@ -233,14 +238,14 @@ export default function EditOrdersListPage() {
                                 {l.addons.map((ad:any,ai:number)=>{
                                   if (typeof ad==='string') return <span key={ai}>{ad}{ai<l.addons!.length-1?', ':''}</span>;
                                   const p = toNum(ad?.price) ?? (toNum(ad?.priceCents)!==undefined ? Number(ad!.priceCents)/100 : undefined);
-                                  return <span key={ai}>{ad?.name}{p?` (${fmtMoney(p, o.currency)})`:''}{ai<l.addons!.length-1?', ':''}</span>;
+                                  return <span key={ai}>{ad?.name}{p?` (${fmtQ(p)})`:''}{ai<l.addons!.length-1?', ':''}</span>;
                                 })}
                               </div>
                             )}
 
                             <div className="d-flex justify-content-between">
                               <span className="text-muted">Subtotal line</span>
-                              <span className="text-muted">{fmtMoney(sum, o.currency)}</span>
+                              <span className="text-muted">{fmtQ(sum)}</span>
                             </div>
                           </div>
                         );

@@ -69,6 +69,16 @@ function normalizeProfileForFirestore(form: TaxProfile) {
   return cleaned;
 }
 
+/** 💵 Money formatter from cents using Intl */
+function fmtMoneyCents(vCents: number, currency = 'USD') {
+  const n = (Number.isFinite(vCents) ? Number(vCents) : 0) / 100;
+  try {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(n);
+  } catch {
+    return `${currency} ${n.toFixed(2)}`;
+  }
+}
+
 export default function AdminTaxesPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -916,6 +926,8 @@ function RatesEditor({
           </div>
         ))}
       </div>
+      <div className="card-footer">
+      </div>
     </div>
   );
 }
@@ -1276,9 +1288,9 @@ function InlineTest({ profile }: { profile: TaxProfile }) {
 
       {snapshot ? (
         <div className="mt-2 small">
-          <div>Subtotal: {(snapshot.totals.subTotalCents / 100).toFixed(2)} {snapshot.currency}</div>
-          <div>Tax: {(snapshot.totals.taxCents / 100).toFixed(2)} {snapshot.currency}</div>
-          <div className="fw-semibold">Grand total: {(snapshot.totals.grandTotalCents / 100).toFixed(2)} {snapshot.currency}</div>
+          <div>Subtotal: {fmtMoneyCents(snapshot.totals.subTotalCents, snapshot.currency)}</div>
+          <div>Tax: {fmtMoneyCents(snapshot.totals.taxCents, snapshot.currency)}</div>
+          <div className="fw-semibold">Grand total: {fmtMoneyCents(snapshot.totals.grandTotalCents, snapshot.currency)}</div>
         </div>
       ) : (
         <div className="text-muted">—</div>

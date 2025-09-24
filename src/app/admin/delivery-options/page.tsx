@@ -15,26 +15,18 @@ import {
   orderBy,
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
+import { useFmtQ } from '@/lib/settings/money'; // ✅ usar formateador global
 
 type DeliveryOption = {
   id: string;
   title: string;
   description?: string;
-  price: number;       // GTQ
+  price: number;       // en unidades (no centavos)
   isActive: boolean;
   sortOrder?: number;
   createdAt?: any;
   updatedAt?: any;
 };
-
-function fmtQ(n?: number) {
-  const v = Number.isFinite(Number(n)) ? Number(n) : 0;
-  try {
-    return new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'USD' }).format(v);
-  } catch {
-    return `Q ${v.toFixed(2)}`;
-  }
-}
 
 export default function AdminDeliveryOptionsPage() {
   const db = getFirestore();
@@ -46,6 +38,9 @@ export default function AdminDeliveryOptionsPage() {
   const [price, setPrice] = useState<number>(0);
   const [isActive, setIsActive] = useState<boolean>(true);
   const [sortOrder, setSortOrder] = useState<number>(0);
+
+  // ✅ formateador centralizado (por si lo necesitas mostrar en algún label)
+  const fmtQ = useFmtQ();
 
   useEffect(() => {
     const qRef = query(collection(db, 'deliveryOptions'), orderBy('sortOrder', 'asc'));
@@ -151,6 +146,9 @@ export default function AdminDeliveryOptionsPage() {
                 onChange={(e) => setPrice(Number(e.target.value))}
                 required
               />
+              {/* Si quieres mostrar el preview formateado:
+                  <div className="form-text">{fmtQ(price)}</div>
+               */}
             </div>
             <div className="col-md-1">
               <label className="form-label">Active</label>
@@ -241,6 +239,9 @@ export default function AdminDeliveryOptionsPage() {
                             setList((arr) => arr.map((x, i) => (i === idx ? { ...x, price: Number.isFinite(v) ? v : 0 } : x)));
                           }}
                         />
+                        {/* Preview formateado opcional:
+                            <div className="form-text">{fmtQ(it.price)}</div>
+                         */}
                       </td>
                       <td>
                         <input

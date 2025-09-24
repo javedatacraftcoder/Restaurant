@@ -2,6 +2,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as admin from 'firebase-admin';
 
+export const runtime = 'nodejs'; // ✅ asegura egress de red normal
+
 function getAdmin() {
   if (!admin.apps.length) admin.initializeApp({ credential: admin.credential.applicationDefault() });
   return admin;
@@ -11,18 +13,10 @@ async function getPaypalAccessToken() {
   const cid = process.env.PAYPAL_CLIENT_ID!;
   const sec = process.env.PAYPAL_CLIENT_SECRET!;
   const isLive = process.env.PAYPAL_ENV === 'live';
-  const base = isLive ? 'https://api.paypal.com' : 'https://api.sandbox.paypal.com';
+  // ✅ usa api-m.* (recomendado y más estable)
+  const base = isLive ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com';
+
   const res = await fetch(`${base}/v1/oauth2/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: 'grant_type=client_credentials',
-    cache: 'no-store',
-    // Basic auth
-    // @ts-ignore
-    headers2: { Authorization: 'Basic ' + Buffer.from(`${cid}:${sec}`).toString('base64') }
-  } as any);
-  // Workaround because Next merges headers; do it clean:
-  const authRes = await fetch(`${base}/v1/oauth2/token`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -31,8 +25,13 @@ async function getPaypalAccessToken() {
     body: 'grant_type=client_credentials',
     cache: 'no-store',
   });
-  if (!authRes.ok) throw new Error('PayPal auth failed');
-  return (await authRes.json() as any).access_token as string;
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`PayPal auth failed: ${res.status} ${res.statusText} ${txt}`);
+  }
+  const j = await res.json() as any;
+  return j.access_token as string;
 }
 
 export async function POST(req: NextRequest) {
@@ -46,7 +45,8 @@ export async function POST(req: NextRequest) {
 
     const token = await getPaypalAccessToken();
     const isLive = process.env.PAYPAL_ENV === 'live';
-    const base = isLive ? 'https://api.paypal.com' : 'https://api.sandbox.paypal.com';
+    // ✅ usa api-m.* también aquí
+    const base = isLive ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com';
 
     // Guardar draft
     const db = getAdmin().firestore();

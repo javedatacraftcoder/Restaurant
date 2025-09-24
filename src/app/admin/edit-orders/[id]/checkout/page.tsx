@@ -62,7 +62,7 @@ export default function EditCheckoutPage() {
           optionItemIds: g.optionItemIds,
         })),
       })),
-      currency: cart.currency ?? "USD",
+      currency: cart.currency ?? "GTQ",
       type: cart.type ?? "dine_in",
       tableNumber: (cart.tableNumber ?? "").trim(),
       notes: cart.notes ?? "",
@@ -92,64 +92,64 @@ export default function EditCheckoutPage() {
     router.replace("/admin/edit-orders");
   }
 
-  const currency = cart.currency ?? "USD";
+  const currency = cart.currency ?? "GTQ";
 
   return (
     <Protected>
-          <RoleGate allow={['admin','waiter']}>
-    <div className="container py-3">
-      <div className="alert alert-warning mb-3">
-        Edit order{" "}
-        <strong>#{(cart.orderId ?? "").slice(-6).toUpperCase()}</strong>
-      </div>
-
-      <h2 className="h6 mb-3">Confirm changes</h2>
-
-      <form onSubmit={handleSubmit} className="vstack gap-3">
-        <div className="card">
-          <div className="card-body">
-            <div className="mb-2">
-              Items: <strong>{(cart.lines ?? []).length}</strong>
-            </div>
-            <div className="mb-2">
-              Subtotal:{" "}
-              <strong>
-                {(amounts.subtotalCents / 100).toFixed(2)} {currency}
-              </strong>
-            </div>
-            <div className="mb-2">
-              Tip:{" "}
-              <strong>
-                {(amounts.tipCents / 100).toFixed(2)} {currency}
-              </strong>
-            </div>
-            <div className="mb-2">
-              Total:{" "}
-              <strong>
-                {(amounts.totalCents / 100).toFixed(2)} {currency}
-              </strong>
-            </div>
+      <RoleGate allow={['admin','waiter']}>
+        <div className="container py-3">
+          <div className="alert alert-warning mb-3">
+            Edit order{" "}
+            <strong>#{(cart.orderId ?? "").slice(-6).toUpperCase()}</strong>
           </div>
-        </div>
 
-        {error && <div className="alert alert-danger">{error}</div>}
+          <h2 className="h6 mb-3">Confirm changes</h2>
 
-        <div className="d-flex gap-2">
-          <button className="btn btn-success" disabled={saving}>
-            Save changes
-          </button>
-          <button
-            className="btn btn-outline-secondary"
-            type="button"
-            onClick={() => history.back()}
-            disabled={saving}
-          >
-            Back
-          </button>
+          <form onSubmit={handleSubmit} className="vstack gap-3">
+            <div className="card">
+              <div className="card-body">
+                <div className="mb-2">
+                  Items: <strong>{(cart.lines ?? []).length}</strong>
+                </div>
+                <div className="mb-2">
+                  Subtotal:{" "}
+                  <strong>
+                    {(amounts.subtotalCents / 100).toFixed(2)} {currency}
+                  </strong>
+                </div>
+                <div className="mb-2">
+                  Tip:{" "}
+                  <strong>
+                    {(amounts.tipCents / 100).toFixed(2)} {currency}
+                  </strong>
+                </div>
+                <div className="mb-2">
+                  Total:{" "}
+                  <strong>
+                    {(amounts.totalCents / 100).toFixed(2)} {currency}
+                  </strong>
+                </div>
+              </div>
+            </div>
+
+            {error && <div className="alert alert-danger">{error}</div>}
+
+            <div className="d-flex gap-2">
+              <button className="btn btn-success" disabled={saving}>
+                Save changes
+              </button>
+              <button
+                className="btn btn-outline-secondary"
+                type="button"
+                onClick={() => history.back()}
+                disabled={saving}
+              >
+                Back
+              </button>
+            </div>
+          </form>
         </div>
-      </form>
-    </div>
-    </RoleGate>
-            </Protected>
+      </RoleGate>
+    </Protected>
   );
 }

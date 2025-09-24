@@ -1,18 +1,19 @@
+// src/components/cart-new/CartViewNew.tsx
 'use client';
 
 import React, { useMemo } from 'react';
 import Link from 'next/link';
 import { useNewCart } from '@/lib/newcart/context';
 import type { NewCartItem } from '@/lib/newcart/types';
+import { useFmtQ } from '@/lib/settings/money'; // CurrencyUpdate: usar formateador global basado en SettingsProvider
 
-function fmtQ(n?: number) {
-  const v = Number.isFinite(Number(n)) ? Number(n) : 0;
-  try { return new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'USD' }).format(v); }
-  catch { return `Q ${v.toFixed(2)}`; }
-}
+// CurrencyUpdate: se elimina la función local fmtQ con "USD/es-GT" hardcodeado
 
 export default function CartViewNew() {
   const cart = useNewCart();
+
+  // CurrencyUpdate: obtener formateador desde el contexto (currency + locale por tenant)
+  const fmtQ = useFmtQ();
 
   const lines: NewCartItem[] = cart.items;
   const grand = useMemo(() => cart.computeGrandTotal(), [cart, lines]);

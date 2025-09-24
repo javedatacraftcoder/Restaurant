@@ -219,105 +219,108 @@ export default function EditOrderMenuPage() {
     router.push(`/admin/edit-orders/${id}/cart`);
   }
 
+  const formatGTQ = (n: number) =>
+    new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(n);
+
   return (
     <Protected>
-              <RoleGate allow={['admin','waiter']}>
-    <div className="container py-4">
-      <h1 className="h5 mb-3">Add to order #{String(id).slice(0, 6)}</h1>
+      <RoleGate allow={['admin','waiter']}>
+        <div className="container py-4">
+          <h1 className="h5 mb-3">Add to order #{String(id).slice(0, 6)}</h1>
 
-      {menu.length === 0 && (
-        <div className="alert alert-light border">No dishes were found.</div>
-      )}
+          {menu.length === 0 && (
+            <div className="alert alert-light border">No dishes were found.</div>
+          )}
 
-      <div className="list-group">
-        {menu.map((mi) => {
-          const isOpen = !!open[mi.id];
-          const q = qtyBy[mi.id] || 1;
-          const groups = toOptionGroups(mi);
-          return (
-            <div key={mi.id} className="list-group-item">
-              <div className="d-flex align-items-center justify-content-between">
-                <div>
-                  <div className="fw-semibold">{mi.name}</div>
-                  <div className="small text-muted">
-                    {mi.price !== undefined ? `Q ${toNum(mi.price).toFixed(2)}` : '—'}
+          <div className="list-group">
+            {menu.map((mi) => {
+              const isOpen = !!open[mi.id];
+              const q = qtyBy[mi.id] || 1;
+              const groups = toOptionGroups(mi);
+              return (
+                <div key={mi.id} className="list-group-item">
+                  <div className="d-flex align-items-center justify-content-between">
+                    <div>
+                      <div className="fw-semibold">{mi.name}</div>
+                      <div className="small text-muted">
+                        {mi.price !== undefined ? formatGTQ(toNum(mi.price)) : '—'}
+                      </div>
+                    </div>
+                    <div className="d-flex align-items-center gap-2">
+                      <input
+                        type="number"
+                        className="form-control form-control-sm"
+                        style={{ width: 90 }}
+                        value={q}
+                        min={1}
+                        max={99}
+                        onChange={(e) => setQty(mi.id, Number(e.target.value))}
+                      />
+                      <button
+                        className="btn btn-outline-secondary btn-sm"
+                        onClick={() => toggle(mi.id)}
+                      >
+                        {isOpen ? 'Hide' : 'Options'}
+                      </button>
+                      <button className="btn btn-primary btn-sm" onClick={() => addToCart(mi)}>
+                        Agregar
+                      </button>
+                    </div>
                   </div>
-                </div>
-                <div className="d-flex align-items-center gap-2">
-                  <input
-                    type="number"
-                    className="form-control form-control-sm"
-                    style={{ width: 90 }}
-                    value={q}
-                    min={1}
-                    max={99}
-                    onChange={(e) => setQty(mi.id, Number(e.target.value))}
-                  />
-                  <button
-                    className="btn btn-outline-secondary btn-sm"
-                    onClick={() => toggle(mi.id)}
-                  >
-                    {isOpen ? 'Hide' : 'Options'}
-                  </button>
-                  <button className="btn btn-primary btn-sm" onClick={() => addToCart(mi)}>
-                    Agregar
-                  </button>
-                </div>
-              </div>
 
-              {isOpen && (
-                <div className="mt-3">
-                  {(mi.addons || []).length > 0 && (
-                    <div className="mb-3">
-                      <div className="fw-semibold">Addons</div>
-                      {(mi.addons || []).map((a) => (
-                        <label key={a.name} className="d-flex align-items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={checkAddon(mi.id, a.name)}
-                            onChange={() => toggleAddon(mi.id, a.name)}
-                          />
-                          <span>{a.name}</span>
-                          <span className="text-muted small">
-                            {a.price !== undefined ? `(Q ${toNum(a.price).toFixed(2)})` : '—'}
-                          </span>
-                        </label>
+                  {isOpen && (
+                    <div className="mt-3">
+                      {(mi.addons || []).length > 0 && (
+                        <div className="mb-3">
+                          <div className="fw-semibold">Addons</div>
+                          {(mi.addons || []).map((a) => (
+                            <label key={a.name} className="d-flex align-items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={checkAddon(mi.id, a.name)}
+                                onChange={() => toggleAddon(mi.id, a.name)}
+                              />
+                              <span>{a.name}</span>
+                              <span className="text-muted small">
+                                {a.price !== undefined ? `(${formatGTQ(toNum(a.price))})` : '—'}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Option-groups */}
+                      {groups.map((g, gi) => (
+                        <div key={`${g.groupId}_${gi}`} className="mb-2">
+                          <div className="fw-semibold">{g.groupName}</div>
+                          {(g.items || []).map((it, ii) => {
+                            const key = String(it.id ?? it.name);
+                            return (
+                              <label key={`${key}_${ii}`} className="d-flex align-items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={isOptChecked(mi.id, key)}
+                                  onChange={() => toggleOpt(mi.id, key)}
+                                />
+                                <span>{it.name}</span>
+                                <span className="text-muted small">
+                                  {it.priceDelta !== undefined
+                                    ? `(${formatGTQ(toNum(it.priceDelta))})`
+                                    : ''}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
                       ))}
                     </div>
                   )}
-
-                  {/* Option-groups */}
-                  {groups.map((g, gi) => (
-                    <div key={`${g.groupId}_${gi}`} className="mb-2">
-                      <div className="fw-semibold">{g.groupName}</div>
-                      {(g.items || []).map((it, ii) => {
-                        const key = String(it.id ?? it.name);
-                        return (
-                          <label key={`${key}_${ii}`} className="d-flex align-items-center gap-2">
-                            <input
-                              type="checkbox"
-                              checked={isOptChecked(mi.id, key)}
-                              onChange={() => toggleOpt(mi.id, key)}
-                            />
-                            <span>{it.name}</span>
-                            <span className="text-muted small">
-                              {it.priceDelta !== undefined
-                                ? `(Q ${toNum(it.priceDelta).toFixed(2)})`
-                                : ''}
-                            </span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  ))}
                 </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-    </RoleGate>
-            </Protected>
+              );
+            })}
+          </div>
+        </div>
+      </RoleGate>
+    </Protected>
   );
 }

@@ -14,6 +14,7 @@ import {
   getDocs,
   Timestamp,
 } from "firebase/firestore";
+import { useFmtQ } from "@/lib/settings/money";
 
 /** ===== Types (minimal) ===== */
 type OrderDoc = {
@@ -21,7 +22,7 @@ type OrderDoc = {
   createdAt?: Timestamp | { seconds: number; nanoseconds?: number } | Date | null;
   orderInfo?: { type?: "dine-in" | "delivery" | "pickup" | string } | null;
   orderTotal?: number;
-  payment?: { amount?: number; status?: string; provider?: string } | null;
+  payment?: { amount?: number; status?: string; provider?: string; currency?: string | null } | null;
   totals?: { grandTotalWithTax?: number } | null;
   totalsCents?: { grandTotalWithTaxCents?: number } | null;
 };
@@ -35,17 +36,8 @@ function toDate(v: any): Date | null {
   try { return new Date(v); } catch { return null; }
 }
 
-function money(n: number | undefined): string {
-  const v = Number.isFinite(Number(n)) ? Number(n) : 0;
-  try {
-    return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(v);
-  } catch {
-    return `$${v.toFixed(2)}`;
-  }
-}
-
 /** Robust revenue resolver (matches your checkout persistence) */
-function getOrderRevenueUSD(o: OrderDoc): number {
+function getOrderRevenue(o: OrderDoc): number {
   const cents = o.totalsCents?.grandTotalWithTaxCents;
   if (Number.isFinite(cents)) return (cents as number) / 100;
 
@@ -127,6 +119,7 @@ function PieChart({
   currency?: boolean;
   compactLabels?: boolean;
 }) {
+  const fmtQ = useFmtQ();
   const total = rows.reduce((s, r) => s + (Number(r.value) || 0), 0);
   const cx = size / 2;
   const cy = size / 2;
@@ -175,7 +168,7 @@ function PieChart({
                       <span className="small">{compactLabels ? s.label.slice(5) : s.label}</span>
                     </div>
                     <div className="small text-muted">
-                      {currency ? money(s.value) : s.value} · {(s.pct * 100).toFixed(1)}%
+                      {currency ? fmtQ(s.value) : s.value} · {(s.pct * 100).toFixed(1)}%
                     </div>
                   </div>
                 ))}
@@ -286,6 +279,7 @@ function downloadExcelXml(filename: string, xml: string) {
 /** ====== Page ====== */
 export default function AdminSalesReportPage() {
   const db = getFirestore();
+  const fmtQ = useFmtQ();
 
   // ===== Filters =====
   const [preset, setPreset] = useState<"today" | "7d" | "30d" | "thisMonth" | "custom">("30d");
@@ -382,7 +376,7 @@ export default function AdminSalesReportPage() {
   // ===== Aggregations =====
   const totalOrders = orders.length;
   const totalRevenue = useMemo(
-    () => orders.reduce((sum, o) => sum + getOrderRevenueUSD(o), 0),
+    () => orders.reduce((sum, o) => sum + getOrderRevenue(o), 0),
     [orders]
   );
   const avgTicket = totalOrders > 0 ? totalRevenue / totalOrders : 0;
@@ -391,7 +385,7 @@ export default function AdminSalesReportPage() {
     const m = new Map<string, { count: number; revenue: number }>();
     for (const o of orders) {
       const t = getOrderType(o);
-      const r = getOrderRevenueUSD(o);
+      const r = getOrderRevenue(o);
       const cur = m.get(t) || { count: 0, revenue: 0 };
       cur.count += 1;
       cur.revenue += r;
@@ -406,7 +400,7 @@ export default function AdminSalesReportPage() {
       const d0 = toDate(o.createdAt);
       if (!d0) continue;
       const key = fmtKey(d0, period);
-      const r = getOrderRevenueUSD(o);
+      const r = getOrderRevenue(o);
       const cur = m.get(key) || { count: 0, revenue: 0 };
       cur.count += 1;
       cur.revenue += r;
@@ -435,11 +429,14 @@ export default function AdminSalesReportPage() {
     [byType]
   );
 
+  // Moneda para headers de Excel
+  const currency = useMemo(() => orders[0]?.payment?.currency || "USD", [orders]);
+
   /** ===== Build Excel (multi-tab) ===== */
   function onExportExcel() {
     const dailySheet: Sheet = {
       name: "Daily",
-      headers: ["Day", "Orders", "Revenue (USD)", "Avg Ticket (USD)"],
+      headers: ["Day", "Orders", `Revenue (${currency})`, `Avg Ticket (${currency})`],
       rows: daily.map(d => [
         d.key,
         d.count,
@@ -449,7 +446,7 @@ export default function AdminSalesReportPage() {
     };
     const weeklySheet: Sheet = {
       name: "Weekly",
-      headers: ["Week", "Orders", "Revenue (USD)", "Avg Ticket (USD)"],
+      headers: ["Week", "Orders", `Revenue (${currency})`, `Avg Ticket (${currency})`],
       rows: weekly.map(w => [
         w.key,
         w.count,
@@ -459,7 +456,7 @@ export default function AdminSalesReportPage() {
     };
     const monthlySheet: Sheet = {
       name: "Monthly",
-      headers: ["Month", "Orders", "Revenue (USD)", "Avg Ticket (USD)"],
+      headers: ["Month", "Orders", `Revenue (${currency})`, `Avg Ticket (${currency})`],
       rows: monthly.map(m => [
         m.key,
         m.count,
@@ -469,7 +466,7 @@ export default function AdminSalesReportPage() {
     };
     const byTypeSheet: Sheet = {
       name: "ByType",
-      headers: ["Type", "Orders", "Revenue (USD)"],
+      headers: ["Type", "Orders", `Revenue (${currency})`],
       rows: byType.map(t => [
         t.type,
         t.count,
@@ -563,7 +560,7 @@ export default function AdminSalesReportPage() {
               <div className="card border-0 shadow-sm">
                 <div className="card-body">
                   <div className="text-muted small">Revenue</div>
-                  <div className="h4 mb-0">{money(totalRevenue)}</div>
+                  <div className="h4 mb-0">{fmtQ(totalRevenue)}</div>
                 </div>
               </div>
             </div>
@@ -571,7 +568,7 @@ export default function AdminSalesReportPage() {
               <div className="card border-0 shadow-sm">
                 <div className="card-body">
                   <div className="text-muted small">Avg. Ticket</div>
-                  <div className="h4 mb-0">{money(avgTicket)}</div>
+                  <div className="h4 mb-0">{fmtQ(avgTicket)}</div>
                 </div>
               </div>
             </div>
@@ -583,7 +580,7 @@ export default function AdminSalesReportPage() {
                     {byType.length === 0 && <span className="text-muted small">No data</span>}
                     {byType.map((t) => (
                       <span key={t.type} className="badge text-bg-light border">
-                        {t.type}: {t.count} ({money(t.revenue)})
+                        {t.type}: {t.count} ({fmtQ(t.revenue)})
                       </span>
                     ))}
                   </div>
@@ -614,7 +611,7 @@ export default function AdminSalesReportPage() {
                         <tr key={r.key}>
                           <td>{r.key}</td>
                           <td className="text-end">{r.count}</td>
-                          <td className="text-end">{money(r.revenue)}</td>
+                          <td className="text-end">{fmtQ(r.revenue)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -643,7 +640,7 @@ export default function AdminSalesReportPage() {
                         <tr key={r.key}>
                           <td>{r.key}</td>
                           <td className="text-end">{r.count}</td>
-                          <td className="text-end">{money(r.revenue)}</td>
+                          <td className="text-end">{fmtQ(r.revenue)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -672,7 +669,7 @@ export default function AdminSalesReportPage() {
                         <tr key={r.key}>
                           <td>{r.key}</td>
                           <td className="text-end">{r.count}</td>
-                          <td className="text-end">{money(r.revenue)}</td>
+                          <td className="text-end">{fmtQ(r.revenue)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -708,7 +705,6 @@ export default function AdminSalesReportPage() {
           </div>
 
           <div className="text-muted small mt-3">
-            
           </div>
         </main>
       </AdminOnly>

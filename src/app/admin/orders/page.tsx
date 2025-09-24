@@ -2,8 +2,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Protected from "@/components/Protected";   // 🔐 NOTA: Import para obligar login
-import AdminOnly from "@/components/AdminOnly";   // 🔐 NOTA: Import para rol admin
+import Protected from "@/components/Protected";
+import AdminOnly from "@/components/AdminOnly";
+
+/** ✅ Currency centralizado (respeta SettingsProvider) */
+import { useFmtQ } from "@/lib/settings/money";
 
 /* ------------------- Tipos base ------------------- */
 type FirestoreTimestamp =
@@ -58,8 +61,8 @@ type OrderDoc = {
   updatedAt?: FirestoreTimestamp;
   createdBy?: { uid?: string; email?: string | null } | null;
   userEmail?: string | null;
-  userEmail_lower?: string | null;              // 🔹 NUEVO: si viene del checkout
-  contact?: { email?: string | null } | null;   // 🔹 por si existen órdenes históricas
+  userEmail_lower?: string | null;
+  contact?: { email?: string | null } | null;
 
   items?: OrderLine[];
   lines?: Array<{ totalCents?: number }>;
@@ -68,7 +71,6 @@ type OrderDoc = {
   totals?: { totalCents?: number; subtotalCents?: number } | null;
   orderTotal?: number | null;
 
-  // 🔹 SOLO SE AGREGA delivery y courierName (no se quita nada)
   orderInfo?: {
     type?: "dine-in" | "delivery";
     table?: string;
@@ -88,55 +90,41 @@ type ApiListResponse = { ok?: boolean; orders?: OrderDoc[]; error?: string };
 /* ------------------- Utils ------------------- */
 function tsToDate(ts: any): Date | null {
   if (!ts) return null;
-
-  // 1) Date ya listo
   if (ts instanceof Date) return isNaN(ts.getTime()) ? null : ts;
-
-  // 2) Firestore Timestamp (cliente)
   if (typeof ts?.toDate === "function") {
     const d = ts.toDate();
     return d instanceof Date && !isNaN(d.getTime()) ? d : null;
   }
-
-  // 3) Objeto serializado con segundos/nanosegundos (con o sin guion bajo)
   if (typeof ts === "object") {
-    const seconds =
-      ts.seconds ?? ts._seconds ?? ts.$seconds ?? null;
-    const nanos =
-      ts.nanoseconds ?? ts._nanoseconds ?? ts.nanos ?? 0;
+    const seconds = ts.seconds ?? ts._seconds ?? ts.$seconds ?? null;
+    const nanos = ts.nanoseconds ?? ts._nanoseconds ?? ts.nanos ?? 0;
     if (seconds != null) {
       const ms = seconds * 1000 + Math.floor((nanos || 0) / 1e6);
       const d = new Date(ms);
       if (!isNaN(d.getTime())) return d;
     }
-    // 3b) ISO serializado dentro de otra propiedad común
     const iso = ts.$date ?? ts.iso ?? ts.date ?? null;
     if (typeof iso === "string") {
       const d = new Date(iso);
       if (!isNaN(d.getTime())) return d;
     }
   }
-
-  // 4) String: ISO o número en string (ms/segundos)
   if (typeof ts === "string") {
     const d = new Date(ts);
     if (!isNaN(d.getTime())) return d;
     const n = Number(ts);
     if (Number.isFinite(n)) {
-      const ms = n > 1e12 ? n : n * 1000; // heurística ms vs s
+      const ms = n > 1e12 ? n : n * 1000;
       const d2 = new Date(ms);
       if (!isNaN(d2.getTime())) return d2;
     }
     return null;
   }
-
-  // 5) Número: epoch en ms o s
   if (typeof ts === "number") {
-    const ms = ts > 1e12 ? ts : ts * 1000; // heurística ms vs s
+    const ms = ts > 1e12 ? ts : ts * 1000;
     const d = new Date(ms);
     return isNaN(d.getTime()) ? null : d;
   }
-
   return null;
 }
 
@@ -149,15 +137,8 @@ function isClosed(status?: string): boolean {
   const s = (status || "").toLowerCase();
   return s === "closed" || s === "cancelled";
 }
-function curSymbol(cur?: string) {
-  const c = (cur || "GTQ").toUpperCase();
-  return c === "GTQ" ? "Q" : c === "USD" ? "$" : `${c} `;
-}
-function fmtMoney(n?: number, currency?: string) {
-  const v = Number.isFinite(Number(n)) ? Number(n) : 0;
-  try { return new Intl.NumberFormat("es-GT", { style: "currency", currency: (currency || "GTQ").toUpperCase() }).format(v); }
-  catch { return `${curSymbol(currency)}${v.toFixed(2)}`; }
-}
+
+/* ⚠️ Quitamos helpers de moneda locales (curSymbol / fmtMoney) porque ahora usamos useFmtQ */
 
 const toNum = (x: any) => (Number.isFinite(Number(x)) ? Number(x) : undefined);
 const centsToQ = (c?: number) => (Number.isFinite(c) ? Number(c) / 100 : 0);
@@ -240,11 +221,11 @@ function displayType(o: OrderDoc): "dine_in" | "delivery" | "-" {
   const t = o.orderInfo?.type?.toLowerCase?.();
   if (t === "delivery") return "delivery";
   if (t === "dine-in") return "dine_in";
-  if (o.type === "delivery" || o.type === "dine_in") return o.type;
+  if (o.type === "delivery" || o.type === "dine_in") return o.type as "delivery" | "dine_in";
   return "-";
 }
 
-/* 🔹 NUEVO: label legible para sub-estado delivery */
+/* 🔹 Label legible para sub-estado delivery */
 function deliverySubstateLabel(s?: string | null) {
   const v = String(s || "").toLowerCase();
   if (v === "pending") return "Pending";
@@ -260,6 +241,9 @@ function AdminOrdersPageInner() {
   const [err, setErr] = useState<string | null>(null);
   const [emailFilter, setEmailFilter] = useState("");
   const [open, setOpen] = useState<Record<string, boolean>>({});
+
+  /** ✅ formateador de moneda del tenant */
+  const fmtQ = useFmtQ();
 
   useEffect(() => {
     let isMounted = true;
@@ -279,7 +263,7 @@ function AdminOrdersPageInner() {
     return () => { isMounted = false; };
   }, []);
 
-  // 🔹 Filtro por email (ahora incluye userEmail_lower y contact.email si existieran)
+  // Filtro por email
   const filtered = useMemo(() => {
     const q = emailFilter.trim().toLowerCase();
     if (!q) return orders;
@@ -395,9 +379,9 @@ function AdminOrdersPageInner() {
                   </div>
 
                   <div className="text-md-end mt-2 mt-md-0">
-                    <div className="fw-bold">{fmtMoney(total, o.currency)}</div>
+                    {/* ✅ ahora respeta currency global */}
+                    <div className="fw-bold">{fmtQ(total)}</div>
                     {o.notes ? <div className="small text-muted text-wrap" style={{ maxWidth: 420 }}>Note: {o.notes}</div> : null}
-                     {/* ➕ NEW: Print invoice button (opens printable ticket in new tab) */}
                     <a
                       href={`/admin/orders/invoice/${o.id}`}
                       target="_blank"
@@ -442,14 +426,14 @@ function AdminOrdersPageInner() {
                         <div key={idx} className="small mb-2 border-top pt-2">
                           <div className="d-flex justify-content-between">
                             <div>• {qty} × {name}</div>
-                            <div className="text-muted">({fmtMoney(baseUnit, o.currency)} ea)</div>
+                            <div className="text-muted">({fmtQ(baseUnit)} ea)</div>
                           </div>
 
                           {/* optionGroups (checkout) */}
                           {Array.isArray(l.optionGroups) && l.optionGroups.map((g, gi) => {
                             const rows = (g.items || []).map((it, ii) => {
                               const p = extractDeltaQ(it);
-                              return <span key={ii}>{it?.name}{p ? ` (${fmtMoney(p, o.currency)})` : ""}{ii < (g.items!.length - 1) ? ", " : ""}</span>;
+                              return <span key={ii}>{it?.name}{p ? ` (${fmtQ(p)})` : ""}{ii < (g.items!.length - 1) ? ", " : ""}</span>;
                             });
                             return rows.length ? (
                               <div key={gi} className="ms-3 text-muted">
@@ -462,7 +446,7 @@ function AdminOrdersPageInner() {
                           {Array.isArray(l.options) && l.options.map((g, gi) => {
                             const rows = (g.selected || []).map((it, ii) => {
                               const p = extractDeltaQ(it);
-                              return <span key={ii}>{it?.name}{p ? ` (${fmtMoney(p, o.currency)})` : ""}{ii < (g.selected!.length - 1) ? ", " : ""}</span>;
+                              return <span key={ii}>{it?.name}{p ? ` (${fmtQ(p)})` : ""}{ii < (g.selected!.length - 1) ? ", " : ""}</span>;
                             });
                             return rows.length ? (
                               <div key={`op-${gi}`} className="ms-3 text-muted">
@@ -476,24 +460,37 @@ function AdminOrdersPageInner() {
                             <div className="ms-3 text-muted">
                               <span className="fw-semibold">addons:</span>{" "}
                               {l.addons.map((ad, ai) => {
-                                if (typeof ad === "string") return <span key={ai}>{ad}{ai < l.addons!.length - 1 ? ", " : ""}</span>;
+                                if (typeof ad === "string") {
+                                  return (
+                                    <span key={ai}>
+                                      {ad}
+                                      {ai < l.addons!.length - 1 ? ", " : ""}
+                                    </span>
+                                  );
+                                }
                                 const p =
                                   toNum(ad?.price) ??
                                   (toNum(ad?.priceCents) !== undefined ? Number(ad!.priceCents) / 100 : undefined);
-                                return <span key={ai}>{ad?.name}{p ? ` ({fmtMoney(p, o.currency)})` : ""}{ai < l.addons!.length - 1 ? ", " : ""}</span>;
+
+                                return (
+                                  <span key={ai}>
+                                    {ad?.name}
+                                    {p ? ` (${fmtQ(p)})` : ""}
+                                    {ai < l.addons!.length - 1 ? ", " : ""}
+                                  </span>
+                                );
                               })}
                             </div>
                           )}
 
                           <div className="d-flex justify-content-between">
                             <span className="text-muted">Line subtotal</span>
-                            <span className="text-muted">{fmtMoney(lineTotal, o.currency)}</span>
+                            <span className="text-muted">{fmtQ(lineTotal)}</span>
                           </div>
                         </div>
                       );
                     })}
                   </div>
-                  
                 )}
               </li>
             );
@@ -513,8 +510,8 @@ function AdminOrdersPageInner() {
 /* ------------------- Export default protegido ------------------- */
 export default function AdminOrdersPage() {
   return (
-    <Protected>     {/* 🔐 NOTA: fuerza login */}
-      <AdminOnly>   {/* 🔐 NOTA: restringe a rol admin */}
+    <Protected>
+      <AdminOnly>
         <AdminOrdersPageInner />
       </AdminOnly>
     </Protected>

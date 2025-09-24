@@ -5,17 +5,20 @@ import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import type { OrderStatus } from '@/lib/orders/status';
 import { ORDER_STATUSES, statusLabel } from '@/lib/orders/status';
 
+// ✅ Formateador global (SettingsProvider)
+import { useFmtQ } from '@/lib/settings/money';
+
 type Addon = { name: string; price: number };
 type OptionItem = { id: string; name: string; priceDelta: number };
 type OptionGroup = { groupId: string; groupName: string; type?: 'single' | 'multi'; items: OptionItem[] };
 type OrderItem = {
   menuItemId: string;
   menuItemName: string;
-  basePrice: number;
+  basePrice: number;         // unidades
   quantity: number;
-  addons: Addon[];
-  optionGroups: OptionGroup[];
-  lineTotal?: number;
+  addons: Addon[];           // unidades
+  optionGroups: OptionGroup[]; // unidades (priceDelta)
+  lineTotal?: number;        // unidades
 };
 
 type OrderInfoDineIn = { type: 'dine-in'; table?: string; notes?: string };
@@ -24,25 +27,27 @@ type OrderInfo = OrderInfoDineIn | OrderInfoDelivery;
 
 export type OpsOrder = {
   id: string;
-  number?: string | number; // si lo tienes; si no, usamos id cortado
+  number?: string | number;
   status?: OrderStatus | string;
   items: OrderItem[];
-  orderTotal?: number;
+  orderTotal?: number; // unidades (legado)
   orderInfo?: OrderInfo;
   createdAt?: any; // Firestore Timestamp | string
   updatedAt?: any;
-};
 
-function fmtQ(n?: number) {
-  const v = Number(n || 0);
-  try { return new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'USD' }).format(v); }
-  catch { return `Q ${v.toFixed(2)}`; }
-}
+  // Opcional: si el padre ya los tiene en centavos
+  totalsCents?: {
+    subTotalCents?: number;
+    taxCents?: number;
+    serviceCents?: number;
+    grandTotalWithTaxCents?: number;
+    currency?: string; // no se usa aquí; el SettingsProvider decide
+  };
+};
 
 function fmtDate(ts?: any) {
   if (!ts) return '—';
   try {
-    // Soporta tanto Timestamp de Firestore como ISO string
     const d = typeof ts?.toDate === 'function' ? ts.toDate() : new Date(ts);
     return d.toLocaleString('es-GT', { dateStyle: 'short', timeStyle: 'short' });
   } catch {
@@ -60,17 +65,19 @@ export default function OrderCardOps({
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<OrderStatus | string>(order.status || 'placed');
 
+  // ✅ usa el formateador global
+  const fmtQ = useFmtQ();
+
   const orderNumber = useMemo(() => {
     if (order.number !== undefined && order.number !== null && String(order.number).trim() !== '') {
       return String(order.number);
     }
-    // fallback: parte inicial del id
     return order.id.slice(0, 6).toUpperCase();
   }, [order.id, order.number]);
 
   const info = order.orderInfo || ({} as OrderInfo);
 
-  // Render de items con precios
+  // Render de items con precios (en UNIDADES → fmtQ)
   const itemsWithPricing = (
     <div className="d-flex flex-column gap-2">
       {order.items.map((ln, idx) => {
@@ -80,8 +87,8 @@ export default function OrderCardOps({
             (ga, g) => ga + (g.items || []).reduce((ia, it) => ia + Number(it.priceDelta || 0), 0),
             0
           );
-        const unitTotal = Number(ln.basePrice || 0) + unitExtras;
-        const lineTotal = typeof ln.lineTotal === 'number' ? ln.lineTotal : unitTotal * (ln.quantity || 1);
+        const unitTotal = Number(ln.basePrice || 0) + unitExtras; // unidades
+        const lineTotal = typeof ln.lineTotal === 'number' ? ln.lineTotal : unitTotal * (ln.quantity || 1); // unidades
 
         return (
           <div className="border rounded p-2" key={`${ln.menuItemId}-${idx}`}>
@@ -115,9 +122,15 @@ export default function OrderCardOps({
           </div>
         );
       })}
+
+      {/* Total: si hay centavos, convertimos a unidades y usamos fmtQ; si no, legado en unidades */}
       <div className="d-flex justify-content-between border-top pt-2">
         <div className="fw-semibold">Total</div>
-        <div className="fw-semibold">{fmtQ(order.orderTotal)}</div>
+        <div className="fw-semibold">
+          {Number.isFinite(order?.totalsCents?.grandTotalWithTaxCents as number)
+            ? fmtQ((order!.totalsCents!.grandTotalWithTaxCents as number) / 100)
+            : fmtQ(order.orderTotal)}
+        </div>
       </div>
     </div>
   );
@@ -129,7 +142,6 @@ export default function OrderCardOps({
         status,
         updatedAt: serverTimestamp(),
       });
-      // Sin toast aquí para mantener el estilo simple; puedes agregar uno si usas lib de toasts
     } finally {
       setSaving(false);
     }

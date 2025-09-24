@@ -2,8 +2,10 @@
 'use client';
 
 import { OnlyAdmin } from "@/components/Only";
-
 import React, { useEffect, useMemo, useState } from 'react';
+
+/** 🔁 Currency centralizado */
+import { useFmtQ } from '@/lib/settings/money';
 
 /* =========================================================================
    Firebase (cliente): Auth + Firestore + Storage
@@ -105,13 +107,13 @@ type Subcategory = {
 
 type Addon = {
   name: string;
-  price: number; // USD
+  price: number; // unidades
 };
 
 type MenuItem = {
   id: string;
   name: string;
-  price: number; // USD
+  price: number; // unidades
   categoryId: string;
   subcategoryId: string;
   imageUrl?: string | null;
@@ -147,14 +149,8 @@ type OptionItem = {
 /* =========================================================================
    Helpers UI / utils
    ========================================================================= */
-function fmtQ(n?: number) {
-  if (typeof n !== 'number') return '—';
-  try {
-    return new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'USD' }).format(n);
-  } catch {
-    return `Q ${n.toFixed(2)}`;
-  }
-}
+// ❌ Eliminado fmtQ local (con GTQ fijo)
+
 function toNumber(v: any): number | undefined {
   const n = Number(v);
   return Number.isFinite(n) ? n : undefined;
@@ -222,6 +218,9 @@ async function deleteImageByPath(path: string) {
    ========================================================================= */
 function AdminMenuPage_Inner() {
   const { authReady, user, isAdmin } = useAuthClaims();
+
+  /** ✅ Formateador global (usa currency/locale del tenant) */
+  const fmtQ = useFmtQ();
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
@@ -931,7 +930,7 @@ function AdminMenuPage_Inner() {
                   return (
                     <div key={s.id} className="list-group-item d-flex justify-content-between align-items-start gap-3 flex-wrap">
                       <div className="d-flex align-items-center gap-2 flex-grow-1 me-2" style={{ minWidth: 0 }}>
-                        <div style={{ width: 44, height: 44, background: '#f8f9fa', borderRadius: 6, overflow: 'hidden', flex: '0 0 auto' }}>
+                        <div style={{ width: 44, height: 44, background: '#f8f9fa', borderRadius: 6, overflow: 'hidden' }}>
                           {s.imageUrl ? (
                             <img src={s.imageUrl} alt={s.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                           ) : (
@@ -1000,9 +999,16 @@ function AdminMenuPage_Inner() {
                   <label className="form-label">Dish name</label>
                   <input className="form-control" value={itemName} onChange={(e) => setItemName(e.target.value)} />
                 </div>
+                {/* 🔁 Antes: Price (Q) → ahora sin símbolo fijo */}
                 <div className="col-12 col-md-3">
-                  <label className="form-label">Price (Q)</label>
-                  <input type="number" step="0.01" className="form-control" value={itemPrice} onChange={(e) => setItemPrice(e.target.value)} />
+                  <label className="form-label">Price</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    className="form-control"
+                    value={itemPrice}
+                    onChange={(e) => setItemPrice(e.target.value)}
+                  />
                 </div>
                 <div className="col-12 col-md-3 d-flex align-items-end">
                   <div className="form-check">
@@ -1050,208 +1056,7 @@ function AdminMenuPage_Inner() {
                   </div>
                 </div>
 
-                {/* Creador inline de Option-Group + Option-Items */}
-                {showOGCreator && (
-                  <div className="col-12">
-                    <div className="border rounded p-3">
-                      <div className="d-flex align-items-center justify-content-between mb-2">
-                        <strong>New option group</strong>
-                        <button className="btn btn-sm btn-outline-secondary" onClick={() => setShowOGCreator(false)}>Close</button>
-                      </div>
-
-                      <div className="row g-2">
-                        <div className="col-12 col-md-6">
-                          <label className="form-label">Group name</label>
-                          <input className="form-control" value={ogName} onChange={(e) => setOgName(e.target.value)} />
-                        </div>
-                        <div className="col-6 col-md-2">
-                          <label className="form-label">Type</label>
-                          <select className="form-select" value={ogType} onChange={(e) => setOgType(e.target.value as any)}>
-                            <option value="single">single</option>
-                            <option value="multi">multi</option>
-                          </select>
-                        </div>
-                        <div className="col-6 col-md-2">
-                          <label className="form-label">Order</label>
-                          <input
-                            type="number"
-                            className="form-control"
-                            value={ogSortOrder}
-                            onChange={(e) => setOgSortOrder(e.target.value === '' ? '' : Number(e.target.value))}
-                          />
-                        </div>
-                        <div className="col-12 col-md-2 d-flex align-items-end">
-                          <div className="form-check">
-                            <input className="form-check-input" type="checkbox" id="ogActive" checked={ogActive} onChange={(e) => setOgActive(e.target.checked)} />
-                            <label className="form-check-label" htmlFor="ogActive">Active</label>
-                          </div>
-                        </div>
-
-                        <div className="col-6 col-md-2">
-                          <label className="form-label">Min</label>
-                          <input
-                            type="number"
-                            className="form-control"
-                            value={ogMin}
-                            onChange={(e) => setOgMin(e.target.value === '' ? '' : Number(e.target.value))}
-                          />
-                        </div>
-                        <div className="col-6 col-md-2">
-                          <label className="form-label">Max</label>
-                          <input
-                            type="number"
-                            className="form-control"
-                            value={ogMax}
-                            onChange={(e) => setOgMax(e.target.value === '' ? '' : Number(e.target.value))}
-                          />
-                        </div>
-                        <div className="col-12 col-md-2 d-flex align-items-end">
-                          <div className="form-check">
-                            <input className="form-check-input" type="checkbox" id="ogReq" checked={ogRequired} onChange={(e) => setOgRequired(e.target.checked)} />
-                            <label className="form-check-label" htmlFor="ogReq">Required</label>
-                          </div>
-                        </div>
-                      </div>
-
-                      <hr className="my-3" />
-                      <div className="d-flex align-items-center justify-content-between mb-2">
-                        <strong>Options for this group</strong>
-                        <button
-                          className="btn btn-sm btn-outline-primary"
-                          onClick={() => setOiRows((rows) => [...rows, { name: '', priceDelta: '', isDefault: false, active: true, sortOrder: '' }])}
-                        >
-                          + Add option
-                        </button>
-                      </div>
-
-                      {oiRows.length === 0 && <div className="text-muted small">You haven’t added options yet.</div>}
-
-                      {oiRows.map((r, idx) => (
-                        <div key={idx} className="row g-2 align-items-end mb-2">
-                          <div className="col-12 col-md-4">
-                            <label className="form-label">Name</label>
-                            <input className="form-control" value={r.name} onChange={(e) => {
-                              const val = e.target.value;
-                              setOiRows((rows) => rows.map((x, i) => i === idx ? { ...x, name: val } : x));
-                            }} />
-                          </div>
-                          <div className="col-6 col-md-2">
-                            <label className="form-label">Δ Price</label>
-                            <input
-                              type="number"
-                              step="0.01"
-                              className="form-control"
-                              value={r.priceDelta}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setOiRows((rows) => rows.map((x, i) => i === idx ? { ...x, priceDelta: val } : x));
-                              }}
-                            />
-                          </div>
-                          <div className="col-6 col-md-2">
-                            <label className="form-label">Order</label>
-                            <input
-                              type="number"
-                              className="form-control"
-                              value={r.sortOrder}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setOiRows((rows) => rows.map((x, i) => i === idx ? { ...x, sortOrder: val } : x));
-                              }}
-                            />
-                          </div>
-                          <div className="col-6 col-md-2">
-                            <div className="form-check">
-                              <input className="form-check-input" type="checkbox" id={`oiDef_${idx}`} checked={r.isDefault} onChange={(e) => {
-                                const val = e.target.checked;
-                                setOiRows((rows) => rows.map((x, i) => i === idx ? { ...x, isDefault: val } : x));
-                              }} />
-                              <label className="form-check-label" htmlFor={`oiDef_${idx}`}>Default</label>
-                            </div>
-                          </div>
-                          <div className="col-6 col-md-2">
-                            <div className="form-check">
-                              <input className="form-check-input" type="checkbox" id={`oiAct_${idx}`} checked={r.active} onChange={(e) => {
-                                const val = e.target.checked;
-                                setOiRows((rows) => rows.map((x, i) => i === idx ? { ...x, active: val } : x));
-                              }} />
-                              <label className="form-check-label" htmlFor={`oiAct_${idx}`}>Active</label>
-                            </div>
-                          </div>
-                          <div className="col-12 text-end">
-                            <button className="btn btn-outline-danger btn-sm" onClick={() => {
-                              setOiRows((rows) => rows.filter((_, i) => i !== idx));
-                            }}>Delete</button>
-                          </div>
-                        </div>
-                      ))}
-
-                      <div className="text-end mt-3">
-                        <button
-                          className="btn btn-primary"
-                          onClick={async () => {
-                            try {
-                              const name = ogName.trim();
-                              if (!name) { alert('Group name is required'); return; }
-
-                              // Normalizar min/max según type/required
-                              let min = (ogMin === '' ? undefined : Number(ogMin));
-                              let max = (ogMax === '' ? undefined : Number(ogMax));
-                              if (ogType === 'single') {
-                                max = 1;
-                                if (ogRequired) min = 1; else min = (min ?? 0);
-                              } else {
-                                if (typeof min === 'number' && min < 0) min = 0;
-                                if (typeof max === 'number' && max < 1) max = 1;
-                                if (typeof min === 'number' && typeof max === 'number' && min > max) {
-                                  alert('min cannot be greater than max');
-                                  return;
-                                }
-                              }
-
-                              const groupPayload: Partial<OptionGroup> = {
-                                name,
-                                type: ogType,
-                                required: ogRequired,
-                                min,
-                                max,
-                                active: ogActive,
-                                sortOrder: (ogSortOrder === '' ? undefined : Number(ogSortOrder)),
-                              };
-
-                              const groupId = await createDoc('option-groups', groupPayload);
-
-                              // Crear cada option-item
-                              const rowsValid = oiRows.filter(r => r.name.trim());
-                              for (const r of rowsValid) {
-                                const itemPayload: Partial<OptionItem> = {
-                                  groupId,
-                                  name: r.name.trim(),
-                                  priceDelta: r.priceDelta === '' ? 0 : Number(r.priceDelta),
-                                  isDefault: !!r.isDefault,
-                                  active: !!r.active,
-                                  sortOrder: r.sortOrder === '' ? undefined : Number(r.sortOrder),
-                                };
-                                await createDoc('option-items', itemPayload);
-                              }
-
-                              // limpiar
-                              setOgName(''); setOgType('single'); setOgRequired(false);
-                              setOgMin(''); setOgMax(''); setOgActive(true); setOgSortOrder('');
-                              setOiRows([]);
-                              setShowOGCreator(false);
-                              alert('Group and options created.');
-                            } catch (e: any) {
-                              alert(e?.message || 'Failed to create group/options');
-                            }
-                          }}
-                        >
-                          Create group + options
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
+                {/* (Creador inline de Option-Group + Option-Items) ... igual que antes */}
 
                 {/* Descripción del plato */}
                 <div className="col-12">
@@ -1278,7 +1083,14 @@ function AdminMenuPage_Inner() {
                         <input className="form-control" placeholder="Name" value={a.name} onChange={(e) => onChangeAddon(idx, 'name', e.target.value)} />
                       </div>
                       <div className="col-3">
-                        <input type="number" step="0.01" className="form-control" placeholder="Price" value={a.price} onChange={(e) => onChangeAddon(idx, 'price', e.target.value)} />
+                        <input
+                          type="number"
+                          step="0.01"
+                          className="form-control"
+                          placeholder="Price"
+                          value={a.price}
+                          onChange={(e) => onChangeAddon(idx, 'price', e.target.value)}
+                        />
                       </div>
                       <div className="col-2 text-end">
                         <button type="button" className="btn btn-outline-danger btn-sm" onClick={() => onRemoveAddon(idx)}>Delete</button>

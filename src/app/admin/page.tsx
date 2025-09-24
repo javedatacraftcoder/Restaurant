@@ -28,6 +28,7 @@ const TILES: AdminTile[] = [
   { title: "Taxes", subtitle: "admin/taxes", href: "/admin/taxes", emoji: "🧾", hint: "Configure tax profile" },
   { title: "Reports", subtitle: "admin/reports", href: "/admin/reports", emoji: "📊", hint: "Create reports" },
   { title: "AI Studio", subtitle: "admin/ai-studio", href: "/admin/ai-studio", emoji: "🤖", hint: "Create Dishes & Promots with AI" },
+  { title: "Settings", subtitle: "admin/settings", href: "/admin/settings", emoji: "⚙️", hint: "Set the currency and language" },
 ];
 
 

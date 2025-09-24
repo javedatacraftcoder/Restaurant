@@ -5,6 +5,7 @@ import { OnlyCashier } from "@/components/Only";
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
+import { useFmtQ } from '@/lib/settings/money'; // ✅ usar formateador global
 
 /* ============ Firebase + auth (mínimo) ============ */
 function getFirebaseClientConfig() {
@@ -154,11 +155,8 @@ type OrderDoc = {
 
 const toNum = (x: any) => { const n = Number(x); return Number.isFinite(n) ? n : undefined; };
 const centsToQ = (c?: number) => (Number.isFinite(c) ? Number(c) / 100 : 0);
-function fmtCurrency(n?: number, currency = 'USD') {
-  if (typeof n !== 'number') return '—';
-  try { return new Intl.NumberFormat('es-GT', { style: 'currency', currency }).format(n); }
-  catch { return n.toFixed(2); }
-}
+// ❌ quitamos Intl.NumberFormat local; usaremos el formateador global (useFmtQ)
+
 function toDate(x: any): Date {
   if (x?.toDate?.() instanceof Date) return x.toDate();
   const d = new Date(x);
@@ -369,15 +367,6 @@ async function fetchCustomerBillingForOrder(order: OrderDoc) {
 }
 
 /* ======= Emisión/guardado del número de factura ======= */
-/**
- * Crea y persiste un número de factura **formateado** en:
- *   - orders/{id}.invoiceNumber  (por ejemplo: "Test-A-0001-1")
- *   - orders/{id}.invoiceDate    (timestamp de servidor)
- *
- * Usa 'counters/invoice' con campo 'next' (inicial 1 si no existe).
- * Config toma de taxProfile.b2bConfig.invoiceNumbering (o taxProfile.invoiceNumbering como fallback):
- *   { enabled, prefix, series, padding, suffix }
- */
 async function ensureInvoiceNumber(orderId: string): Promise<string | null> {
   const { getFirestore, doc, runTransaction, serverTimestamp } = await getFirestoreMod();
   const db = getFirestore();
@@ -448,6 +437,8 @@ function ReceiptPage_Inner() {
   // ➕ estado para facturación
   const [billingName, setBillingName] = useState<string | undefined>(undefined);
   const [billingTaxId, setBillingTaxId] = useState<string | undefined>(undefined);
+
+  const fmtQ = useFmtQ(); // ✅ formateador global
 
   useEffect(() => {
     let alive = true;
@@ -593,7 +584,7 @@ function ReceiptPage_Inner() {
                   const rows = its.map((it: any, i:number) => {
                     const nm = it?.name ?? '';
                     const pr = extractDeltaQ(it);
-                    return <span key={i}>{nm}{pr ? ` (${fmtCurrency(pr)})` : ''}{i < its.length - 1 ? ', ' : ''}</span>;
+                    return <span key={i}>{nm}{pr ? ` (${fmtQ(pr)})` : ''}{i < its.length - 1 ? ', ' : ''}</span>;
                   });
                   groupsHtml.push(<div className="addon" key={`g${groupsHtml.length}`}>• <b>{g?.groupName ?? 'Options'}:</b> {rows}</div>);
                 }
@@ -606,7 +597,7 @@ function ReceiptPage_Inner() {
                   const rows = sels.map((s: any, i:number) => {
                     const nm = s?.name ?? '';
                     const pr = extractDeltaQ(s);
-                    return <span key={i}>{nm}{pr ? ` (${fmtCurrency(pr)})` : ''}{i < sels.length - 1 ? ', ' : ''}</span>;
+                    return <span key={i}>{nm}{pr ? ` (${fmtQ(pr)})` : ''}{i < sels.length - 1 ? ', ' : ''}</span>;
                   });
                   groupsHtml.push(<div className="addon" key={`g${groupsHtml.length}`}>• <b>{g?.groupName ?? 'Options'}:</b> {rows}</div>);
                 }
@@ -619,7 +610,7 @@ function ReceiptPage_Inner() {
                     if (typeof x === 'string') return <span key={i}>{x}{i < arr.length - 1 ? ', ' : ''}</span>;
                     const nm = x?.name ?? '';
                     const pr = extractDeltaQ(x);
-                    return <span key={i}>{nm}{pr ? ` (${fmtCurrency(pr)})` : ''}{i < arr.length - 1 ? ', ' : ''}</span>;
+                    return <span key={i}>{nm}{pr ? ` (${fmtQ(pr)})` : ''}{i < arr.length - 1 ? ', ' : ''}</span>;
                   });
                   groupsHtml.push(<div className="addon" key={`b${groupsHtml.length}`}>• <b>{key}:</b> {rows}</div>);
                 }
@@ -629,13 +620,13 @@ function ReceiptPage_Inner() {
                 <div className="item" key={idx}>
                   <div className="row">
                     <div className="name">{qty} × {name}</div>
-                    <div>{fmtCurrency(baseUnit)}</div>
+                    <div>{fmtQ(baseUnit)}</div>
                   </div>
                   {groupsHtml}
                   {lineTotal > 0 && (
                     <div className="row">
                       <div className="muted">Subtotal line</div>
-                      <div className="muted">{fmtCurrency(lineTotal)}</div>
+                      <div className="muted">{fmtQ(lineTotal)}</div>
                     </div>
                   )}
                 </div>
@@ -643,28 +634,28 @@ function ReceiptPage_Inner() {
             })}
 
             <div className="hr"></div>
-            <div className="row"><div>Subtotal</div><div>{fmtCurrency(totals.subtotal)}</div></div>
+            <div className="row"><div>Subtotal</div><div>{fmtQ(totals.subtotal)}</div></div>
 
             {type === 'delivery' && (
               <div className="row">
                 <div>Delivery{ order?.orderInfo?.deliveryOption?.title ? ` — ${order.orderInfo.deliveryOption.title}` : '' }</div>
-                <div>{fmtCurrency(deliveryFeeShown)}</div>
+                <div>{fmtQ(deliveryFeeShown)}</div>
               </div>
             )}
 
             {Number(totals.discount || 0) > 0 && (
               <div className="row">
                 <div>Discount{promoLabel ? ` (${promoLabel})` : ''}</div>
-                <div>-{fmtCurrency(totals.discount)}</div>
+                <div>-{fmtQ(totals.discount)}</div>
               </div>
             )}
 
-            {totals.tax ? <div className="row"><div>Taxes</div><div>{fmtCurrency(totals.tax)}</div></div> : null}
-            {totals.serviceFee ? <div className="row"><div>Service</div><div>{fmtCurrency(totals.serviceFee)}</div></div> : null}
+            {totals.tax ? <div className="row"><div>Taxes</div><div>{fmtQ(totals.tax)}</div></div> : null}
+            {totals.serviceFee ? <div className="row"><div>Service</div><div>{fmtQ(totals.serviceFee)}</div></div> : null}
 
-            {Number(totals.tip || 0) > 0 && <div className="row"><div>Tip</div><div>{fmtCurrency(totals.tip)}</div></div>}
+            {Number(totals.tip || 0) > 0 && <div className="row"><div>Tip</div><div>{fmtQ(totals.tip)}</div></div>}
 
-            <div className="row tot"><div>Gran total</div><div>{fmtCurrency(grandTotalShown)}</div></div>
+            <div className="row tot"><div>Gran total</div><div>{fmtQ(grandTotalShown)}</div></div>
 
             {(() => {
               const s = (order as any)?.taxSnapshot as TaxSnapshot;
@@ -674,26 +665,26 @@ function ReceiptPage_Inner() {
                   <div className="muted">Tax breakdown</div>
                   <div className="row">
                     <div>Subtotal</div>
-                    <div>{(s.totals.subTotalCents/100).toFixed(2)} {s.currency}</div>
+                    <div>{fmtQ(s.totals.subTotalCents / 100)}</div>
                   </div>
                   {Array.isArray(s.summaryByRate) && s.summaryByRate.map((r, i) => (
                     <div className="row" key={r?.code || i}>
                       <div>Tax {(r.rateBps/100).toFixed(2)}%</div>
-                      <div>{(r.taxCents/100).toFixed(2)} {s.currency}</div>
+                      <div>{fmtQ(r.taxCents / 100)}</div>
                     </div>
                   ))}
                   {Array.isArray(s.surcharges) && s.surcharges.map((x, i) => (
                     <div className="row" key={i}>
                       <div>Service charge</div>
                       <div>
-                        {(x.baseCents/100).toFixed(2)} {s.currency}
-                        {x.taxCents>0 && ` (tax ${(x.taxCents/100).toFixed(2)} ${s.currency})`}
+                        {fmtQ(x.baseCents / 100)}
+                        {x.taxCents>0 && ` (tax ${fmtQ(x.taxCents / 100)})`}
                       </div>
                     </div>
                   ))}
                   <div className="row tot">
                     <div>Total</div>
-                    <div>{(s.totals.grandTotalCents/100).toFixed(2)} {s.currency}</div>
+                    <div>{fmtQ(s.totals.grandTotalCents / 100)}</div>
                   </div>
                   {s.customer?.taxId && <div className="muted">Customer Tax ID: {s.customer.taxId}</div>}
                 </>

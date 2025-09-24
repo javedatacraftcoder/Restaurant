@@ -4,6 +4,8 @@ import "@/lib/firebase/client";
 import { useEffect, useMemo, useState } from "react";
 import { getAuth } from "firebase/auth";
 import { useAuth } from "@/app/providers";
+// CurrencyUpdate: usar formateador global basado en SettingsProvider
+import { useFmtQ } from "@/lib/settings/money";
 
 /* ------------ helper para llamadas autenticadas ------------ */
 async function apiFetch(path: string, init?: RequestInit) {
@@ -49,6 +51,9 @@ export default function OrderPlaygroundPage() {
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
+
+  // CurrencyUpdate: obtener formateador por tenant/locale
+  const fmtQ = useFmtQ();
 
   /* Cargar menú desde /api/menu (lee de menuItems) */
   useEffect(() => {
@@ -236,7 +241,7 @@ export default function OrderPlaygroundPage() {
                       <div style={{ fontSize: 12, color: "#555", marginTop: 4 }}>{mi.description}</div>
                     )}
                     <div style={{ marginTop: 8, fontWeight: 600 }}>
-                      {p.toFixed(2)} {mi.currency ?? ""}
+                      {fmtQ(p)} {/* CurrencyUpdate: formateo global */}
                     </div>
                     <button
                       onClick={() => addToCart(mi)}
@@ -277,10 +282,10 @@ export default function OrderPlaygroundPage() {
                     <td style={{ padding: 8 }}>{l.name}</td>
                     <td style={{ textAlign: "right", padding: 8 }}>{l.qty}</td>
                     <td style={{ textAlign: "right", padding: 8 }}>
-                      {(l.unitPriceCents / 100).toFixed(2)}
+                      {fmtQ(l.unitPriceCents / 100)} {/* CurrencyUpdate */}
                     </td>
                     <td style={{ textAlign: "right", padding: 8 }}>
-                      {(l.totalCents / 100).toFixed(2)}
+                      {fmtQ(l.totalCents / 100)} {/* CurrencyUpdate */}
                     </td>
                     <td style={{ padding: 8 }}>
                       <button
@@ -297,7 +302,7 @@ export default function OrderPlaygroundPage() {
                     Total
                   </td>
                   <td style={{ textAlign: "right", padding: 8, fontWeight: 700 }}>
-                    {(totalCents / 100).toFixed(2)}
+                    {fmtQ(totalCents / 100)} {/* CurrencyUpdate */}
                   </td>
                   <td />
                 </tr>

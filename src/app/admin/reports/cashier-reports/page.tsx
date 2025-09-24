@@ -14,11 +14,11 @@ import {
   getDocs,
   Timestamp,
   DocumentData,
-  // ⬇️ NUEVO
   doc,
   updateDoc,
   serverTimestamp,
 } from "firebase/firestore";
+import { useFmtQ /* , fmtCents */ } from "@/lib/settings/money";
 
 /** ========= Types ========= */
 type OrderDoc = {
@@ -59,12 +59,9 @@ function toDate(v: any): Date | null {
   const d = new Date(v);
   return isNaN(d as any) ? null : d;
 }
-function money(n: number | undefined, currency = "USD"): string {
-  const v = Number.isFinite(Number(n)) ? Number(n) : 0;
-  try { return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(v); }
-  catch { return `$${v.toFixed(2)}`; }
-}
-function getOrderRevenueUSD(o: OrderDoc): number {
+
+// ⬇️ Renombrado para no asumir USD: devolvemos el monto en unidades de la moneda del pedido.
+function getOrderRevenue(o: OrderDoc): number {
   const cents = o.totalsCents?.grandTotalWithTaxCents;
   if (Number.isFinite(cents)) return (cents as number) / 100;
   const withTax = o.totals?.grandTotalWithTax;
@@ -203,6 +200,7 @@ function downloadExcelXml(filename: string, xml: string) {
 /** ========= Page ========= */
 export default function AdminCashierReportsPage() {
   const db = getFirestore();
+  const fmtQ = useFmtQ();
 
   // Filters
   const [preset, setPreset] = useState<"today" | "7d" | "30d" | "thisMonth" | "custom">("30d");
@@ -323,7 +321,7 @@ export default function AdminCashierReportsPage() {
       const paid = isPaidStatus(o.payment?.status);
       const cur = m.get(method) || { count: 0, revenue: 0, paidCount: 0 };
       cur.count += 1;
-      cur.revenue += getOrderRevenueUSD(o);
+      cur.revenue += getOrderRevenue(o);
       if (paid) cur.paidCount += 1;
       m.set(method, cur);
     }
@@ -345,8 +343,8 @@ export default function AdminCashierReportsPage() {
   );
 
   const totalOrders = orders.length;
-  const totalRevenue = useMemo(() => orders.reduce((s, o) => s + getOrderRevenueUSD(o), 0), [orders]);
-  const totalCashRevenue = useMemo(() => cashOrders.reduce((s, o) => s + getOrderRevenueUSD(o), 0), [cashOrders]);
+  const totalRevenue = useMemo(() => orders.reduce((s, o) => s + getOrderRevenue(o), 0), [orders]);
+  const totalCashRevenue = useMemo(() => cashOrders.reduce((s, o) => s + getOrderRevenue(o), 0), [cashOrders]);
 
   // Cashbox sessions — computed expected vs declared (if sessions exist)
   const sessionsAugmented = useMemo(() => {
@@ -356,7 +354,7 @@ export default function AdminCashierReportsPage() {
     for (const o of cashOrders) {
       const d = toDate(o.payment?.createdAt || o.createdAt) || toDate(o.createdAt);
       const key = d ? d.toISOString().slice(0,10) : "unknown";
-      cashByDay.set(key, (cashByDay.get(key) || 0) + getOrderRevenueUSD(o));
+      cashByDay.set(key, (cashByDay.get(key) || 0) + getOrderRevenue(o));
     }
     return sessions.map((s) => {
       const opened = toDate(s.openedAt);
@@ -395,45 +393,45 @@ export default function AdminCashierReportsPage() {
       headers: ["Metric", "Value"],
       rows: [
         ["Orders", totalOrders],
-        ["Revenue (USD)", Number(totalRevenue.toFixed(2))],
-        ["Cash revenue (USD)", Number(totalCashRevenue.toFixed(2))],
+        [`Revenue (${currency})`, Number(totalRevenue.toFixed(2))],
+        [`Cash revenue (${currency})`, Number(totalCashRevenue.toFixed(2))],
         ["Unpaid/Rejected orders", unpaidOrRejected.length],
       ],
     };
     const byMethodSheet: Sheet = {
       name: "PaymentsByMethod",
-      headers: ["Method", "Orders", "Paid Orders", "Revenue (USD)"],
+      headers: ["Method", "Orders", "Paid Orders", `Revenue (${currency})`],
       rows: byMethod.map(x => [x.label, x.count, x.paidCount, Number(x.revenue.toFixed(2))]),
     };
     const unpaidSheet: Sheet = {
       name: "UnpaidOrRejected",
-      headers: ["OrderId", "CreatedAt (UTC)", "Method", "Status", "Amount (USD)"],
+      headers: ["OrderId", "CreatedAt (UTC)", "Method", "Status", `Amount (${currency})`],
       rows: unpaidOrRejected.map(o => [
         o.id,
         toDate(o.createdAt)?.toISOString().replace("T"," ").slice(0,19) || "",
         o.payment?.provider || "",
         o.payment?.status || "",
-        Number(getOrderRevenueUSD(o).toFixed(2)),
+        Number(getOrderRevenue(o).toFixed(2)),
       ]),
     };
     const cashSheet: Sheet = {
       name: "CashPayments",
-      headers: ["OrderId", "PaidAt (UTC)", "Amount (USD)"],
+      headers: ["OrderId", "PaidAt (UTC)", `Amount (${currency})`],
       rows: cashOrders.map(o => [
         o.id,
         (toDate(o.payment?.createdAt || o.createdAt)?.toISOString().replace("T"," ").slice(0,19)) || "",
-        Number(getOrderRevenueUSD(o).toFixed(2)),
+        Number(getOrderRevenue(o).toFixed(2)),
       ]),
     };
     const ordersSheet: Sheet = {
       name: "Orders",
-      headers: ["OrderId", "CreatedAt (UTC)", "Method", "Status", "Revenue (USD)"],
+      headers: ["OrderId", "CreatedAt (UTC)", "Method", "Status", `Revenue (${currency})`],
       rows: orders.map(o => [
         o.id,
         toDate(o.createdAt)?.toISOString().replace("T"," ").slice(0,19) || "",
         o.payment?.provider || "",
         o.payment?.status || "",
-        Number(getOrderRevenueUSD(o).toFixed(2)),
+        Number(getOrderRevenue(o).toFixed(2)),
       ]),
     };
 
@@ -442,7 +440,7 @@ export default function AdminCashierReportsPage() {
     if (sessionsAugmented.length > 0) {
       sheets.splice(1, 0, {
         name: "CashboxSessions",
-        headers: ["Date", "Cashier", "Opening (USD)", "Expected close (USD)", "Declared close (USD)", "Diff (USD)"],
+        headers: ["Date", "Cashier", `Opening (${currency})`, `Expected close (${currency})`, `Declared close (${currency})`, `Diff (${currency})`],
         rows: sessionsAugmented.map(s => [
           s.dayKey || "",
           s.cashierName || "",
@@ -515,13 +513,13 @@ export default function AdminCashierReportsPage() {
             <div className="col-6 col-md-3">
               <div className="card border-0 shadow-sm"><div className="card-body">
                 <div className="text-muted small">Revenue</div>
-                <div className="h4 mb-0">{money(totalRevenue, currency)}</div>
+                <div className="h4 mb-0">{fmtQ(totalRevenue)}</div>
               </div></div>
             </div>
             <div className="col-6 col-md-3">
               <div className="card border-0 shadow-sm"><div className="card-body">
                 <div className="text-muted small">Cash revenue</div>
-                <div className="h5 mb-0">{money(totalCashRevenue, currency)}</div>
+                <div className="h5 mb-0">{fmtQ(totalCashRevenue)}</div>
               </div></div>
             </div>
             <div className="col-6 col-md-3">
@@ -555,7 +553,7 @@ export default function AdminCashierReportsPage() {
                             <td className="text-nowrap">{m.label}</td>
                             <td className="text-end">{m.count}</td>
                             <td className="text-end">{m.paidCount}</td>
-                            <td className="text-end">{money(m.revenue, currency)}</td>
+                            <td className="text-end">{fmtQ(m.revenue)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -581,7 +579,7 @@ export default function AdminCashierReportsPage() {
                           <th>Method</th>
                           <th>Status</th>
                           <th className="text-end">Amount</th>
-                          <th className="text-end">Action</th>{/* ⬅️ NUEVO */}
+                          <th className="text-end">Action</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -594,7 +592,7 @@ export default function AdminCashierReportsPage() {
                               <td className="text-nowrap">{o.id}</td>
                               <td>{o.payment?.provider || "—"}</td>
                               <td>{o.payment?.status || "—"}</td>
-                              <td className="text-end">{money(getOrderRevenueUSD(o), currency)}</td>
+                              <td className="text-end">{fmtQ(getOrderRevenue(o))}</td>
                               <td className="text-end">
                                 {canCloseCash ? (
                                   <button
@@ -653,10 +651,10 @@ export default function AdminCashierReportsPage() {
                         <tr key={s.id}>
                           <td>{s.dayKey}</td>
                           <td>{s.cashierName || "—"}</td>
-                          <td className="text-end">{money(s.opening || 0, currency)}</td>
-                          <td className="text-end">{money(s.expectedClose || 0, currency)}</td>
-                          <td className="text-end">{s.declared != null ? money(s.declared, currency) : "—"}</td>
-                          <td className="text-end">{s.diff != null ? money(s.diff, currency) : "—"}</td>
+                          <td className="text-end">{fmtQ(s.opening || 0)}</td>
+                          <td className="text-end">{fmtQ(s.expectedClose || 0)}</td>
+                          <td className="text-end">{s.declared != null ? fmtQ(s.declared) : "—"}</td>
+                          <td className="text-end">{s.diff != null ? fmtQ(s.diff) : "—"}</td>
                         </tr>
                       ))}
                     </tbody>

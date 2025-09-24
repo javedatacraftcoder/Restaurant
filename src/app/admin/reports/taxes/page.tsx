@@ -951,8 +951,8 @@ export default function TaxesReportPage() {
                               <td>{r.date}</td>
                               <td>{r.orderId}</td>
                               <td>{r.rateLabel}</td>
-                              <td className="text-end">{(r.baseCents/100).toFixed(2)}</td>
-                              <td className="text-end">{(r.taxCents/100).toFixed(2)}</td>
+                              <td className="text-end">{fmtMoneyCents(r.baseCents, r.currency)}</td>
+                              <td className="text-end">{fmtMoneyCents(r.taxCents, r.currency)}</td>
                               <td>{r.currency}</td>
                             </tr>
                           ))}
@@ -966,8 +966,8 @@ export default function TaxesReportPage() {
                           <tfoot>
                             <tr className="fw-semibold">
                               <td colSpan={3} className="text-end">Totals</td>
-                              <td className="text-end">{(totalBase/100).toFixed(2)}</td>
-                              <td className="text-end">{(totalTax/100).toFixed(2)}</td>
+                              <td className="text-end">{fmtMoneyCents(totalBase, currency)}</td>
+                              <td className="text-end">{fmtMoneyCents(totalTax, currency)}</td>
                               <td>{currency}</td>
                             </tr>
                           </tfoot>

@@ -15,6 +15,7 @@ import {
   Timestamp,
   DocumentData,
 } from "firebase/firestore";
+import { useFmtQ /* , fmtCents */ } from "@/lib/settings/money";
 
 /** ===== Types ===== */
 type OrderItem = {
@@ -38,7 +39,7 @@ type OrderDoc = {
   items?: OrderItem[];
   orderInfo?: { type?: "dine-in" | "delivery" | "pickup" | string } | null;
   orderTotal?: number;
-  payment?: { amount?: number } | null;
+  payment?: { amount?: number; currency?: string | null } | null;
   totals?: { grandTotalWithTax?: number } | null;
   totalsCents?: { grandTotalWithTaxCents?: number } | null;
 };
@@ -74,17 +75,8 @@ function toDate(v: any): Date | null {
   try { return new Date(v); } catch { return null; }
 }
 
-function money(n: number | undefined): string {
-  const v = Number.isFinite(Number(n)) ? Number(n) : 0;
-  try {
-    return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(v);
-  } catch {
-    return `$${v.toFixed(2)}`;
-  }
-}
-
-/** Resolver de ingreso por orden — consistente con checkout */
-function getOrderRevenueUSD(o: OrderDoc): number {
+/** Resolver de ingreso por orden — consistente con checkout (en unidades, no USD fijo) */
+function getOrderRevenue(o: OrderDoc): number {
   const cents = o.totalsCents?.grandTotalWithTaxCents;
   if (Number.isFinite(cents)) return (cents as number) / 100;
   const withTax = o.totals?.grandTotalWithTax;
@@ -116,12 +108,12 @@ function PieChart({
   rows,
   size = 220,
   title,
-  currency = false,
+  formatValue,
 }: {
   rows: PieRow[];
   size?: number;
   title: string;
-  currency?: boolean;
+  formatValue?: (n: number) => string;
 }) {
   const total = rows.reduce((s, r) => s + (Number(r.value) || 0), 0);
   const cx = size / 2;
@@ -177,7 +169,7 @@ function PieChart({
                       <span className="small">{s.label}</span>
                     </div>
                     <div className="small text-muted">
-                      {currency ? money(s.value) : s.value} · {(s.pct * 100).toFixed(1)}%
+                      {formatValue ? formatValue(s.value) : s.value} · {(s.pct * 100).toFixed(1)}%
                     </div>
                   </div>
                 ))}
@@ -257,6 +249,7 @@ function downloadExcelXml(filename: string, xml: string) {
 /** ===== Page ===== */
 export default function AdminProductReportPage() {
   const db = getFirestore();
+  const fmtQ = useFmtQ();
 
   // Filters
   const [preset, setPreset] = useState<"today" | "7d" | "30d" | "thisMonth" | "custom">("30d");
@@ -341,7 +334,6 @@ export default function AdminProductReportPage() {
       setOrders(arr);
 
       // ----- Catalog resolution -----
-      // categories map: id -> name
       const catSnap = await getDocs(collection(db, "categories"));
       const catMap: Record<string, string> = {};
       for (const d of catSnap.docs) {
@@ -350,7 +342,6 @@ export default function AdminProductReportPage() {
         catMap[d.id] = nm;
       }
 
-      // subcategories map: id -> name
       const subSnap = await getDocs(collection(db, "subcategories"));
       const subMap: Record<string, string> = {};
       for (const d of subSnap.docs) {
@@ -359,7 +350,6 @@ export default function AdminProductReportPage() {
         subMap[d.id] = nm;
       }
 
-      // menuItems: read categoryId/subcategoryId + resolve names + read extras defs si existen
       const menuSnap = await getDocs(collection(db, "menuItems"));
       const meta: Record<string, MenuMeta> = {};
       for (const d of menuSnap.docs) {
@@ -367,7 +357,6 @@ export default function AdminProductReportPage() {
         const categoryId = (r?.categoryId ?? null) as string | null;
         const subcategoryId = (r?.subcategoryId ?? null) as string | null;
 
-        // Intentos seguros de leer catálogos de extras (nombres estándar más comunes):
         const addonDefs: MenuAddonDef[] = Array.isArray(r?.addons)
           ? r.addons.map((a: any) => ({ name: String(a?.name || "Unnamed Addon"), price: Number(a?.price ?? 0) }))
           : Array.isArray(r?.addonDefs)
@@ -544,7 +533,6 @@ export default function AdminProductReportPage() {
   }, [orders]);
 
   // ====== DETECCIÓN DE NUNCA USADOS ======
-  // Catálogo completo (labels)
   const catalogAddonLabels = useMemo(() => {
     const set = new Set<string>();
     Object.values(menuMeta).forEach((mi) => {
@@ -615,47 +603,50 @@ export default function AdminProductReportPage() {
   // KPIs
   const totalOrders = orders.length;
   const totalRevenue = useMemo(
-    () => orders.reduce((sum, o) => sum + getOrderRevenueUSD(o), 0),
+    () => orders.reduce((sum, o) => sum + getOrderRevenue(o), 0),
     [orders]
   );
+
+  // Moneda detectada para headers de Excel
+  const currency = useMemo(() => orders[0]?.payment?.currency || "USD", [orders]);
 
   /** ===== Excel Export (multi-tab) ===== */
   function onExportExcel() {
     const topGlobalSheet: Sheet = {
       name: "TopGlobal",
-      headers: ["Item", "Category", "Subcategory", "Qty", "Orders", "Revenue (USD)"],
+      headers: ["Item", "Category", "Subcategory", "Qty", "Orders", `Revenue (${currency})`],
       rows: topGlobal.map(t => [t.name, t.category, t.subcategory, t.qty, t.orders, Number(t.revenue.toFixed(2))]),
     };
     const topByCatSheet: Sheet = {
       name: "TopByCategory",
-      headers: ["Category", "Item", "Qty", "Orders", "Revenue (USD)"],
+      headers: ["Category", "Item", "Qty", "Orders", `Revenue (${currency})`],
       rows: topByCategory.flatMap(grp =>
         grp.items.map(it => [grp.category, it.name, it.qty, it.orders, Number(it.revenue.toFixed(2))])
       ),
     };
     const leastSheet: Sheet = {
       name: "Least",
-      headers: ["Item", "Category", "Subcategory", "Qty", "Orders", "Revenue (USD)"],
+      headers: ["Item", "Category", "Subcategory", "Qty", "Orders", `Revenue (${currency})`],
       rows: least.map(t => [t.name, t.category, t.subcategory, t.qty, t.orders, Number(t.revenue.toFixed(2))]),
     };
     const revCatSheet: Sheet = {
       name: "RevenueByCategory",
-      headers: ["Category", "Revenue (USD)"],
+      headers: ["Category", `Revenue (${currency})`],
       rows: revenueByCategory.map(r => [r.category, Number(r.revenue.toFixed(2))]),
     };
     const revSubSheet: Sheet = {
       name: "RevenueBySubcategory",
-      headers: ["Category/Subcategory", "Revenue (USD)"],
+      headers: ["Category/Subcategory", `Revenue (${currency})`],
       rows: revenueBySubcategory.map(r => [r.subset, Number(r.revenue.toFixed(2))]),
     };
     const addonsSheet: Sheet = {
       name: "AddonsImpact",
-      headers: ["Addon", "Count (units)", "Revenue (USD)"],
+      headers: ["Addon", "Count (units)", `Revenue (${currency})`],
       rows: addonsAgg.map(a => [a.label, a.count, Number(a.revenue.toFixed(2))]),
     };
     const optionsSheet: Sheet = {
       name: "OptionsImpact",
-      headers: ["Option Item", "Count (units)", "Revenue (USD)"],
+      headers: ["Option Item", "Count (units)", `Revenue (${currency})`],
       rows: optionsAgg.map(a => [a.label, a.count, Number(a.revenue.toFixed(2))]),
     };
     const neverOrderedSheet: Sheet = {
@@ -762,7 +753,7 @@ export default function AdminProductReportPage() {
             <div className="col-12 col-md-3">
               <div className="card border-0 shadow-sm"><div className="card-body">
                 <div className="text-muted small">Revenue</div>
-                <div className="h4 mb-0">{money(totalRevenue)}</div>
+                <div className="h4 mb-0">{fmtQ(totalRevenue)}</div>
               </div></div>
             </div>
             <div className="col-12 col-md-6">
@@ -791,7 +782,7 @@ export default function AdminProductReportPage() {
                           <td>{r.subcategory}</td>
                           <td className="text-end">{r.qty}</td>
                           <td className="text-end">{r.orders}</td>
-                          <td className="text-end">{money(r.revenue)}</td>
+                          <td className="text-end">{fmtQ(r.revenue)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -820,7 +811,7 @@ export default function AdminProductReportPage() {
                           <td>{r.subcategory}</td>
                           <td className="text-end">{r.qty}</td>
                           <td className="text-end">{r.orders}</td>
-                          <td className="text-end">{money(r.revenue)}</td>
+                          <td className="text-end">{fmtQ(r.revenue)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -851,7 +842,7 @@ export default function AdminProductReportPage() {
                           <td>{it.name}</td>
                           <td className="text-end">{it.qty}</td>
                           <td className="text-end">{it.orders}</td>
-                          <td className="text-end">{money(it.revenue)}</td>
+                          <td className="text-end">{fmtQ(it.revenue)}</td>
                         </tr>
                       ))
                     )}
@@ -864,13 +855,13 @@ export default function AdminProductReportPage() {
           {/* Revenue by Category/Subcategory + Extras Pie */}
           <div className="row g-3 mt-3">
             <div className="col-12 col-lg-4">
-              <PieChart rows={pieByCategory} title="Revenue by Category (Pie)" currency />
+              <PieChart rows={pieByCategory} title="Revenue by Category (Pie)" formatValue={fmtQ} />
             </div>
             <div className="col-12 col-lg-4">
-              <PieChart rows={pieBySubcategory} title="Revenue by Subcategory (Pie)" currency />
+              <PieChart rows={pieBySubcategory} title="Revenue by Subcategory (Pie)" formatValue={fmtQ} />
             </div>
             <div className="col-12 col-lg-4">
-              <PieChart rows={pieExtras} title="Extras Revenue (Pie: Addons vs Option items)" currency />
+              <PieChart rows={pieExtras} title="Extras Revenue (Pie: Addons vs Option items)" formatValue={fmtQ} />
             </div>
           </div>
 
@@ -892,7 +883,7 @@ export default function AdminProductReportPage() {
                         <tr key={a.label}>
                           <td>{a.label}</td>
                           <td className="text-end">{a.count}</td>
-                          <td className="text-end">{money(a.revenue)}</td>
+                          <td className="text-end">{fmtQ(a.revenue)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -917,7 +908,7 @@ export default function AdminProductReportPage() {
                         <tr key={a.label}>
                           <td>{a.label}</td>
                           <td className="text-end">{a.count}</td>
-                          <td className="text-end">{money(a.revenue)}</td>
+                          <td className="text-end">{fmtQ(a.revenue)}</td>
                         </tr>
                       ))}
                     </tbody>

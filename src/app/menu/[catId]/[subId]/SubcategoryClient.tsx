@@ -16,6 +16,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { useNewCart } from "@/lib/newcart/context"; // carrito NUEVO
+import { useFmtQ } from "@/lib/settings/money"; // CurrencyUpdate: usar el formateador global basado en SettingsProvider
 
 type Category = { id: string; name: string; slug?: string };
 type Subcategory = { id: string; name: string; slug?: string; categoryId: string };
@@ -53,14 +54,7 @@ type OptionItem = {
   active?: boolean;
 };
 
-function fmtQ(n?: number) {
-  const v = Number.isFinite(Number(n)) ? Number(n) : 0;
-  try {
-    return new Intl.NumberFormat("es-GT", { style: "currency", currency: "USD" }).format(v);
-  } catch {
-    return `Q ${v.toFixed(2)}`;
-  }
-}
+// CurrencyUpdate: eliminada la función local fmtQ con valores fijos de "USD"/"es-GT"
 
 /* =========================
    NUEVO: helpers de centavos
@@ -85,6 +79,9 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
   const newCart = (() => {
     try { return useNewCart(); } catch { return null as any; }
   })();
+
+  // CurrencyUpdate: obtener el formateador conectado a SettingsProvider (currency/locale por tenant)
+  const fmtQ = useFmtQ();
 
   // Estados por tarjeta
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);

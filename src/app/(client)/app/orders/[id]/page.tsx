@@ -7,6 +7,8 @@ import Protected from "@/components/Protected";
 import { useAuth } from "@/app/providers";
 import "@/lib/firebase/client";
 import { getFirestore, doc, onSnapshot } from "firebase/firestore";
+// CurrencyUpdate: usar el formateador global
+import { useFmtQ } from "@/lib/settings/money";
 
 type OpsAddon = { name: string; price?: number };
 type OpsGroupItem = { id: string; name: string; priceDelta?: number };
@@ -37,11 +39,7 @@ type OrderDoc = {
   contact?: { email?: string | null } | null;
 };
 
-function fmtMoneyQ(n: number, cur = "USD") {
-  const c = (cur || "USD").toUpperCase();
-  const sym = c === "GTQ" ? "Q" : c === "USD" ? "$" : `${c} `;
-  return `${sym}${Number(n || 0).toFixed(2)}`;
-}
+// CurrencyUpdate: remover fmtMoneyQ local (se reemplaza por useFmtQ)
 
 function PageInner() {
   const params = useParams<{ id: string }>();
@@ -50,6 +48,9 @@ function PageInner() {
 
   const [order, setOrder] = useState<OrderDoc | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // CurrencyUpdate: hook global
+  const fmtQ = useFmtQ();
 
   useEffect(() => {
     const db = getFirestore();
@@ -107,7 +108,8 @@ function PageInner() {
                         {it.addons.map((ad, ai) => (
                           <li key={ai}>
                             (addon) {ad.name}
-                            {typeof ad.price === "number" ? ` — ${fmtMoneyQ(ad.price, order.currency)}` : ""}
+                            {/* CurrencyUpdate */}
+                            {typeof ad.price === "number" ? ` — ${fmtQ(ad.price)}` : ""}
                           </li>
                         ))}
                       </ul>
@@ -121,7 +123,8 @@ function PageInner() {
                             <li key={gi}>
                               <span className="fw-semibold">{g.groupName}:</span>{" "}
                               {(g.items || [])
-                                .map(og => `${og.name}${typeof og.priceDelta === "number" ? ` (${fmtMoneyQ(og.priceDelta, order.currency)})` : ""}`)
+                                // CurrencyUpdate
+                                .map(og => `${og.name}${typeof og.priceDelta === "number" ? ` (${fmtQ(og.priceDelta)})` : ""}`)
                                 .join(", ")}
                             </li>
                           ) : null
@@ -136,7 +139,8 @@ function PageInner() {
                           <li key={gi}>
                             <span className="fw-semibold">{g.groupName}:</span>{" "}
                             {(g.selected || [])
-                              .map((s) => `${s.name}${typeof s.priceDelta === "number" ? ` (${fmtMoneyQ(s.priceDelta, order.currency)})` : ""}`)
+                              // CurrencyUpdate
+                              .map((s) => `${s.name}${typeof s.priceDelta === "number" ? ` (${fmtQ(s.priceDelta)})` : ""}`)
                               .join(", ")}
                           </li>
                         ))}

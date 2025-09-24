@@ -151,7 +151,7 @@ type OrderDoc = {
 
 const toNum = (x: any) => { const n = Number(x); return Number.isFinite(n) ? n : undefined; };
 const centsToQ = (c?: number) => (Number.isFinite(c) ? Number(c) / 100 : 0);
-function fmtCurrency(n?: number, currency = 'USD') {
+function fmtCurrency(n?: number, currency = 'GTQ') {
   if (typeof n !== 'number') return '—';
   try { return new Intl.NumberFormat('es-GT', { style: 'currency', currency }).format(n); }
   catch { return n.toFixed(2); }
@@ -424,6 +424,12 @@ function PrintInvoicePage_Inner() {
     return (order as any)?.promotionCode || null;
   }, [order]);
 
+  // moneda a usar en impresiones
+  const currency = useMemo(
+    () => (order as any)?.currency || order?.totals?.currency || 'GTQ',
+    [order]
+  );
+
   // ✅ Cadena de fecha formateada SOLO si invoiceDate es válido
   const invoiceDateStr = useMemo(() => {
     const d = toDateOrNullStrict(order?.invoiceDate);
@@ -494,7 +500,7 @@ function PrintInvoicePage_Inner() {
                   const rows = its.map((it: any, i:number) => {
                     const nm = it?.name ?? '';
                     const pr = extractDeltaQ(it);
-                    return <span key={i}>{nm}{pr ? ` (${fmtCurrency(pr)})` : ''}{i < its.length - 1 ? ', ' : ''}</span>;
+                    return <span key={i}>{nm}{pr ? ` (${fmtCurrency(pr, currency)})` : ''}{i < its.length - 1 ? ', ' : ''}</span>;
                   });
                   groupsHtml.push(<div className="addon" key={`g${groupsHtml.length}`}>• <b>{g?.groupName ?? 'Options'}:</b> {rows}</div>);
                 }
@@ -507,7 +513,7 @@ function PrintInvoicePage_Inner() {
                   const rows = sels.map((s: any, i:number) => {
                     const nm = s?.name ?? '';
                     const pr = extractDeltaQ(s);
-                    return <span key={i}>{nm}{pr ? ` (${fmtCurrency(pr)})` : ''}{i < sels.length - 1 ? ', ' : ''}</span>;
+                    return <span key={i}>{nm}{pr ? ` (${fmtCurrency(pr, currency)})` : ''}{i < sels.length - 1 ? ', ' : ''}</span>;
                   });
                   groupsHtml.push(<div className="addon" key={`g${groupsHtml.length}`}>• <b>{g?.groupName ?? 'Options'}:</b> {rows}</div>);
                 }
@@ -520,7 +526,7 @@ function PrintInvoicePage_Inner() {
                     if (typeof x === 'string') return <span key={i}>{x}{i < arr.length - 1 ? ', ' : ''}</span>;
                     const nm = x?.name ?? '';
                     const pr = extractDeltaQ(x);
-                    return <span key={i}>{nm}{pr ? ` (${fmtCurrency(pr)})` : ''}{i < arr.length - 1 ? ', ' : ''}</span>;
+                    return <span key={i}>{nm}{pr ? ` (${fmtCurrency(pr, currency)})` : ''}{i < arr.length - 1 ? ', ' : ''}</span>;
                   });
                   groupsHtml.push(<div className="addon" key={`b${groupsHtml.length}`}>• <b>{key}:</b> {rows}</div>);
                 }
@@ -530,13 +536,13 @@ function PrintInvoicePage_Inner() {
                 <div className="item" key={idx}>
                   <div className="row">
                     <div className="name">{qty} × {name}</div>
-                    <div>{fmtCurrency(baseUnit)}</div>
+                    <div>{fmtCurrency(baseUnit, currency)}</div>
                   </div>
                   {groupsHtml}
                   {lineTotal > 0 && (
                     <div className="row">
                       <div className="muted">Subtotal line</div>
-                      <div className="muted">{fmtCurrency(lineTotal)}</div>
+                      <div className="muted">{fmtCurrency(lineTotal, currency)}</div>
                     </div>
                   )}
                 </div>
@@ -544,28 +550,28 @@ function PrintInvoicePage_Inner() {
             })}
 
             <div className="hr"></div>
-            <div className="row"><div>Subtotal</div><div>{fmtCurrency(totals.subtotal)}</div></div>
+            <div className="row"><div>Subtotal</div><div>{fmtCurrency(totals.subtotal, currency)}</div></div>
 
             {type === 'delivery' && (
               <div className="row">
                 <div>Delivery{ (order as any)?.orderInfo?.deliveryOption?.title ? ` — ${(order as any).orderInfo.deliveryOption.title}` : '' }</div>
-                <div>{fmtCurrency(deliveryFeeShown)}</div>
+                <div>{fmtCurrency(deliveryFeeShown, currency)}</div>
               </div>
             )}
 
             {Number(totals.discount || 0) > 0 && (
               <div className="row">
                 <div>Discount{promoLabel ? ` (${promoLabel})` : ''}</div>
-                <div>-{fmtCurrency(totals.discount)}</div>
+                <div>-{fmtCurrency(totals.discount, currency)}</div>
               </div>
             )}
 
-            {totals.tax ? <div className="row"><div>Taxes</div><div>{fmtCurrency(totals.tax)}</div></div> : null}
-            {totals.serviceFee ? <div className="row"><div>Service</div><div>{fmtCurrency(totals.serviceFee)}</div></div> : null}
+            {totals.tax ? <div className="row"><div>Taxes</div><div>{fmtCurrency(totals.tax, currency)}</div></div> : null}
+            {totals.serviceFee ? <div className="row"><div>Service</div><div>{fmtCurrency(totals.serviceFee, currency)}</div></div> : null}
 
-            {Number(totals.tip || 0) > 0 && <div className="row"><div>Tip</div><div>{fmtCurrency(totals.tip)}</div></div>}
+            {Number(totals.tip || 0) > 0 && <div className="row"><div>Tip</div><div>{fmtCurrency(totals.tip, currency)}</div></div>}
 
-            <div className="row tot"><div>Gran total</div><div>{fmtCurrency(grandTotalShown)}</div></div>
+            <div className="row tot"><div>Gran total</div><div>{fmtCurrency(grandTotalShown, currency)}</div></div>
 
             {(() => {
               const s = (order as any)?.taxSnapshot as TaxSnapshot;

@@ -20,6 +20,9 @@ import {
   Unsubscribe,
 } from "firebase/firestore";
 
+/** ✅ Currency centralizado (respeta settings) */
+import { useFmtQ } from "@/lib/settings/money";
+
 // =================== Types ===================
 type FirestoreTS = Timestamp | { seconds: number; nanoseconds?: number } | Date | null | undefined;
 
@@ -88,22 +91,9 @@ function tsToDate(ts: FirestoreTS): Date | null {
   return null;
 }
 
-function fmtMoney(n?: number, currency: string = "USD") {
-  const v = Number.isFinite(Number(n)) ? Number(n) : 0;
-  try {
-    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(v);
-  } catch {
-    return `${currency} ${v.toFixed(2)}`;
-  }
-}
-
 function safeNum(n: any): number {
   const v = Number(n);
   return Number.isFinite(v) ? v : 0;
-}
-
-function getCurrency(order?: OrderDoc): string {
-  return order?.totals?.currency || order?.totalsCents?.currency || "USD";
 }
 
 function sumLine(ln: OrderItem): number {
@@ -124,7 +114,7 @@ function computeSubtotalFromItems(order?: OrderDoc): number | undefined {
   return order.items.reduce((acc, ln) => acc + sumLine(ln), 0);
 }
 
-// ➕ NUEVO: subtotal “fresco” siempre que haya items; si no, cae a totals/totalsCents
+// ➕ subtotal “fresco” siempre que haya items; si no, cae a totals/totalsCents
 function getFreshSubtotal(order?: OrderDoc): number {
   const fromItems = computeSubtotalFromItems(order);
   if (typeof fromItems === "number") return fromItems;
@@ -147,12 +137,12 @@ function pickAmount(
   const c: any = order.totalsCents || {};
   const centsKey =
     key === "subtotal" ? "itemsSubTotalCents"
-    : key === "tax" ? "itemsTaxCents"
-    : key === "tip" ? "tipCents"
-    : key === "discount" ? "discountCents"
-    : key === "deliveryFee" ? "deliveryFeeCents"
-    : key === "grandTotalWithTax" ? "grandTotalWithTaxCents"
-    : undefined;
+      : key === "tax" ? "itemsTaxCents"
+      : key === "tip" ? "tipCents"
+      : key === "discount" ? "discountCents"
+      : key === "deliveryFee" ? "deliveryFeeCents"
+      : key === "grandTotalWithTax" ? "grandTotalWithTaxCents"
+      : undefined;
 
   if (centsKey && typeof c[centsKey] === "number") {
     return (c[centsKey] as number) / 100;
@@ -167,7 +157,7 @@ function pickAmount(
   return undefined;
 }
 
-// 🔁 ACTUALIZADO: usa siempre getFreshSubtotal si hay items; solo usa stored total si NO hay items
+// 🔁 usa siempre getFreshSubtotal si hay items; solo usa stored total si NO hay items
 function computeGrandTotal(order?: OrderDoc): number | undefined {
   if (!order) return undefined;
 
@@ -217,6 +207,9 @@ export default function WaiterPage() {
   const [activeByTable, setActiveByTable] = useState<Record<string, OrderDoc | undefined>>({});
   const unsubRef = useRef<Unsubscribe[]>([]);
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
+
+  // ✅ formateador de moneda central (tenant)
+  const fmtQ = useFmtQ();
 
   // ------------- Role gate -------------
   const allowed = useMemo(() => {
@@ -419,7 +412,6 @@ export default function WaiterPage() {
               const border = occupied ? "1px solid #2e7d32" : "1px solid #bdbdbd";
               const text = occupied ? "#1b5e20" : "#616161";
               const order = activeByTable[t];
-              const currency = getCurrency(order);
               const total = computeGrandTotal(order); // usa subtotal fresco si hay items
 
               return (
@@ -460,7 +452,7 @@ export default function WaiterPage() {
                         <>
                           <div className="small text-muted">Open order</div>
                           <div className="fw-semibold">
-                            {fmtMoney(total, currency)}
+                            {fmtQ(total)}
                           </div>
                         </>
                       ) : (
@@ -515,7 +507,7 @@ export default function WaiterPage() {
 
 // =================== Detail Panel ===================
 function OrderDetailCard({ order, onClose }: { order: OrderDoc; onClose: () => void }) {
-  const currency = getCurrency(order);
+  const fmtQ = useFmtQ(); // ✅ usa settings
   const createdAt = tsToDate(order.createdAt);
   const invoiceDate = tsToDate(order.invoiceDate);
 
@@ -566,15 +558,15 @@ function OrderDetailCard({ order, onClose }: { order: OrderDoc; onClose: () => v
                       <span className="text-muted">× {ln.quantity}</span>
                     </div>
                     <div className="text-muted small">
-                      Base: {fmtMoney(ln.basePrice, currency)}{" "}
+                      Base: {fmtQ(ln.basePrice)}{" "}
                       {typeof ln.lineTotal === "number" && (
-                        <> • Line: {fmtMoney(ln.lineTotal, currency)}</>
+                        <> • Line: {fmtQ(ln.lineTotal)}</>
                       )}
                     </div>
                   </div>
                   <div className="fw-semibold">
                     {/* Si no viene lineTotal, calcula como fallback */}
-                    {fmtMoney(typeof ln.lineTotal === "number" ? ln.lineTotal : sumLine(ln), currency)}
+                    {fmtQ(typeof ln.lineTotal === "number" ? ln.lineTotal : sumLine(ln))}
                   </div>
                 </div>
 
@@ -586,7 +578,7 @@ function OrderDetailCard({ order, onClose }: { order: OrderDoc; onClose: () => v
                       {ln.addons!.map((a, i) => (
                         <li key={`a-${i}`}>
                           {a.name}{" "}
-                          {typeof a.price === "number" ? `(${fmtMoney(a.price, currency)})` : ""}
+                          {typeof a.price === "number" ? `(${fmtQ(a.price)})` : ""}
                         </li>
                       ))}
                     </ul>
@@ -605,7 +597,7 @@ function OrderDetailCard({ order, onClose }: { order: OrderDoc; onClose: () => v
                             <li key={`gi-${gi}-it-${ii}`}>
                               {it.name}
                               {typeof it.priceDelta === "number" && it.priceDelta !== 0
-                                ? ` (+${fmtMoney(it.priceDelta, currency)})`
+                                ? ` (+${fmtQ(it.priceDelta)})`
                                 : ""}
                             </li>
                           ))}
@@ -633,23 +625,23 @@ function OrderDetailCard({ order, onClose }: { order: OrderDoc; onClose: () => v
           <div className="d-flex flex-column gap-1 small">
             <div className="d-flex justify-content-between">
               <span>Subtotal</span>
-              <span>{fmtMoney(subtotal, currency)}</span>
+              <span>{fmtQ(subtotal)}</span>
             </div>
             <div className="d-flex justify-content-between">
               <span>Tax</span>
-              <span>{fmtMoney(tax, currency)}</span>
+              <span>{fmtQ(tax)}</span>
             </div>
             <div className="d-flex justify-content-between">
               <span>Tip</span>
-              <span>{fmtMoney(tip, currency)}</span>
+              <span>{fmtQ(tip)}</span>
             </div>
             <div className="d-flex justify-content-between">
               <span>Discount</span>
-              <span>{fmtMoney(discount, currency)}</span>
+              <span>{fmtQ(discount)}</span>
             </div>
             <div className="d-flex justify-content-between fw-semibold border-top pt-2">
               <span>Total</span>
-              <span>{fmtMoney(total, currency)}</span>
+              <span>{fmtQ(total)}</span>
             </div>
           </div>
         </div>

@@ -4,6 +4,7 @@ import { useParams, useRouter } from 'next/navigation';
 import React, { useEffect, useMemo, useState } from 'react';
 import Protected from '@/components/Protected';
 import { RoleGate } from '@/components/RoleGate'; // allow={['admin','waiter']}
+import { useFmtQ } from '@/lib/settings/money'; // ✅ formateador global
 
 /* ---------- Auth opcional (solo si existe usuario) ---------- */
 function getFirebaseClientConfig() {
@@ -77,7 +78,8 @@ type Order = {
 
 const toNum=(x:any)=> (Number.isFinite(Number(x))?Number(x):undefined);
 const centsToQ=(c?:number)=> (Number.isFinite(c)?Number(c)/100:0);
-function fmtMoney(n?:number, cur='USD'){ const v=Number(n||0); try{ return new Intl.NumberFormat('es-GT',{style:'currency',currency:cur}).format(v);}catch{return `Q ${v.toFixed(2)}`;} }
+// (dejamos fmtMoney definido pero sin usar, para no alterar más de la estructura original)
+// function fmtMoney(n?:number, cur='USD'){ const v=Number(n||0); try{ return new Intl.NumberFormat('es-GT',{style:'currency',currency:cur}).format(v);}catch{return `Q ${v.toFixed(2)}`;} }
 function getQty(l:Line){ return Number(l?.quantity ?? 1) || 1; }
 function getName(l:Line){ return String(l?.menuItemName ?? l?.name ?? 'Ítem'); }
 function extractDeltaQ(x:any){
@@ -203,6 +205,9 @@ export default function EditOrderCartPage(){
   const [pending, setPending] = useState<NewLine[]>([]);
   const [err, setErr] = useState<string|null>(null);
 
+  // ✅ formateador global
+  const fmtQ = useFmtQ();
+
   useEffect(()=>{ 
     let alive=true;
     (async()=>{
@@ -292,7 +297,7 @@ export default function EditOrderCartPage(){
           {err && <div className="text-danger small">{err}</div>}
           {original && (
             <>
-              <div className="small text-muted mb-2">Current total: {fmtMoney(currentTotal, currency)}</div>
+              <div className="small text-muted mb-2">Current total: {fmtQ(currentTotal)}</div>
 
               {origLines.length === 0 && (
                 <div className="text-muted small">No lines in this order.</div>
@@ -307,13 +312,13 @@ export default function EditOrderCartPage(){
                   <div key={idx} className="small mb-2 border-top pt-2">
                     <div className="d-flex justify-content-between">
                       <div>• {qty} × {name}</div>
-                      <div className="text-muted">({fmtMoney(base, currency)} c/u)</div>
+                      <div className="text-muted">({fmtQ(base)} c/u)</div>
                     </div>
 
                     {Array.isArray(l.optionGroups) && l.optionGroups.map((g,gi)=>{
                       const rows = (g.items||[]).map((it,ii)=>{
                         const p = extractDeltaQ(it);
-                        return <span key={ii}>{it?.name}{p?` (${fmtMoney(p, currency)})`:''}{ii<(g.items!.length-1)?', ':''}</span>;
+                        return <span key={ii}>{it?.name}{p?` (${fmtQ(p)})`:''}{ii<(g.items!.length-1)?', ':''}</span>;
                       });
                       return rows.length?(
                         <div key={gi} className="ms-3 text-muted">
@@ -325,7 +330,7 @@ export default function EditOrderCartPage(){
                     {Array.isArray((l as any).options) && (l as any).options.map((g:any,gi:number)=>{
                       const rows = (g.selected||[]).map((it:any,ii:number)=>{
                         const p = extractDeltaQ(it);
-                        return <span key={ii}>{it?.name}{p?` (${fmtMoney(p, currency)})`:''}{ii<(g.selected!.length-1)?', ':''}</span>;
+                        return <span key={ii}>{it?.name}{p?` (${fmtQ(p)})`:''}{ii<(g.selected!.length-1)?', ':''}</span>;
                       });
                       return rows.length?(
                         <div key={`op-${gi}`} className="ms-3 text-muted">
@@ -340,14 +345,14 @@ export default function EditOrderCartPage(){
                         {l.addons.map((ad:any,ai:number)=>{
                           if(typeof ad==='string') return <span key={ai}>{ad}{ai<l.addons!.length-1?', ':''}</span>;
                           const p = toNum(ad?.price) ?? (toNum(ad?.priceCents)!==undefined ? Number(ad!.priceCents)/100 : undefined);
-                          return <span key={ai}>{ad?.name}{p?` (${fmtMoney(p, currency)})`:''}{ai<l.addons!.length-1?', ':''}</span>;
+                          return <span key={ai}>{ad?.name}{p?` (${fmtQ(p)})`:''}{ai<l.addons!.length-1?', ':''}</span>;
                         })}
                       </div>
                     )}
 
                     <div className="d-flex justify-content-between">
                       <span className="text-muted">Subtotal line</span>
-                      <span className="text-muted">{fmtMoney(sum, currency)}</span>
+                      <span className="text-muted">{fmtQ(sum)}</span>
                     </div>
                   </div>
                 );
@@ -371,33 +376,33 @@ export default function EditOrderCartPage(){
               <div key={idx} className="small mb-2 border-top pt-2">
                 <div className="d-flex justify-content-between">
                   <div>• {q} × {name}</div>
-                  <div className="text-muted">({fmtMoney(base)} each)</div>
+                  <div className="text-muted">({fmtQ(base)} each)</div>
                 </div>
 
                 {Array.isArray(l.optionGroups)&&l.optionGroups.map((g,gi)=>(
                   <div key={gi} className="ms-3 text-muted">
                     <span className="fw-semibold">{g.groupName||'Opciones'}:</span>{' '}
-                    {(g.items||[]).map((it,ii)=> <span key={ii}>{it?.name}{it?.priceDelta?` (${fmtMoney(it.priceDelta)})`:''}{ii<(g.items!.length-1)?', ':''}</span>)}
+                    {(g.items||[]).map((it,ii)=> <span key={ii}>{it?.name}{it?.priceDelta?` (${fmtQ(it.priceDelta)})`:''}{ii<(g.items!.length-1)?', ':''}</span>)}
                   </div>
                 ))}
 
                 {Array.isArray(l.addons)&&l.addons.length>0 && (
                   <div className="ms-3 text-muted">
                     <span className="fw-semibold">addons:</span>{' '}
-                    {l.addons.map((ad:any,ai:number)=> <span key={ai}>{ad?.name}{ad?.price?` (${fmtMoney(ad.price)})`:''}{ai<l.addons!.length-1?', ':''}</span>)}
+                    {l.addons.map((ad:any,ai:number)=> <span key={ai}>{ad?.name}{ad?.price?` (${fmtQ(ad.price)})`:''}{ai<l.addons!.length-1?', ':''}</span>)}
                   </div>
                 )}
 
                 <div className="d-flex justify-content-between">
                   <span className="text-muted">Subtotal line</span>
-                  <span className="text-muted">{fmtMoney(sum)}</span>
+                  <span className="text-muted">{fmtQ(sum)}</span>
                 </div>
               </div>
             );
           })}
         </div>
         <div className="card-footer d-flex justify-content-between align-items-center">
-          <div>Total to add: <strong>{fmtMoney(appendTotal)}</strong></div>
+          <div>Total to add: <strong>{fmtQ(appendTotal)}</strong></div>
           <div className="d-flex gap-2">
             <button className="btn btn-outline-secondary" onClick={()=>{ sessionStorage.removeItem(key); setPending([]); }}>Vaciar</button>
             <button className="btn btn-primary" onClick={confirmAppend} disabled={!pending.length}>Continue</button>

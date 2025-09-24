@@ -3,6 +3,7 @@
 
 import { OnlyAdmin } from "@/components/Only";
 import React, { useEffect, useMemo, useState } from "react";
+import { useFmtQ /* , fmtCents */ } from '@/lib/settings/money';
 
 /* =========================================================================
    Firebase (cliente): Auth + Firestore
@@ -140,14 +141,7 @@ type Promotion = {
 /* =========================================================================
    Utils
    ========================================================================= */
-function fmtQ(n?: number) {
-  if (typeof n !== "number") return "—";
-  try {
-    return new Intl.NumberFormat("es-GT", { style: "currency", currency: "USD" }).format(n);
-  } catch {
-    return `Q ${n.toFixed(2)}`;
-  }
-}
+// (El helper local de moneda fue reemplazado por useFmtQ)
 function toNumber(v: any): number | undefined {
   const n = Number(v);
   return Number.isFinite(n) ? n : undefined;
@@ -206,6 +200,7 @@ async function deleteDocById(collName: string, id: string) {
    ========================================================================= */
 function AdminPromotionsPage_Inner() {
   const { authReady, user, isAdmin } = useAuthClaims();
+  const fmtQ = useFmtQ();
 
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -745,7 +740,7 @@ function AdminPromotionsPage_Inner() {
               <strong>Rules</strong>
               <div className="row g-2 mt-1">
                 <div className="col-6">
-                  <label className="form-label">Min. eligible subtotal (GTQ)</label>
+                  <label className="form-label">Min. eligible subtotal </label>
                   <input type="number" step="0.01" className="form-control" value={minTargetSubtotal} onChange={(e) => setMinTargetSubtotal(e.target.value)} />
                 </div>
                 <div className="col-6">

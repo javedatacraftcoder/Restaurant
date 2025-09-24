@@ -4,6 +4,7 @@ import Providers from './providers';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import './globals.css';
 import { NewCartProvider } from '@/lib/newcart/context';
+import { SettingsProvider } from '@/lib/settings/context'; // ✅ Nuevo: provider global de settings
 
 export const metadata: Metadata = {
   title: 'OrderCraft',
@@ -14,9 +15,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="es" data-bs-theme="light">
       <body className="bg-white text-dark">
-        <NewCartProvider>
-          <Providers>{children}</Providers>
-        </NewCartProvider>
+        <SettingsProvider>
+          <NewCartProvider>
+            <Providers>{children}</Providers>
+          </NewCartProvider>
+        </SettingsProvider>
       </body>
     </html>
   );
