@@ -589,11 +589,6 @@ export default function AdminTimeReportsPage() {
                   </span>
                 </div>
               </div>
-
-              <div className="text-muted small mt-2">
-                Times computed with <code>createdAt</code> for Placed, <code>statusHistory</code> for
-                kitchen, and <code>orderInfo.deliveryTimeline</code> for delivery. Missing timestamps render as “—”.
-              </div>
             </div>
           </div>
 
@@ -789,9 +784,6 @@ export default function AdminTimeReportsPage() {
                   </tbody>
                 </table>
               </div>
-            </div>
-            <div className="card-footer small text-muted">
-              Delivery metrics only appear for orders with <code>orderInfo.type="delivery"</code> and a populated <code>deliveryTimeline</code>.
             </div>
           </div>
         </main>

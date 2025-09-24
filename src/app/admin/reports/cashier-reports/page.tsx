@@ -496,9 +496,6 @@ export default function AdminCashierReportsPage() {
                 </div>
               </div>
               {error && <div className="text-danger small mt-2">{error}</div>}
-              <div className="text-muted small mt-2">
-                Payments read from <code>payment.provider</code> / <code>payment.status</code>. Totals use checkout fallbacks (grandTotalWithTaxCents → grandTotalWithTax → payment.amount → orderTotal). If you add a collection <code>cashboxSessions</code> with opening/closing amounts, this page will reconcile it automatically.
-              </div>
             </div>
           </div>
 
@@ -560,10 +557,6 @@ export default function AdminCashierReportsPage() {
                     </table>
                   </div>
                 </div>
-                <div className="card-footer small text-muted">
-                  Success statuses: <code>paid</code>, <code>captured</code>, <code>completed</code>, <code>succeeded</code>, <code>closed</code>. 
-                  Unpaid/rejected: <code>pending</code>, <code>failed</code>, <code>rejected</code>, <code>canceled</code>, <code>void</code>, <code>refunded</code>.
-                </div>
               </div>
             </div>
 
@@ -614,56 +607,11 @@ export default function AdminCashierReportsPage() {
                   </div>
                 </div>
                 <div className="card-footer small text-muted">
-                  Tip: usa el botón “Mark closed (cash)” para cerrar pagos en efectivo desde aquí. Requiere que las reglas permitan el parche de <code>payment.*</code> para staff.
+                  Tip: usa el botón “Mark closed (cash)” para cerrar pagos en efectivo desde aquí. 
                 </div>
               </div>
             </div>
           </div>
-
-          {/* Cashbox reconciliation */}
-          <div className="card border-0 shadow-sm mt-3">
-            <div className="card-header fw-semibold">Daily cash box (open vs close)</div>
-            <div className="card-body p-0">
-              {sessionsAugmented.length === 0 ? (
-                <div className="p-3">
-                  <div className="text-muted small mb-2">No sessions found. To enable this section, create a collection <code>cashboxSessions</code> with fields:</div>
-                  <ul className="small mb-0">
-                    <li><code>openedAt</code> (timestamp), <code>closedAt</code> (timestamp, optional)</li>
-                    <li><code>openingAmountCents</code>, <code>declaredClosingAmountCents</code> (int, cents)</li>
-                    <li><code>cashierName</code> (string), <code>sessionDate</code> (YYYY-MM-DD, optional)</li>
-                  </ul>
-                </div>
-              ) : (
-                <div className="table-responsive">
-                  <table className="table mb-0">
-                    <thead>
-                      <tr>
-                        <th>Date</th>
-                        <th>Cashier</th>
-                        <th className="text-end">Opening</th>
-                        <th className="text-end">Expected close</th>
-                        <th className="text-end">Declared close</th>
-                        <th className="text-end">Diff</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sessionsAugmented.map((s) => (
-                        <tr key={s.id}>
-                          <td>{s.dayKey}</td>
-                          <td>{s.cashierName || "—"}</td>
-                          <td className="text-end">{fmtQ(s.opening || 0)}</td>
-                          <td className="text-end">{fmtQ(s.expectedClose || 0)}</td>
-                          <td className="text-end">{s.declared != null ? fmtQ(s.declared) : "—"}</td>
-                          <td className="text-end">{s.diff != null ? fmtQ(s.diff) : "—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-
           {/* Pies */}
           <div className="row g-3 mt-3">
             <div className="col-12 col-lg-6">
@@ -675,7 +623,7 @@ export default function AdminCashierReportsPage() {
           </div>
 
           <div className="text-muted small mt-3">
-            Notes: cash revenue computed from paid/closed cash orders within range. To reconcile tips in cash separately, añade <code>payment.tipCents</code> o una línea en <code>totalsCents</code> y ajusto el cálculo.
+            Notes: cash revenue computed from paid/closed cash orders within range.
           </div>
         </main>
       </AdminOnly>
