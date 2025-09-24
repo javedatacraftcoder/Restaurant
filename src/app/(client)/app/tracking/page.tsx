@@ -2,6 +2,8 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import Protected from "@/components/Protected";
+import { useTenantSettings } from "@/lib/settings/hooks";
+import { t, getLang } from "@/lib/i18n/t";
 
 /*Firebase (cliente)*/
 function getFirebaseClientConfig() {
@@ -130,18 +132,18 @@ type OrderDoc = {
   } | any;
 };
 
-/* Helpers de presentación */
-const TitleMap: Record<StatusSnake, string> = {
-  cart: "Cart",
-  placed: "Received",
-  kitchen_in_progress: "In kitchen",
-  kitchen_done: "Kitchen ready",
-  ready_to_close: "Ready to close",
-  assigned_to_courier: "Assigned to courier",
-  on_the_way: "On the way",
-  delivered: "Delivered",
-  closed: "Closed",
-  cancelled: "Cancelled",
+/* Helpers de presentación: usamos claves de i18n */
+const TitleKeyMap: Record<StatusSnake, string> = {
+  cart: "track.status.cart",
+  placed: "track.status.received",
+  kitchen_in_progress: "track.status.inKitchen",
+  kitchen_done: "track.status.kitchenReady",
+  ready_to_close: "track.status.readyToClose",
+  assigned_to_courier: "track.status.assigned",
+  on_the_way: "track.status.onTheWay",
+  delivered: "track.status.delivered",
+  closed: "track.status.closed",
+  cancelled: "track.status.cancelled",
 };
 
 function toSnakeStatus(s: string): StatusSnake {
@@ -183,7 +185,6 @@ function getDisplayNotes(o: OrderDoc): string | null {
 }
 
 /* Datos: traer mis órdenes delivery, visibles mientras subestado !== delivered */
-
 const STATUS_QUERY_MAIN = [
   "placed",
   "kitchen_in_progress",
@@ -212,7 +213,7 @@ function useMyDeliveryOrders(enabled: boolean, pollMs = 4000) {
       const token = await getIdTokenSafe(false);
       if (!token) {
         setLoading(false);
-        setError("You must sign in.");
+        setError("track.err.signIn"); // clave; se resolverá en render
         return;
       }
 
@@ -220,7 +221,7 @@ function useMyDeliveryOrders(enabled: boolean, pollMs = 4000) {
         STATUS_QUERY_MAIN
       )}&typeIn=${encodeURIComponent(TYPE_QUERY)}&limit=100`;
       const res = await apiFetch(url);
-      if (res.status === 401) throw new Error("Unauthorized (401).");
+      if (res.status === 401) throw new Error("track.err.unauthorized");
       if (!res.ok) throw new Error(`GET /orders ${res.status}`);
 
       const data = await res.json();
@@ -250,7 +251,7 @@ function useMyDeliveryOrders(enabled: boolean, pollMs = 4000) {
       setOrders(list);
       setLoading(false);
     } catch (e: any) {
-      setError(e?.message || "Error loading");
+      setError(e?.message || "track.err.loading");
       setLoading(false);
     }
   };
@@ -269,15 +270,7 @@ function useMyDeliveryOrders(enabled: boolean, pollMs = 4000) {
   return { orders, loading, error, refresh: fetchNow } as const;
 }
 
-/* Timeline unificado (cocina + delivery)
-   Pasos:
-   1) Recibido
-   2) En cocina
-   3) Cocina lista
-   4) Asignado a repartidor (visual si courierName)
-   5) En ruta (delivery = inroute)
-   6) Entregado (delivery = delivered) */
-
+/* Timeline: usamos claves y resolvemos con t() */
 type TimelineStepKey =
   | "placed"
   | "kitchen_in_progress"
@@ -286,42 +279,38 @@ type TimelineStepKey =
   | "inroute"
   | "delivered";
 
-const STEP_LABELS: Record<TimelineStepKey, string> = {
-  placed: "Received",
-  kitchen_in_progress: "In kitchen",
-  kitchen_done: "Kitchen ready",
-  assigned_to_courier_visual: "Assigned to courier",
-  inroute: "On the way",
-  delivered: "Delivered",
+const STEP_LABEL_KEYS: Record<TimelineStepKey, string> = {
+  placed: "track.step.received",
+  kitchen_in_progress: "track.step.inKitchen",
+  kitchen_done: "track.step.kitchenReady",
+  assigned_to_courier_visual: "track.step.assigned",
+  inroute: "track.step.onTheWay",
+  delivered: "track.step.delivered",
 };
 
 function getStepState(
   order: OrderDoc
-): { steps: Array<{ key: TimelineStepKey; label: string }>; activeIndex: number } {
+): { steps: Array<{ key: TimelineStepKey; labelKey: string }>; activeIndex: number } {
   const courierName = order?.orderInfo?.courierName ?? null;
   const sub: "pending" | "inroute" | "delivered" = order?.orderInfo?.delivery ?? "pending";
 
-  const steps: Array<{ key: TimelineStepKey; label: string }> = [
-    { key: "placed", label: STEP_LABELS.placed },
-    { key: "kitchen_in_progress", label: STEP_LABELS.kitchen_in_progress },
-    { key: "kitchen_done", label: STEP_LABELS.kitchen_done },
-    { key: "assigned_to_courier_visual", label: STEP_LABELS.assigned_to_courier_visual },
-    { key: "inroute", label: STEP_LABELS.inroute },
-    { key: "delivered", label: STEP_LABELS.delivered },
+  const steps: Array<{ key: TimelineStepKey; labelKey: string }> = [
+    { key: "placed", labelKey: STEP_LABEL_KEYS.placed },
+    { key: "kitchen_in_progress", labelKey: STEP_LABEL_KEYS.kitchen_in_progress },
+    { key: "kitchen_done", labelKey: STEP_LABEL_KEYS.kitchen_done },
+    { key: "assigned_to_courier_visual", labelKey: STEP_LABEL_KEYS.assigned_to_courier_visual },
+    { key: "inroute", labelKey: STEP_LABEL_KEYS.inroute },
+    { key: "delivered", labelKey: STEP_LABEL_KEYS.delivered },
   ];
 
-  // Determinar índice activo combinando principal + delivery
-  // Cocina:
-  const main = order.status;
   let idx = 0;
+  const main = order.status;
   if (main === "kitchen_in_progress") idx = 1;
   else if (main === "kitchen_done") idx = 2;
   else if (main === "placed") idx = 0;
   else if (["ready_to_close", "assigned_to_courier", "on_the_way", "closed", "delivered"].includes(main))
-    idx = 2; // El flujo de cocina termina en 'kitchen_done'
+    idx = 2;
 
-  // Delivery:
-  // Paso visual "asignado" si hay courierName
   if (courierName && idx < 3) idx = 3;
   if (sub === "inroute" && idx < 4) idx = 4;
   if (sub === "delivered") idx = 5;
@@ -346,18 +335,24 @@ function StepIcon({ name }: { name: TimelineStepKey }) {
   );
 }
 
-/* Componente: Timeline vertical */
+/* Componente: Timeline vertical (i18n via props.lang) */
 function VerticalTimeline({
   steps,
   activeIndex,
+  lang,
 }: {
-  steps: Array<{ key: TimelineStepKey; label: string }>;
-  activeIndex: number; // índice del estado actual
+  steps: Array<{ key: TimelineStepKey; labelKey: string }>;
+  activeIndex: number;
+  lang: string;
 }) {
   return (
     <div className="vtl">
       {steps.map((s, i) => {
         const state = i < activeIndex ? "done" : i === activeIndex ? "active" : "todo";
+        const label = t(lang, s.labelKey);
+        const ariaSuffix =
+          state === "active" ? t(lang, "track.a11y.current") :
+          state === "done" ? t(lang, "track.a11y.completed") : "";
         return (
           <div className="vtl-row" key={s.key}>
             <div className="vtl-marker">
@@ -365,80 +360,36 @@ function VerticalTimeline({
                 className={`vtl-dot ${
                   state === "done" ? "vtl-done" : state === "active" ? "vtl-active" : "vtl-todo"
                 }`}
-                aria-label={`${s.label}${state === "active" ? " (current)" : state === "done" ? " (completed)" : ""}`}
+                aria-label={`${label}${ariaSuffix ? ` (${ariaSuffix})` : ""}`}
               >
                 <StepIcon name={s.key} />
               </div>
               {i < steps.length - 1 && <div className="vtl-line" aria-hidden="true" />}
             </div>
             <div className="vtl-label">
-              <div className={`vtl-text ${state === "todo" ? "text-muted" : ""}`}>{s.label}</div>
+              <div className={`vtl-text ${state === "todo" ? "text-muted" : ""}`}>{label}</div>
             </div>
           </div>
         );
       })}
       <style jsx>{`
-        .vtl {
-          display: grid;
-          row-gap: 12px;
-          padding-left: 2px;
-        }
-        .vtl-row {
-          display: grid;
-          grid-template-columns: 28px 1fr;
-          column-gap: 10px;
-          align-items: start;
-        }
-        .vtl-marker {
-          position: relative;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-        }
-        .vtl-dot {
-          display: grid;
-          place-items: center;
-          width: 28px;
-          height: 28px;
-          border-radius: 50%;
-          border: 1px solid #e5e5e5;
-          background: #f8f9fa; /* todo */
-        }
-        .vtl-active {
-          background: #0d6efd; /* bootstrap primary */
-          color: #fff;
-          border-color: #0d6efd;
-        }
-        .vtl-done {
-          background: #198754; /* bootstrap success */
-          color: #fff;
-          border-color: #198754;
-        }
-        .vtl-line {
-          width: 2px;
-          flex: 1 1 auto;
-          background: #e9ecef;
-          margin-top: 6px;
-          margin-bottom: -6px; /* pequeño solape para unir puntos */
-        }
-        .vtl-label {
-          padding-top: 4px;
-        }
-        .vtl-text {
-          font-size: 14px;
-        }
-        @media (max-width: 576px) {
-          .vtl-text {
-            font-size: 13px;
-          }
-        }
+        .vtl { display: grid; row-gap: 12px; padding-left: 2px; }
+        .vtl-row { display: grid; grid-template-columns: 28px 1fr; column-gap: 10px; align-items: start; }
+        .vtl-marker { position: relative; display: flex; flex-direction: column; align-items: center; }
+        .vtl-dot { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; border: 1px solid #e5e5e5; background: #f8f9fa; }
+        .vtl-active { background: #0d6efd; color: #fff; border-color: #0d6efd; }
+        .vtl-done { background: #198754; color: #fff; border-color: #198754; }
+        .vtl-line { width: 2px; flex: 1 1 auto; background: #e9ecef; margin-top: 6px; margin-bottom: -6px; }
+        .vtl-label { padding-top: 4px; }
+        .vtl-text { font-size: 14px; }
+        @media (max-width: 576px) { .vtl-text { font-size: 13px; } }
       `}</style>
     </div>
   );
 }
 
 /* Tarjeta de tracking */
-function OrderTrackingCard({ o }: { o: OrderDoc }) {
+function OrderTrackingCard({ o, lang }: { o: OrderDoc; lang: string }) {
   const address = getDisplayAddress(o);
   const phone = getDisplayPhone(o);
   const notes = getDisplayNotes(o);
@@ -446,6 +397,7 @@ function OrderTrackingCard({ o }: { o: OrderDoc }) {
 
   const { steps, activeIndex } = getStepState(o);
   const lines = (o.items?.length ? o.items : o.lines || []);
+  const statusLabel = t(lang, TitleKeyMap[o.status]);
 
   return (
     <div className="card shadow-sm">
@@ -453,39 +405,39 @@ function OrderTrackingCard({ o }: { o: OrderDoc }) {
         {/* Encabezado simple */}
         <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
           <div className="d-flex align-items-center gap-2">
-            <span className="badge bg-dark-subtle text-dark">Delivery</span>
+            <span className="badge bg-dark-subtle text-dark">{t(lang, "track.badge.delivery")}</span>
             <div className="fw-semibold">#{o.orderNumber || o.id}</div>
           </div>
-          <span className="badge bg-secondary">{TitleMap[o.status]}</span>
+          <span className="badge bg-secondary">{statusLabel}</span>
         </div>
 
         {/* Datos rápidos */}
         <div className="row g-2 small mb-3">
           <div className="col-12 col-sm-6">
-            <span className="fw-semibold">Address:</span>{" "}
+            <span className="fw-semibold">{t(lang, "track.field.address")}:</span>{" "}
             {address || <em className="text-muted">—</em>}
           </div>
           <div className="col-6 col-sm-3">
-            <span className="fw-semibold">Phone:</span>{" "}
+            <span className="fw-semibold">{t(lang, "track.field.phone")}:</span>{" "}
             {phone || <em className="text-muted">—</em>}
           </div>
           <div className="col-6 col-sm-3">
-            <span className="fw-semibold">Courier:</span>{" "}
+            <span className="fw-semibold">{t(lang, "track.field.courier")}:</span>{" "}
             {courierName ? courierName : <em className="text-muted">—</em>}
           </div>
           {notes ? (
             <div className="col-12">
-              <span className="fw-semibold">Notes:</span> {notes}
+              <span className="fw-semibold">{t(lang, "track.field.notes")}:</span> {notes}
             </div>
           ) : null}
         </div>
 
         {/* Timeline vertical unificado */}
-        <VerticalTimeline steps={steps} activeIndex={activeIndex} />
+        <VerticalTimeline steps={steps} activeIndex={activeIndex} lang={lang} />
 
         {/* Pedido */}
         <div className="mt-3">
-          <div className="fw-semibold mb-1">Your order</div>
+          <div className="fw-semibold mb-1">{t(lang, "track.yourOrder")}</div>
           <div className="small">
             {(lines || []).map((it, idx) => (
               <div key={idx} className="mb-1">
@@ -494,7 +446,7 @@ function OrderTrackingCard({ o }: { o: OrderDoc }) {
                   (it as any)?.menuItemName ??
                     (it as any)?.name ??
                     (it as any)?.menuItem?.name ??
-                    "Item"
+                    t(lang, "track.item")
                 )}
               </div>
             ))}
@@ -502,26 +454,23 @@ function OrderTrackingCard({ o }: { o: OrderDoc }) {
         </div>
       </div>
 
-      {/* Ajustes de espaciado responsive */}
       <style jsx>{`
-        .card {
-          border-radius: 12px;
-        }
-        @media (max-width: 576px) {
-          .card-body {
-            padding: 14px;
-          }
-        }
+        .card { border-radius: 12px; }
+        @media (max-width: 576px) { .card-body { padding: 14px; } }
       `}</style>
     </div>
   );
 }
 
-/* --------------------------------------------
-   Página Tracking
---------------------------------------------- */
+/* Página Tracking */
 function TrackingPageInner() {
   const { authReady, user } = useAuthState();
+  const { settings } = useTenantSettings();
+  const rawLang =
+    (settings as any)?.language ??
+    (typeof window !== "undefined" ? localStorage.getItem("tenant.language") || undefined : undefined);
+  const lang = getLang(rawLang);
+
   const { orders, loading, error, refresh } = useMyDeliveryOrders(!!user, 4000);
 
   return (
@@ -531,30 +480,30 @@ function TrackingPageInner() {
         style={{ borderBottom: "1px solid #eee" }}
       >
         <div className="d-flex flex-column">
-          <h1 className="h5 m-0">Track your deliveries</h1>
+          <h1 className="h5 m-0">{t(lang, "track.title")}</h1>
           <small className="text-muted">
-            You'll see your delivery orders until they're marked as <strong>delivered</strong>.
+            {t(lang, "track.subtitle.prefix")} <strong>{t(lang, "track.status.delivered")}</strong>.
           </small>
         </div>
         <button className="btn btn-outline-secondary btn-sm" onClick={() => refresh()}>
-            Refresh
+          {t(lang, "common.refresh")}
         </button>
       </div>
 
-      {!authReady && <div className="text-muted">Initializing session…</div>}
-      {authReady && !user && <div className="text-danger">Sign in to see your orders.</div>}
-      {error && <div className="text-danger">{error}</div>}
-      {user && loading && <div className="text-muted">Loading orders…</div>}
+      {!authReady && <div className="text-muted">{t(lang, "track.initSession")}</div>}
+      {authReady && !user && <div className="text-danger">{t(lang, "track.signInPrompt")}</div>}
+      {error && <div className="text-danger">{t(lang, error)}</div>}
+      {user && loading && <div className="text-muted">{t(lang, "track.loadingOrders")}</div>}
 
       {user && (
         <>
           {orders.length === 0 ? (
-            <div className="alert alert-light">You have no deliveries in progress right now.</div>
+            <div className="alert alert-light">{t(lang, "track.noDeliveries")}</div>
           ) : (
             <div className="row g-3">
               {orders.map((o) => (
                 <div key={o.id} className="col-12 col-md-6 col-lg-5 col-xl-4">
-                  <OrderTrackingCard o={o} />
+                  <OrderTrackingCard o={o} lang={lang} />
                 </div>
               ))}
             </div>

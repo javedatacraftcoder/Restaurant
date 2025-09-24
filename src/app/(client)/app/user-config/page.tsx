@@ -1,4 +1,4 @@
-// src/app/(client)/user-config/page.tsx
+/* src/app/(client)/user-config/page.tsx */
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -13,6 +13,9 @@ import {
   reauthenticateWithCredential,
   updatePassword,
 } from "firebase/auth";
+
+import { useTenantSettings } from "@/lib/settings/hooks";
+import { t, getLang } from "@/lib/i18n/t";
 
 type Addr = {
   line1: string;
@@ -31,7 +34,6 @@ type Customer = {
     home: Addr;
     office: Addr;
   };
-  // ➕ Facturación (opcional)
   billing?: {
     name?: string;
     taxId?: string; // NIT
@@ -100,7 +102,7 @@ function useCustomer() {
       if (!res.ok || data?.ok === false) throw new Error(data?.error || `HTTP ${res.status}`);
       setCust(data.customer || null);
     } catch (e: any) {
-      setErr(e?.message || "Could not load profile");
+      setErr(e?.message || "Could not load profile"); // ← texto se traduce en render
       setCust(null);
     } finally {
       setLoading(false);
@@ -139,7 +141,6 @@ function useCustomer() {
     return data.customer;
   };
 
-  // ➕ Guardar facturación
   const saveBilling = async (billing: { name?: string; taxId?: string }) => {
     const res = await fetchWithRetryAuth(
       "/api/customers/me",
@@ -167,6 +168,12 @@ function useCustomer() {
 
 function UserConfigInner() {
   const { user } = useAuth();
+  const { settings } = useTenantSettings();
+  const rawLang =
+    (settings as any)?.language ??
+    (typeof window !== "undefined" ? localStorage.getItem("tenant.language") || undefined : undefined);
+  const lang = getLang(rawLang);
+
   const { loading, err, cust, saveProfile, saveAddresses, saveBilling, refresh } = useCustomer();
 
   // Form state
@@ -190,7 +197,7 @@ function UserConfigInner() {
   const [newPass, setNewPass] = useState("");
   const [newPass2, setNewPass2] = useState("");
   const [busyPwd, setBusyPwd] = useState(false);
-  const [currPassError, setCurrPassError] = useState<string | null>(null); // <- NUEVO: error inline del campo
+  const [currPassError, setCurrPassError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!cust) return;
@@ -210,7 +217,6 @@ function UserConfigInner() {
       zip: cust.addresses?.office?.zip || "",
       notes: cust.addresses?.office?.notes || "",
     });
-    // ➕ Precargar facturación si existe
     setBillingName(cust.billing?.name || "");
     setBillingTaxId(cust.billing?.taxId || "");
   }, [cust]);
@@ -221,9 +227,9 @@ function UserConfigInner() {
       setMsg(null);
       setBusyProfile(true);
       await saveProfile({ displayName, phone });
-      setMsg("Profile updated");
+      setMsg(t(lang, "uc.profile.updated"));
     } catch (e: any) {
-      setErrMsg(e?.message || "Could not save profile");
+      setErrMsg(e?.message || t(lang, "uc.profile.saveError"));
     } finally {
       setBusyProfile(false);
     }
@@ -235,24 +241,23 @@ function UserConfigInner() {
       setMsg(null);
       setBusyAddr(true);
       await saveAddresses({ home, office });
-      setMsg("Addresses saved");
+      setMsg(t(lang, "uc.addresses.saved"));
     } catch (e: any) {
-      setErrMsg(e?.message || "Could not save addresses");
+      setErrMsg(e?.message || t(lang, "uc.addresses.saveError"));
     } finally {
       setBusyAddr(false);
     }
   };
 
-  // ➕ Guardar facturación
   const onSaveBilling = async () => {
     try {
       setErrMsg(null);
       setMsg(null);
       setBusyBilling(true);
       await saveBilling({ name: billingName, taxId: billingTaxId });
-      setMsg("Billing details saved");
+      setMsg(t(lang, "uc.billing.saved"));
     } catch (e: any) {
-      setErrMsg(e?.message || "Could not save billing details");
+      setErrMsg(e?.message || t(lang, "uc.billing.saveError"));
     } finally {
       setBusyBilling(false);
     }
@@ -262,22 +267,22 @@ function UserConfigInner() {
     try {
       setErrMsg(null);
       setMsg(null);
-      setCurrPassError(null); // limpiar error inline antes de validar
+      setCurrPassError(null);
 
       if (!user?.email) {
-        setErrMsg("There's no email in the current session");
+        setErrMsg(t(lang, "uc.sec.noEmail"));
         return;
       }
       if (!currPass) {
-        setCurrPassError("Enter your current password");
+        setCurrPassError(t(lang, "uc.sec.enterCurrent"));
         return;
       }
       if (!newPass || newPass.length < 6) {
-        setErrMsg("New password must be at least 6 characters");
+        setErrMsg(t(lang, "uc.sec.shortNew"));
         return;
       }
       if (newPass !== newPass2) {
-        setErrMsg("Password confirmation doesn't match");
+        setErrMsg(t(lang, "uc.sec.confirmMismatch"));
         return;
       }
 
@@ -286,27 +291,24 @@ function UserConfigInner() {
       const auth = getAuth();
       const cred = EmailAuthProvider.credential(user.email, currPass);
 
-      // Reautenticación obligatoria
       await reauthenticateWithCredential(auth.currentUser!, cred);
       await updatePassword(auth.currentUser!, newPass);
 
-      setMsg("Password updated successfully");
+      setMsg(t(lang, "uc.sec.updatedOk"));
       setCurrPass("");
       setNewPass("");
       setNewPass2("");
       setCurrPassError(null);
     } catch (e: any) {
-      // Manejo fino según código de Firebase
       const code: string = e?.code || "";
       if (code === "auth/wrong-password" || code === "auth/invalid-credential") {
-      // Marcar solo el campo de contraseña actual en rojo, sin alert global
-        setCurrPassError("Incorrect current password");
+        setCurrPassError(t(lang, "uc.sec.incorrectCurrent"));
       } else if (code === "auth/too-many-requests") {
-        setCurrPassError("Too many attempts. Try again later.");
+        setCurrPassError(t(lang, "uc.sec.tooMany"));
       } else if (code === "auth/requires-recent-login") {
-        setErrMsg("For security, sign in again and try again.");
+        setErrMsg(t(lang, "uc.sec.requiresRecent"));
       } else {
-        setErrMsg(e?.message || "Could not update password");
+        setErrMsg(e?.message || t(lang, "uc.sec.updateFailed"));
       }
     } finally {
       setBusyPwd(false);
@@ -316,16 +318,15 @@ function UserConfigInner() {
   return (
     <div className="container py-4">
       <div className="d-flex align-items-center justify-content-between mb-3">
-        <h1 className="h5 m-0">User settings</h1>
+        <h1 className="h5 m-0">{t(lang, "uc.title")}</h1>
         <button className="btn btn-outline-secondary btn-sm" onClick={() => refresh()} disabled={loading}>
-          Refresh
+          {t(lang, "common.refresh")}
         </button>
       </div>
 
-      {loading && <div className="alert alert-info">Loading…</div>}
-      {err && <div className="alert alert-danger">Error: {err}</div>}
+      {loading && <div className="alert alert-info">{t(lang, "common.loading")}</div>}
+      {err && <div className="alert alert-danger">{t(lang, "common.errorPrefix")} {err}</div>}
       {msg && <div className="alert alert-success">{msg}</div>}
-      {/* En errores de contraseña por "wrong password" ya no usamos este alert. */}
       {errMsg && <div className="alert alert-danger">{errMsg}</div>}
 
       {!!cust && (
@@ -334,37 +335,37 @@ function UserConfigInner() {
           <section className="mb-4">
             <div className="card shadow-sm">
               <div className="card-header">
-                <strong>Profile</strong>
+                <strong>{t(lang, "uc.profile.title")}</strong>
               </div>
               <div className="card-body">
                 <div className="row g-3">
                   <div className="col-12 col-md-6">
-                    <label className="form-label">Email (read-only)</label>
+                    <label className="form-label">{t(lang, "uc.profile.emailLabel")}</label>
                     <input className="form-control" value={cust.email || ""} disabled />
                   </div>
                   <div className="col-12 col-md-6">
-                    <label className="form-label">Display name</label>
+                    <label className="form-label">{t(lang, "uc.profile.displayName")}</label>
                     <input
                       className="form-control"
                       value={displayName}
                       onChange={(e) => setDisplayName(e.target.value)}
-                      placeholder="Your name"
+                      placeholder={t(lang, "uc.profile.displayNamePh")}
                     />
                   </div>
                   <div className="col-12 col-md-6">
-                    <label className="form-label">Phone</label>
+                    <label className="form-label">{t(lang, "uc.profile.phone")}</label>
                     <input
                       className="form-control"
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
-                      placeholder="+502 5555-5555"
+                      placeholder={t(lang, "uc.profile.phonePh")}
                     />
                   </div>
                 </div>
               </div>
               <div className="card-footer d-flex justify-content-end">
                 <button className="btn btn-primary" onClick={onSaveProfile} disabled={busyProfile}>
-                  {busyProfile ? "Saving…" : "Save profile"}
+                  {busyProfile ? t(lang, "common.saving") : t(lang, "uc.profile.save")}
                 </button>
               </div>
             </div>
@@ -374,112 +375,112 @@ function UserConfigInner() {
           <section className="mb-4">
             <div className="card shadow-sm">
               <div className="card-header">
-                <strong>Addresses</strong>
+                <strong>{t(lang, "uc.addresses.title")}</strong>
               </div>
               <div className="card-body">
                 <div className="row">
                   {/* HOME */}
                   <div className="col-12 col-lg-6">
-                    <h6 className="mb-3">Home</h6>
+                    <h6 className="mb-3">{t(lang, "uc.addresses.home")}</h6>
                     <div className="mb-2">
-                      <label className="form-label">Address</label>
+                      <label className="form-label">{t(lang, "uc.addresses.address")}</label>
                       <input
                         className="form-control"
                         value={home.line1}
                         onChange={(e) => setHome({ ...home, line1: e.target.value })}
-                        placeholder="Street/Avenue, number, reference"
+                        placeholder={t(lang, "uc.addresses.addressHomePh")}
                       />
                     </div>
                     <div className="row g-2">
                       <div className="col-12 col-md-6">
-                        <label className="form-label">City</label>
+                        <label className="form-label">{t(lang, "uc.addresses.city")}</label>
                         <input
                           className="form-control"
                           value={home.city}
                           onChange={(e) => setHome({ ...home, city: e.target.value })}
-                          placeholder="Guatemala"
+                          placeholder={t(lang, "uc.addresses.cityPh")}
                         />
                       </div>
                       <div className="col-6 col-md-3">
-                        <label className="form-label">Country</label>
+                        <label className="form-label">{t(lang, "uc.addresses.country")}</label>
                         <input
                           className="form-control"
                           value={home.country}
                           onChange={(e) => setHome({ ...home, country: e.target.value })}
-                          placeholder="GT"
+                          placeholder={t(lang, "uc.addresses.countryPh")}
                         />
                       </div>
                       <div className="col-6 col-md-3">
-                        <label className="form-label">ZIP</label>
+                        <label className="form-label">{t(lang, "uc.addresses.zip")}</label>
                         <input
                           className="form-control"
                           value={home.zip}
                           onChange={(e) => setHome({ ...home, zip: e.target.value })}
-                          placeholder="01010"
+                          placeholder={t(lang, "uc.addresses.zipPh")}
                         />
                       </div>
                     </div>
                     <div className="mt-2">
-                      <label className="form-label">Additional directions</label>
+                      <label className="form-label">{t(lang, "uc.addresses.notes")}</label>
                       <textarea
                         className="form-control"
                         rows={2}
                         value={home.notes}
                         onChange={(e) => setHome({ ...home, notes: e.target.value })}
-                        placeholder="Delivery details"
+                        placeholder={t(lang, "uc.addresses.notesHomePh")}
                       />
                     </div>
                   </div>
 
                   {/* OFFICE */}
                   <div className="col-12 col-lg-6 mt-4 mt-lg-0">
-                    <h6 className="mb-3">Office</h6>
+                    <h6 className="mb-3">{t(lang, "uc.addresses.office")}</h6>
                     <div className="mb-2">
-                      <label className="form-label">Address</label>
+                      <label className="form-label">{t(lang, "uc.addresses.address")}</label>
                       <input
                         className="form-control"
                         value={office.line1}
                         onChange={(e) => setOffice({ ...office, line1: e.target.value })}
-                        placeholder="Building, floor, office"
+                        placeholder={t(lang, "uc.addresses.addressOfficePh")}
                       />
                     </div>
                     <div className="row g-2">
                       <div className="col-12 col-md-6">
-                        <label className="form-label">City</label>
+                        <label className="form-label">{t(lang, "uc.addresses.city")}</label>
                         <input
                           className="form-control"
                           value={office.city}
                           onChange={(e) => setOffice({ ...office, city: e.target.value })}
-                          placeholder="Guatemala"
+                          placeholder={t(lang, "uc.addresses.cityPh")}
                         />
                       </div>
                       <div className="col-6 col-md-3">
-                        <label className="form-label">Country</label>
+                        <label className="form-label">{t(lang, "uc.addresses.country")}</label>
                         <input
                           className="form-control"
                           value={office.country}
                           onChange={(e) => setOffice({ ...office, country: e.target.value })}
-                          placeholder="GT"
+                          placeholder={t(lang, "uc.addresses.countryPh")}
                         />
                       </div>
                       <div className="col-6 col-md-3">
-                        <label className="form-label">ZIP</label>
+                        <label className="form-label">{t(lang, "uc.addresses.zip")}</label>
                         <input
                           className="form-control"
                           value={office.zip}
                           onChange={(e) => setOffice({ ...office, zip: e.target.value })}
-                          placeholder="01010"
+                          placeholder={t(lang, "uc.addresses.zipPh")}
                         />
                       </div>
                     </div>
                     <div className="mt-2">
-                      <label className="form-label">Additional directions</label>
+                      <label className="form-label">{t(lang, "uc.addresses.notes")}</label>
                       <textarea
                         className="form-control"
                         rows={2}
                         value={office.notes}
                         onChange={(e) => setOffice({ ...office, notes: e.target.value })}
-                        placeholder="Reception, hours, etc."
+                        placeholder={t(lang, "uc.addresses.notesOfficePh")}
                       />
                     </div>
                   </div>
@@ -487,43 +488,43 @@ function UserConfigInner() {
               </div>
               <div className="card-footer d-flex justify-content-end">
                 <button className="btn btn-primary" onClick={onSaveAddresses} disabled={busyAddr}>
-                  {busyAddr ? "Saving…" : "Save addresses"}
+                  {busyAddr ? t(lang, "common.saving") : t(lang, "uc.addresses.save")}
                 </button>
               </div>
             </div>
           </section>
 
-          {/* ➕ FACTURACIÓN */}
+          {/* FACTURACIÓN */}
           <section className="mb-4">
             <div className="card shadow-sm">
               <div className="card-header">
-                <strong>Billing</strong>
+                <strong>{t(lang, "uc.billing.title")}</strong>
               </div>
               <div className="card-body">
                 <div className="row g-3">
                   <div className="col-12 col-md-6">
-                    <label className="form-label">Billing name</label>
+                    <label className="form-label">{t(lang, "uc.billing.name")}</label>
                     <input
                       className="form-control"
                       value={billingName}
                       onChange={(e) => setBillingName(e.target.value)}
-                      placeholder="Business name / Billing name"
+                      placeholder={t(lang, "uc.billing.namePh")}
                     />
                   </div>
                   <div className="col-12 col-md-6">
-                    <label className="form-label">Tax Identification Number (NIT)</label>
+                    <label className="form-label">{t(lang, "uc.billing.taxId")}</label>
                     <input
                       className="form-control"
                       value={billingTaxId}
                       onChange={(e) => setBillingTaxId(e.target.value)}
-                      placeholder="e.g., CF / 1234567-8"
+                      placeholder={t(lang, "uc.billing.taxIdPh")}
                     />
                   </div>
                 </div>
               </div>
               <div className="card-footer d-flex justify-content-end">
                 <button className="btn btn-primary" onClick={onSaveBilling} disabled={busyBilling}>
-                  {busyBilling ? "Saving…" : "Save billing"}
+                  {busyBilling ? t(lang, "common.saving") : t(lang, "uc.billing.save")}
                 </button>
               </div>
             </div>
@@ -533,19 +534,20 @@ function UserConfigInner() {
           <section className="mb-4">
             <div className="card shadow-sm">
               <div className="card-header">
-                <strong>Security</strong> <span className="text-muted small ms-2">(change password)</span>
+                <strong>{t(lang, "uc.sec.title")}</strong>{" "}
+                <span className="text-muted small ms-2">({t(lang, "uc.sec.subtitle")})</span>
               </div>
               <div className="card-body">
                 <div className="row g-3">
                   <div className="col-12 col-md-4">
-                    <label className="form-label">Current password</label>
+                    <label className="form-label">{t(lang, "uc.sec.current")}</label>
                     <input
                       type="password"
                       className={`form-control ${currPassError ? "is-invalid" : ""}`}
                       value={currPass}
                       onChange={(e) => {
                         setCurrPass(e.target.value);
-                        if (currPassError) setCurrPassError(null); // limpiar al teclear
+                        if (currPassError) setCurrPassError(null);
                       }}
                       placeholder="••••••••"
                       autoComplete="current-password"
@@ -557,7 +559,7 @@ function UserConfigInner() {
                     )}
                   </div>
                   <div className="col-12 col-md-4">
-                    <label className="form-label">New password</label>
+                    <label className="form-label">{t(lang, "uc.sec.new")}</label>
                     <input
                       type="password"
                       className="form-control"
@@ -568,7 +570,7 @@ function UserConfigInner() {
                     />
                   </div>
                   <div className="col-12 col-md-4">
-                    <label className="form-label">Confirm new password</label>
+                    <label className="form-label">{t(lang, "uc.sec.confirm")}</label>
                     <input
                       type="password"
                       className="form-control"
@@ -582,7 +584,7 @@ function UserConfigInner() {
               </div>
               <div className="card-footer d-flex justify-content-end">
                 <button className="btn btn-outline-primary" onClick={onChangePassword} disabled={busyPwd}>
-                  {busyPwd ? "Updating…" : "Update password"}
+                  {busyPwd ? t(lang, "uc.sec.updating") : t(lang, "uc.sec.update")}
                 </button>
               </div>
             </div>

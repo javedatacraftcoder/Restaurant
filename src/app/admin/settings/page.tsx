@@ -1,4 +1,4 @@
-// src/app/admin/settings/page.tsx
+//src/app/admin/settings/page.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -30,11 +30,21 @@ const LOCALES = [
   { code: "fr-FR", label: "Français (France)" },
 ];
 
+// 🔥 NUEVO: Opciones de idioma (para textos del cliente)
+const LANGUAGES = [
+  { code: "es", label: "Español" },
+  { code: "en", label: "English" },
+  { code: "pt", label: "Português" },
+  { code: "fr", label: "Français" },
+];
+
 export default function AdminSettingsPage() {
   const { settings, loading, error, fmtCurrency, reload } = useTenantSettings();
 
   const [currency, setCurrency] = useState<string>("USD");
   const [locale, setLocale] = useState<string>("en-US");
+  const [uiLanguage, setUiLanguage] = useState<string>("es"); // ✅ corregido
+
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<null | "ok" | "err">(null);
 
@@ -42,6 +52,7 @@ export default function AdminSettingsPage() {
     if (settings) {
       setCurrency(settings.currency || "USD");
       setLocale(settings.currencyLocale || "en-US");
+      setUiLanguage((settings as any).language || "es"); // ✅ cast a any
     }
   }, [settings]);
 
@@ -52,7 +63,13 @@ export default function AdminSettingsPage() {
     setSaving(true);
     setSaved(null);
     try {
-      await writeGeneralSettings({ currency, currencyLocale: locale });
+      await writeGeneralSettings({ 
+        currency, 
+        currencyLocale: locale, 
+        language: uiLanguage, // ✅ guardar como language en Firestore
+      } as any); // ✅ cast a any
+      if (typeof window !== "undefined") localStorage.setItem("tenant.language", uiLanguage);
+
       await reload();
       setSaved("ok");
     } catch (e) {
@@ -69,7 +86,8 @@ export default function AdminSettingsPage() {
         <main className="container py-4">
           <h1 className="mb-3">⚙️ Configuración General</h1>
           <p className="text-muted mb-4">
-            Ajusta el <strong>currency</strong> y el <strong>locale</strong> para formatear precios en toda la plataforma.
+            Ajusta el <strong>currency</strong>, el <strong>locale</strong> y el{" "}
+            <strong>idioma</strong> del área cliente.
           </p>
 
           {loading && <div className="alert alert-info">Cargando configuración…</div>}
@@ -78,7 +96,8 @@ export default function AdminSettingsPage() {
           {!loading && (
             <form className="card p-3 shadow-sm" onSubmit={onSave}>
               <div className="row gy-3">
-                <div className="col-12 col-md-6">
+                {/* Currency */}
+                <div className="col-12 col-md-4">
                   <label className="form-label fw-semibold">Moneda (ISO)</label>
                   <select
                     className="form-select"
@@ -94,7 +113,8 @@ export default function AdminSettingsPage() {
                   </div>
                 </div>
 
-                <div className="col-12 col-md-6">
+                {/* Locale */}
+                <div className="col-12 col-md-4">
                   <label className="form-label fw-semibold">Locale</label>
                   <select
                     className="form-select"
@@ -106,7 +126,25 @@ export default function AdminSettingsPage() {
                     ))}
                   </select>
                   <div className="form-text">
-                    Afecta separadores, orden y formato. Ej.: {new Intl.NumberFormat(locale, { style: "currency", currency }).format(1500)}
+                    Afecta separadores, orden y formato. Ej.:{" "}
+                    {new Intl.NumberFormat(locale, { style: "currency", currency }).format(1500)}
+                  </div>
+                </div>
+
+                {/* Language */}
+                <div className="col-12 col-md-4">
+                  <label className="form-label fw-semibold">Idioma (área cliente)</label>
+                  <select
+                    className="form-select"
+                    value={uiLanguage}
+                    onChange={(e) => setUiLanguage(e.target.value)}
+                  >
+                    {LANGUAGES.map((l) => (
+                      <option key={l.code} value={l.code}>{l.label}</option>
+                    ))}
+                  </select>
+                  <div className="form-text">
+                    Define el idioma de la interfaz que verán los clientes.
                   </div>
                 </div>
               </div>
@@ -123,7 +161,7 @@ export default function AdminSettingsPage() {
 
               <div className="mt-4">
                 <span className="badge text-bg-light">
-                  Vista previa: <strong>{example}</strong>
+                  Vista previa moneda: <strong>{example}</strong>
                 </span>
               </div>
             </form>

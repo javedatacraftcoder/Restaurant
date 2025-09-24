@@ -4,6 +4,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import '@/lib/firebase/client';
 import { getFirestore, collection, getDocs, query, where } from 'firebase/firestore';
+import { t, getLang } from '@/lib/i18n/t';
+import { useTenantSettings } from '@/lib/settings/hooks';
 
 type PromoDoc = {
   id: string;
@@ -44,6 +46,12 @@ function uniqById(list: PromoDoc[]): PromoDoc[] {
 }
 
 export default function AppHome() {
+  const { settings } = useTenantSettings();
+  const rawLang =
+  (settings as any)?.language ??
+  (typeof window !== "undefined" ? localStorage.getItem("tenant.language") || undefined : undefined);
+
+const lang = getLang(rawLang);
   const [promos, setPromos] = useState<PromoDoc[]>([]);
   const [loadingPromos, setLoadingPromos] = useState<boolean>(true);
 
@@ -98,7 +106,6 @@ export default function AppHome() {
         } catch { /* silencio */ }
 
         // 2) endpoint publico (if present) — se filtra por secreto
-        
         try {
           const res = await fetch('/api/promotions/public', { cache: 'no-store' });
           if (res.ok) {
@@ -117,7 +124,7 @@ export default function AppHome() {
                 const idLike = p?.id || p?.promoId || code; // El API puede o no puede proveer el ID de Firestore
                 const knownSecret = (idLike && secretIdSet.has(String(idLike))) || (code && secretCodeSet.has(code));
 
-                // Se esconde si el API lo marca como secreto o Firestore sabe que es secretoH
+                // Se esconde si el API lo marca como secreto o Firestore sabe que es secreto
                 const isSecret = apiSaysSecret || knownSecret;
 
                 return active && inWindow && code && !isSecret;
@@ -134,9 +141,7 @@ export default function AppHome() {
           }
         } catch { /* silencio */ }
 
-        
         // 3) Dedupe por ID y termina
-        
         if (alive) {
           const deduped = uniqById(acc);
           setPromos(deduped);
@@ -159,18 +164,20 @@ export default function AppHome() {
         {/* Hero */}
         <div className="col-12">
           <div className="text-center">
-            <h1 className="display-6 fw-semibold mb-2">Welcome!</h1>
+            <h1 className="display-6 fw-semibold mb-2">{t(lang, "home.welcome")}</h1>
             <p className="lead text-body-secondary">
-              Start by viewing the <a className="link-primary" href="/app/menu">menu</a> or check your{" "}
-              <a className="link-secondary" href="/app/orders">order history</a>.
+              {t(lang, "home.start")}{" "}
+              <a className="link-primary" href="/app/menu">{t(lang, "home.menuLink")}</a>{" "}
+              {t(lang, "home.or")}{" "}
+              <a className="link-secondary" href="/app/orders">{t(lang, "home.ordersLink")}</a>.
             </p>
 
             <div className="d-flex flex-wrap justify-content-center gap-2 mt-3">
               <a href="/app/menu" className="btn btn-primary btn-lg" aria-label="View menu">
-                View menu
+                {t(lang, "home.btnMenu")}
               </a>
               <a href="/app/orders" className="btn btn-outline-secondary btn-lg" aria-label="View my orders">
-                My orders
+                {t(lang, "home.btnOrders")}
               </a>
             </div>
           </div>
@@ -180,11 +187,11 @@ export default function AppHome() {
         <div className="col-12 col-md-6">
           <div className="card shadow-sm h-100">
             <div className="card-body">
-              <h2 className="h5 mb-3">Quick links</h2>
+              <h2 className="h5 mb-3">{t(lang, "home.quickLinks")}</h2>
               <div className="d-grid gap-2">
-                <a className="btn btn-light" href="/app/cart" aria-label="View cart">🛒 View cart</a>
-                <a className="btn btn-light" href="/app/checkout" aria-label="Go to checkout">💳 Go to checkout</a>
-                <a className="btn btn-light" href="/app/user-config" aria-label="Go to settings">⚙️ Settings</a>
+                <a className="btn btn-light" href="/app/cart" aria-label="View cart">🛒 {t(lang, "home.cart")}</a>
+                <a className="btn btn-light" href="/app/checkout" aria-label="Go to checkout">💳 {t(lang, "home.checkout")}</a>
+                <a className="btn btn-light" href="/app/user-config" aria-label="Go to settings">⚙️ {t(lang, "home.settings")}</a>
               </div>
             </div>
           </div>
@@ -194,18 +201,18 @@ export default function AppHome() {
         <div className="col-12 col-md-6">
           <div className="card shadow-sm h-100">
             <div className="card-body">
-              <h2 className="h5 mb-3">Order tracking</h2>
+              <h2 className="h5 mb-3">{t(lang, "home.trackingTitle")}</h2>
               <p className="mb-2 text-body-secondary">
-                Check the status of your latest order in real time.
+                {t(lang, "home.trackingDesc")}
               </p>
               <a className="btn btn-outline-primary" href="/app/tracking" aria-label="Ver seguimiento">
-                View tracking
+                {t(lang, "home.trackingBtn")}
               </a>
 
               <hr className="my-4" />
 
               {/* Promotions */}
-              <h3 className="h6 text-body-secondary mb-2">Promotions</h3>
+              <h3 className="h6 text-body-secondary mb-2">{t(lang, "home.promotionsTitle")}</h3>
 
               <div
                 className="rounded-4 p-3 p-md-4 text-white"
@@ -213,15 +220,15 @@ export default function AppHome() {
               >
                 <div className="d-flex align-items-center justify-content-between mb-3">
                   <div>
-                    <div className="fs-5 fw-bold">Active codes</div>
+                    <div className="fs-5 fw-bold">{t(lang, "home.activeCodes")}</div>
                     <div className="small" style={{ opacity: 0.85 }}>
-                      Redeem them at checkout to get your discount
+                      {t(lang, "home.redeem")}
                     </div>
                   </div>
                   <div className="display-6" aria-hidden>🎟️</div>
                 </div>
 
-                {loadingPromos && <div className="opacity-75">Loading promotions…</div>}
+                {loadingPromos && <div className="opacity-75">{t(lang, "home.loadingPromos")}</div>}
 
                 {!loadingPromos && hasPromos && (
                   <div className="d-flex flex-wrap gap-2">
@@ -232,17 +239,17 @@ export default function AppHome() {
                         style={{ border: '1px solid rgba(0,0,0,.06)' }}
                       >
                         <div className="me-2">
-                          <span className="fw-semibold">{p.name || p.title || 'Promotion'}</span>
+                          <span className="fw-semibold">{p.name || p.title || t(lang, "home.promotion")}</span>
                         </div>
                         <span className="badge bg-dark-subtle text-dark border">{p.code}</span>
                         <button
                           className="btn btn-sm btn-dark ms-2"
                           onClick={() => navigator.clipboard?.writeText(p.code || '')}
-                          aria-label={`Copy code ${p.code}`}
-                          title="Copy code"
+                          aria-label={`${t(lang, "home.copyCode")} ${p.code || ''}`} // ✅ sin 3er arg
+                          title={t(lang, "home.copy")}
                           type="button"
                         >
-                          Copy
+                          {t(lang, "home.copy")}
                         </button>
                       </div>
                     ))}
@@ -250,7 +257,7 @@ export default function AppHome() {
                 )}
 
                 {!loadingPromos && !hasPromos && (
-                  <div className="opacity-75">There are no active promotions at the moment.</div>
+                  <div className="opacity-75">{t(lang, "home.noPromos")}</div>
                 )}
               </div>
             </div>

@@ -425,14 +425,21 @@ async function updateDeliveryMeta(
 
 /* --------------------------------------------
    ✅ AGREGADO: disparar correo "Order Delivered"
+   (cambio mínimo: enviar body JSON y loguear errores)
 --------------------------------------------- */
 async function triggerDeliveredEmail(orderId: string) {
   try {
-    await apiFetch(`/api/tx/order-delivered?id=${encodeURIComponent(orderId)}`, {
+    const res = await apiFetch(`/api/tx/order-delivered`, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderId }),
     });
-  } catch {
-    // silencioso: no bloquear UI si el correo falla
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      console.error('[delivery] order-delivered failed', res.status, err?.error || err);
+    }
+  } catch (e) {
+    console.error('[delivery] order-delivered exception', e);
   }
 }
 

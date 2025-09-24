@@ -14,19 +14,31 @@ type OrderDoc = any;
 function isDeliveryOrder(o: OrderDoc) {
   const t = o?.orderInfo?.type?.toLowerCase?.();
   if (t) return t === "delivery";
-  // Fallbacks antiguos por si tu data legacy los usa:
   return !!(o?.orderInfo?.address || o?.deliveryAddress || o?.type === "delivery");
 }
 
-// ✅ SOLO usamos orderInfo.delivery para confirmar “delivered”
+// ✅ Ampliado: aceptar delivered por varios caminos, manteniendo prioridad en orderInfo.delivery
 function isDelivered(o: OrderDoc) {
-  const oi = String(o?.orderInfo?.delivery || "").toLowerCase();
-  return oi === "delivered";
+  const sub = String(o?.orderInfo?.delivery || "").toLowerCase();
+  if (sub === "delivered") return true;
+
+  // Fallbacks compatibles con tus otros flujos/patches:
+  const status = String(o?.status || "").toLowerCase();
+  if (status === "delivered" || status === "closed") return true;
+
+  if (o?.deliveredAt || o?.deliveryDeliveredAt || o?.orderInfo?.deliveredAt || o?.orderInfo?.deliveryAt) return true;
+
+  const hist: any[] = Array.isArray(o?.statusHistory) ? o.statusHistory : [];
+  const hit = hist.find(h => String(h?.to || "").toLowerCase() === "delivered" || String(h?.to || "").toLowerCase() === "closed");
+  return !!hit;
 }
 
+// ✅ Ampliado: más sitios posibles para el correo
 function getRecipientEmail(o: OrderDoc): string | null {
   return (
     (o?.createdBy?.email && String(o.createdBy.email)) ||
+    (o?.orderInfo?.email && String(o.orderInfo.email)) ||
+    (o?.orderInfo?.contactEmail && String(o.orderInfo.contactEmail)) ||
     (o?.userEmail && String(o.userEmail)) ||
     (o?.userEmail_lower && String(o.userEmail_lower)) ||
     null
@@ -43,7 +55,7 @@ export async function POST(req: NextRequest) {
     const me: any = await getUserFromRequest(req);
     if (!me) return json({ error: "Unauthorized" }, 401);
     const role = me?.role || "";
-    const isAllowed = me?.admin === true || ["admin", "delivery", "cashier"].includes(role);
+    const isAllowed = ["admin", "delivery", "cashier"].includes(role);
     if (!isAllowed) return json({ error: "Forbidden" }, 403);
 
     // orderId por query o body
@@ -61,18 +73,31 @@ export async function POST(req: NextRequest) {
 
     // Debe ser delivery
     if (!isDeliveryOrder(order)) {
-      return json({ ok: true, skipped: true, reason: "Not a delivery order" }, 200);
+      return json({ ok: true, skipped: true, reason: "Not a delivery order", orderId }, 200);
     }
 
-    // ✅ Debe estar delivered SOLO por orderInfo.delivery
+    // ✅ Debe estar delivered (con reglas ampliadas)
     if (!isDelivered(order)) {
-      return json({ ok: true, skipped: true, reason: "Order is not delivered yet (orderInfo.delivery !== 'delivered')" }, 200);
+      return json({
+        ok: true,
+        skipped: true,
+        reason: "Order is not delivered yet (no delivered signal found)",
+        hints: {
+          expectAnyOf: [
+            "orderInfo.delivery === 'delivered'",
+            "status === 'delivered' or 'closed'",
+            "deliveredAt / deliveryDeliveredAt present",
+            "statusHistory contains 'delivered' or 'closed'",
+          ],
+        },
+        orderId,
+      }, 200);
     }
 
     // Idempotencia
     const tx = (order as any).tx || {};
     if (tx?.deliveredEmailSentAt) {
-      return json({ ok: true, alreadySent: true, at: tx.deliveredEmailSentAt }, 200);
+      return json({ ok: true, alreadySent: true, at: tx.deliveredEmailSentAt, orderId }, 200);
     }
 
     // Destinatario
@@ -84,7 +109,7 @@ export async function POST(req: NextRequest) {
         if (c?.email) toEmail = String(c.email);
       }
     }
-    if (!toEmail) return json({ error: "No recipient email found for this order" }, 400);
+    if (!toEmail) return json({ error: "No recipient email found for this order", orderId }, 400);
 
     const displayName = getCustomerName(order) || undefined;
 

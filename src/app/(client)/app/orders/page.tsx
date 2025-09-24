@@ -4,8 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Protected from "@/components/Protected";
 import { useAuth } from "@/app/providers";
-// CurrencyUpdate: usar formateador centralizado
 import { useFmtQ } from "@/lib/settings/money";
+
+// i18n
+import { t, getLang } from "@/lib/i18n/t";
+import { useTenantSettings } from "@/lib/settings/hooks";
 
 /*Expected data types*/
 
@@ -91,27 +94,21 @@ type ApiList = { ok?: boolean; orders?: Order[]; error?: string };
 function tsToDate(ts: any): Date | null {
   if (!ts) return null;
 
-  // 1) Dia
   if (ts instanceof Date) return isNaN(ts.getTime()) ? null : ts;
 
-  // 2) Tiempos en Firestoe(cliente)
   if (typeof ts?.toDate === "function") {
     const d = ts.toDate();
     return d instanceof Date && !isNaN(d.getTime()) ? d : null;
   }
 
-  // 3) Objeto serializado con segundos y nano segundos (con o sin guionbajo)
   if (typeof ts === "object") {
-    const seconds =
-      ts.seconds ?? ts._seconds ?? ts.$seconds ?? null;
-    const nanos =
-      ts.nanoseconds ?? ts._nanoseconds ?? ts.nanos ?? 0;
+    const seconds = ts.seconds ?? ts._seconds ?? ts.$seconds ?? null;
+    const nanos = ts.nanoseconds ?? ts._nanoseconds ?? ts.nanos ?? 0;
     if (seconds != null) {
       const ms = seconds * 1000 + Math.floor((nanos || 0) / 1e6);
       const d = new Date(ms);
       if (!isNaN(d.getTime())) return d;
     }
-    // 3b) ISO serializado dentro de otro prop
     const iso = ts.$date ?? ts.iso ?? ts.date ?? null;
     if (typeof iso === "string") {
       const d = new Date(iso);
@@ -119,22 +116,20 @@ function tsToDate(ts: any): Date | null {
     }
   }
 
-  // 4) String: ISO o string numerico (ms/seconds)
   if (typeof ts === "string") {
     const d = new Date(ts);
     if (!isNaN(d.getTime())) return d;
     const n = Number(ts);
     if (Number.isFinite(n)) {
-      const ms = n > 1e12 ? n : n * 1000; 
+      const ms = n > 1e12 ? n : n * 1000;
       const d2 = new Date(ms);
       if (!isNaN(d2.getTime())) return d2;
     }
     return null;
   }
 
-  // 5) Numero ms o s
   if (typeof ts === "number") {
-    const ms = ts > 1e12 ? ts : ts * 1000; 
+    const ms = ts > 1e12 ? ts : ts * 1000;
     const d = new Date(ms);
     return isNaN(d.getTime()) ? null : d;
   }
@@ -147,8 +142,6 @@ function fmtDate(ts?: FirestoreTS) {
   if (!d) return "-";
   return `${d.toLocaleDateString()} ${d.toLocaleTimeString()}`;
 }
-
-// CurrencyUpdate: eliminar currencySymbol / fmtMoneyQ locales y usar useFmtQ
 
 /*Helper para precios (OPS) */
 const toNum = (x: any) => (Number.isFinite(Number(x)) ? Number(x) : undefined);
@@ -188,7 +181,6 @@ function perUnitAddonsQ(it: OpsItem | any): number {
 }
 
 function baseUnitPriceQ(it: OpsItem | any): number {
-  // intenta todas las variantes conocidas
   const base = toNum(it?.basePrice);
   if (base !== undefined) return base;
 
@@ -213,7 +205,6 @@ function baseUnitPriceQ(it: OpsItem | any): number {
   const mi = toNum(it?.menuItem?.price);
   if (mi !== undefined) return mi;
 
-  // Derivar desde totalCents si viene y hay qty
   const qty = Number(it?.quantity || 1);
   const totC = toNum(it?.totalCents);
   if (totC !== undefined && qty > 0) {
@@ -238,7 +229,6 @@ function computeFromItems(o: Order): { subtotal: number; total: number } {
   const items = Array.isArray(o.items) ? o.items : [];
   const subtotal = items.reduce((acc, it) => acc + lineTotalOpsQ(it), 0);
   const tip = Number(o.amounts?.tip || 0);
-  // Sin conocer tax/discount/service exactos, mostramos al menos subtotal + tip
   const total = Number.isFinite(Number(o.amounts?.total))
     ? Number(o.amounts!.total)
     : subtotal + tip;
@@ -246,10 +236,8 @@ function computeFromItems(o: Order): { subtotal: number; total: number } {
 }
 
 function orderTotal(order: Order): number {
-  // OPS (servido por backend)
   if (order.amounts && typeof order.amounts.total === "number") return Number(order.amounts.total || 0);
 
-  // LEGACY
   const cents =
     (order.totals?.totalCents ?? null) != null
       ? Number(order.totals!.totalCents!)
@@ -258,7 +246,6 @@ function orderTotal(order: Order): number {
       : 0;
   const legacy = cents / 100;
 
-  // Si no hay legacy ni amounts, calcular desde items
   if (!legacy && Array.isArray(order.items) && order.items.length) {
     return computeFromItems(order).total;
   }
@@ -275,6 +262,49 @@ function closedStatus(s?: string) {
   return v === "closed" || v === "cancelled" ? v : null;
 }
 
+/** Status label i18n (usamos las mismas claves de tracking) */
+type StatusSnake =
+  | "cart"
+  | "placed"
+  | "kitchen_in_progress"
+  | "kitchen_done"
+  | "ready_to_close"
+  | "assigned_to_courier"
+  | "on_the_way"
+  | "delivered"
+  | "closed"
+  | "cancelled";
+
+function toSnakeStatus(s: string): StatusSnake {
+  const snake = s?.includes("_") ? s : s?.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`);
+  const alias: Record<string, StatusSnake> = {
+    ready: "ready_to_close",
+    served: "ready_to_close",
+    completed: "closed",
+    ready_for_delivery: "assigned_to_courier",
+    out_for_delivery: "on_the_way",
+  };
+  return (alias[snake] ?? (snake as StatusSnake)) || "placed";
+}
+
+const STATUS_LABEL_KEYS: Record<StatusSnake, string> = {
+  cart: "track.status.cart",
+  placed: "track.status.received",
+  kitchen_in_progress: "track.status.inKitchen",
+  kitchen_done: "track.status.kitchenReady",
+  ready_to_close: "track.status.readyToClose",
+  assigned_to_courier: "track.status.assigned",
+  on_the_way: "track.status.onTheWay",
+  delivered: "track.status.delivered",
+  closed: "track.status.closed",
+  cancelled: "track.status.cancelled",
+};
+
+function statusLabel(lang: string, s?: string) {
+  const key = STATUS_LABEL_KEYS[toSnakeStatus(String(s || "placed"))];
+  return t(lang, key);
+}
+
 /** --------------------------
  *  Page (inner)
  *  -------------------------- */
@@ -285,10 +315,14 @@ function ClientOrdersPageInner() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
 
-  // CurrencyUpdate: formateador de moneda desde settings
+  const { settings } = useTenantSettings();
+  const rawLang =
+    (settings as any)?.language ??
+    (typeof window !== "undefined" ? localStorage.getItem("tenant.language") || undefined : undefined);
+  const lang = getLang(rawLang);
+
   const fmtQ = useFmtQ();
 
-  // Carga usuarios y filtra (uid/email).
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -319,7 +353,6 @@ function ClientOrdersPageInner() {
           return byUid || byMail;
         });
 
-        // Desciende por fecha
         mine.sort((a, b) => {
           const da = tsToDate(a.createdAt)?.getTime() ?? 0;
           const db = tsToDate(b.createdAt)?.getTime() ?? 0;
@@ -344,16 +377,18 @@ function ClientOrdersPageInner() {
   return (
     <div className="container py-4">
       <div className="d-flex align-items-center justify-content-between mb-3">
-        <h1 className="h5 m-0">My orders</h1>
-        <span className="text-muted small">Total: {totalOrders}</span>
+        <h1 className="h5 m-0">{t(lang, "orders.title")}</h1>
+        <span className="text-muted small">{t(lang, "orders.totalPrefix")} {totalOrders}</span>
       </div>
 
-      {loading && <div className="alert alert-info">Loading orders…</div>}
-      {err && <div className="alert alert-danger">Error: {err}</div>}
+      {loading && <div className="alert alert-info">{t(lang, "orders.loading")}</div>}
+      {err && <div className="alert alert-danger">{t(lang, "common.errorPrefix")} {err}</div>}
 
       {!loading && !err && totalOrders === 0 && (
         <div className="alert alert-secondary">
-          You don't have any orders yet. Go to the <Link href="/menu">menu</Link> to get started.
+          {t(lang, "orders.empty.before")}{" "}
+          <Link href="/menu">{t(lang, "orders.menuLink")}</Link>{" "}
+          {t(lang, "orders.empty.after")}
         </div>
       )}
 
@@ -365,7 +400,6 @@ function ClientOrdersPageInner() {
             const closed = !!closedStatus(o.status);
             const pillClass = closed ? "bg-danger" : "bg-primary";
 
-            // ✅ Si no hay amounts, calculamos subtotal desde items para el desglose
             const computed = !o.amounts && Array.isArray(o.items) && o.items.length
               ? computeFromItems(o)
               : null;
@@ -376,20 +410,18 @@ function ClientOrdersPageInner() {
                   <div className="card-body d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center">
                     <div className="me-md-3">
                       <div className="d-flex align-items-center flex-wrap gap-2">
-                        <span className="fw-semibold">Order #{o.id.slice(0, 6)}</span>
-                        <span className={`badge rounded-pill ${pillClass}`}>{(o.status || "placed").toUpperCase()}</span>
+                        <span className="fw-semibold">{t(lang, "orders.order")} #{o.id.slice(0, 6)}</span>
+                        <span className={`badge rounded-pill ${pillClass}`}>{statusLabel(lang, o.status)}</span>
                       </div>
-                      <div className="small text-muted mt-1">Date: {fmtDate(o.createdAt)}</div>
+                      <div className="small text-muted mt-1">{t(lang, "orders.date")}: {fmtDate(o.createdAt)}</div>
 
-                      {/* ✅ Invoice info, si existe */}
                       {(o.invoiceNumber || o.invoiceDate) && (
                         <div className="small text-muted">
-                          Invoice: {o.invoiceNumber || "-"}{o.invoiceDate ? ` • ${fmtDate(o.invoiceDate)}` : ""}
+                          {t(lang, "orders.invoice")}: {o.invoiceNumber || "-"}{o.invoiceDate ? ` • ${fmtDate(o.invoiceDate)}` : ""}
                         </div>
                       )}
                     </div>
                     <div className="mt-2 mt-md-0 fw-bold">
-                      {/* CurrencyUpdate */}
                       {fmtQ(total)}
                     </div>
                   </div>
@@ -401,10 +433,10 @@ function ClientOrdersPageInner() {
                       className="btn btn-outline-secondary btn-sm"
                       onClick={() => setOpenId(isOpen ? null : o.id)}
                     >
-                      {isOpen ? "Hide details" : "View details"}
+                      {isOpen ? t(lang, "orders.hideDetails") : t(lang, "orders.viewDetails")}
                     </button>
                     <Link href={`/app/orders/${o.id}`} className="btn btn-outline-primary btn-sm">
-                      Open / Share
+                      {t(lang, "orders.openShare")}
                     </Link>
                   </div>
 
@@ -414,7 +446,7 @@ function ClientOrdersPageInner() {
                       {/* OPS items */}
                       {Array.isArray(o.items) && o.items.length > 0 && (
                         <div className="mb-3">
-                          <div className="fw-semibold mb-2">Products</div>
+                          <div className="fw-semibold mb-2">{t(lang, "orders.products")}</div>
                           <ul className="list-group">
                             {o.items.map((it, idx) => {
                               const lineTotal = lineTotalOpsQ(it);
@@ -428,15 +460,14 @@ function ClientOrdersPageInner() {
                                         {it.menuItemName || it.menuItemId}
                                       </div>
 
-                                      {/* addons (price o priceCents) */}
+                                      {/* addons */}
                                       {Array.isArray(it.addons) && it.addons.length > 0 && (
                                         <ul className="small text-muted mt-1 ps-3">
                                           {it.addons.map((ad, ai) => {
                                             const q = priceQ(ad);
                                             return (
                                               <li key={ai}>
-                                                (addon) {ad.name}
-                                                {/* CurrencyUpdate */}
+                                                {t(lang, "orders.addonTag")} {ad.name}
                                                 {q ? ` — ${fmtQ(q)}` : ""}
                                               </li>
                                             );
@@ -444,7 +475,7 @@ function ClientOrdersPageInner() {
                                         </ul>
                                       )}
 
-                                      {/* ✅ New: optionGroups.items (priceDelta o priceDeltaCents) */}
+                                      {/* optionGroups.items */}
                                       {Array.isArray(it.optionGroups) && it.optionGroups.some(g => (g.items || []).length > 0) && (
                                         <ul className="small text-muted mt-1 ps-3">
                                           {it.optionGroups.map((g, gi) => {
@@ -452,7 +483,6 @@ function ClientOrdersPageInner() {
                                             if (!list.length) return null;
                                             const rows = list.map((og, i) => {
                                               const d = priceDeltaQ(og);
-                                              // CurrencyUpdate
                                               return `${og.name}${d ? ` (${fmtQ(d)})` : ""}`;
                                             }).join(", ");
                                             return (
@@ -464,12 +494,12 @@ function ClientOrdersPageInner() {
                                         </ul>
                                       )}
 
+                                      {/* options */}
                                       {Array.isArray(it.options) && it.options.length > 0 && (
                                         <ul className="small text-muted mt-1 ps-3">
                                           {it.options.map((g, gi) => {
                                             const rows = (g.selected || []).map((s) => {
                                               const d = priceDeltaQ(s);
-                                              // CurrencyUpdate
                                               return `${s.name}${d ? ` (${fmtQ(d)})` : ""}`;
                                             }).join(", ");
                                             return (
@@ -481,17 +511,16 @@ function ClientOrdersPageInner() {
                                         </ul>
                                       )}
 
-                                      {/* If none of the above applies */}
+                                      {/* ninguno */}
                                       {!((it.addons && it.addons.length) ||
                                          (it.optionGroups && it.optionGroups.some(g => (g.items || []).length > 0)) ||
                                          (it.options && it.options.length)) && (
-                                        <div className="small text-muted">No addons</div>
+                                        <div className="small text-muted">{t(lang, "orders.noAddons")}</div>
                                       )}
                                     </div>
 
-                                    {/* ✅ Monto por línea */}
+                                    {/* Monto por línea */}
                                     <div className="ms-3 text-nowrap">
-                                      {/* CurrencyUpdate */}
                                       {fmtQ(lineTotal)}
                                       <div className="small text-muted text-end">x{qty}</div>
                                     </div>
@@ -506,7 +535,7 @@ function ClientOrdersPageInner() {
                       {/* LEGACY lines */}
                       {Array.isArray(o.lines) && o.lines.length > 0 && (
                         <div className="mb-3">
-                          <div className="fw-semibold mb-2">Products</div>
+                          <div className="fw-semibold mb-2">{t(lang, "orders.products")}</div>
                           <ul className="list-group">
                             {o.lines.map((l, idx) => {
                               const qty = Number(l.qty || 1);
@@ -523,7 +552,6 @@ function ClientOrdersPageInner() {
                                       <div className="small text-muted">x{qty}</div>
                                     </div>
                                     <div className="ms-3 text-nowrap">
-                                      {/* CurrencyUpdate */}
                                       {fmtQ(totalQ)}
                                     </div>
                                   </div>
@@ -539,7 +567,7 @@ function ClientOrdersPageInner() {
                         {o.notes ? (
                           <div className="col-12">
                             <div className="small">
-                              <span className="text-muted">Notes: </span>
+                              <span className="text-muted">{t(lang, "orders.notes")}: </span>
                               {o.notes}
                             </div>
                           </div>
@@ -550,64 +578,55 @@ function ClientOrdersPageInner() {
                           <div className="col-12">
                             <div className="d-flex flex-column align-items-end gap-1">
                               <div className="small text-muted">
-                                Subtotal: <span className="fw-semibold">
-                                  {/* CurrencyUpdate */}
+                                {t(lang, "orders.subtotal")}: <span className="fw-semibold">
                                   {fmtQ(Number(o.amounts.subtotal || 0))}
                                 </span>
                               </div>
                               {!!o.amounts.tax && (
                                 <div className="small text-muted">
-                                  Taxes: <span className="fw-semibold">
-                                    {/* CurrencyUpdate */}
+                                  {t(lang, "orders.taxes")}: <span className="fw-semibold">
                                     {fmtQ(Number(o.amounts.tax || 0))}
                                   </span>
                                 </div>
                               )}
                               {!!o.amounts.serviceFee && (
                                 <div className="small text-muted">
-                                  Service: <span className="fw-semibold">
-                                    {/* CurrencyUpdate */}
+                                  {t(lang, "orders.service")}: <span className="fw-semibold">
                                     {fmtQ(Number(o.amounts.serviceFee || 0))}
                                   </span>
                                 </div>
                               )}
                               {!!o.amounts.discount && (
                                 <div className="small text-muted">
-                                  Discount: <span className="fw-semibold">
-                                    {/* CurrencyUpdate */}
+                                  {t(lang, "orders.discount")}: <span className="fw-semibold">
                                     −{fmtQ(Number(o.amounts.discount || 0))}
                                   </span>
                                 </div>
                               )}
                               {!!o.amounts.tip && (
                                 <div className="small text-muted">
-                                  Tip: <span className="fw-semibold">
-                                    {/* CurrencyUpdate */}
+                                  {t(lang, "orders.tip")}: <span className="fw-semibold">
                                     {fmtQ(Number(o.amounts.tip || 0))}
                                   </span>
                                 </div>
                               )}
                               <div className="mt-1">
-                                Total: <span className="fw-bold">
-                                  {/* CurrencyUpdate */}
+                                {t(lang, "orders.total")}: <span className="fw-bold">
                                   {fmtQ(Number(o.amounts.total || total))}
                                 </span>
                               </div>
                             </div>
                           </div>
                         ) : (
-                          // ✅ Si no hay amounts, mostramos lo calculado desde items
                           <div className="col-12">
                             <div className="d-flex flex-column align-items-end gap-1">
                               <div className="small text-muted">
-                                Subtotal: <span className="fw-semibold">
-                                  {/* CurrencyUpdate */}
+                                {t(lang, "orders.subtotal")}: <span className="fw-semibold">
                                   {fmtQ(Number(computed?.subtotal || 0))}
                                 </span>
                               </div>
                               <div className="mt-1">
-                                Total: <span className="fw-bold">
-                                  {/* CurrencyUpdate */}
+                                {t(lang, "orders.total")}: <span className="fw-bold">
                                   {fmtQ(Number(computed?.total || total))}
                                 </span>
                               </div>
@@ -625,7 +644,7 @@ function ClientOrdersPageInner() {
       )}
 
       <div className="mt-4">
-        <Link href="/menu" className="btn btn-outline-secondary">Back to menu</Link>
+        <Link href="/menu" className="btn btn-outline-secondary">{t(lang, "orders.backToMenu")}</Link>
       </div>
     </div>
   );

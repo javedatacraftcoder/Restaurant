@@ -1,4 +1,3 @@
-/* src/app/(client)/app/orders/[id]/page.tsx */
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -7,8 +6,11 @@ import Protected from "@/components/Protected";
 import { useAuth } from "@/app/providers";
 import "@/lib/firebase/client";
 import { getFirestore, doc, onSnapshot } from "firebase/firestore";
-// CurrencyUpdate: usar el formateador global
 import { useFmtQ } from "@/lib/settings/money";
+
+// i18n
+import { t, getLang } from "@/lib/i18n/t";
+import { useTenantSettings } from "@/lib/settings/hooks";
 
 type OpsAddon = { name: string; price?: number };
 type OpsGroupItem = { id: string; name: string; priceDelta?: number };
@@ -39,8 +41,6 @@ type OrderDoc = {
   contact?: { email?: string | null } | null;
 };
 
-// CurrencyUpdate: remover fmtMoneyQ local (se reemplaza por useFmtQ)
-
 function PageInner() {
   const params = useParams<{ id: string }>();
   const orderId = params?.id as string;
@@ -49,8 +49,15 @@ function PageInner() {
   const [order, setOrder] = useState<OrderDoc | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // CurrencyUpdate: hook global
+  // currency (global)
   const fmtQ = useFmtQ();
+
+  // idioma
+  const { settings } = useTenantSettings();
+  const rawLang =
+    (settings as any)?.language ??
+    (typeof window !== "undefined" ? localStorage.getItem("tenant.language") || undefined : undefined);
+  const lang = getLang(rawLang);
 
   useEffect(() => {
     const db = getFirestore();
@@ -79,20 +86,22 @@ function PageInner() {
     );
   }, [order, user]);
 
-  if (loading) return <div className="container py-4">Loading order…</div>;
-  if (!order) return <div className="container py-4">Order not found.</div>;
-  if (!owned) return <div className="container py-4 text-danger">You don't have permission to view this order.</div>;
+  if (loading) return <div className="container py-4">{t(lang, "orderDetail.loading")}</div>;
+  if (!order) return <div className="container py-4">{t(lang, "orderDetail.notFound")}</div>;
+  if (!owned) return <div className="container py-4 text-danger">{t(lang, "orderDetail.noPermission")}</div>;
 
   return (
     <div className="container py-4">
-      <h1 className="h5">Order #{(order.id || "").slice(0, 6)}</h1>
+      <h1 className="h5">
+        {t(lang, "orders.order")} #{(order.id || "").slice(0, 6)}
+      </h1>
       <div className="mb-2">
-        <span className="text-muted">Status: </span>
+        <span className="text-muted">{t(lang, "orders.status")}: </span>
         <b>{(order.status || "placed").toUpperCase()}</b>
       </div>
 
       <div className="mt-4">
-        <h2 className="h6">Products</h2>
+        <h2 className="h6">{t(lang, "orders.products")}</h2>
 
         {Array.isArray(order.items) && order.items.length > 0 ? (
           <ul className="list-group">
@@ -107,8 +116,7 @@ function PageInner() {
                       <ul className="small text-muted mt-1 ps-3">
                         {it.addons.map((ad, ai) => (
                           <li key={ai}>
-                            (addon) {ad.name}
-                            {/* CurrencyUpdate */}
+                            {t(lang, "orders.addonTag")} {ad.name}
                             {typeof ad.price === "number" ? ` — ${fmtQ(ad.price)}` : ""}
                           </li>
                         ))}
@@ -118,17 +126,16 @@ function PageInner() {
                     {/* Option groups */}
                     {Array.isArray(it.optionGroups) && it.optionGroups.some(g => (g.items || []).length > 0) && (
                       <ul className="small text-muted mt-1 ps-3">
-                        {it.optionGroups.map((g, gi) => (
+                        {it.optionGroups.map((g, gi) =>
                           (g.items || []).length > 0 ? (
                             <li key={gi}>
                               <span className="fw-semibold">{g.groupName}:</span>{" "}
                               {(g.items || [])
-                                // CurrencyUpdate
                                 .map(og => `${og.name}${typeof og.priceDelta === "number" ? ` (${fmtQ(og.priceDelta)})` : ""}`)
                                 .join(", ")}
                             </li>
                           ) : null
-                        ))}
+                        )}
                       </ul>
                     )}
 
@@ -139,7 +146,6 @@ function PageInner() {
                           <li key={gi}>
                             <span className="fw-semibold">{g.groupName}:</span>{" "}
                             {(g.selected || [])
-                              // CurrencyUpdate
                               .map((s) => `${s.name}${typeof s.priceDelta === "number" ? ` (${fmtQ(s.priceDelta)})` : ""}`)
                               .join(", ")}
                           </li>
@@ -154,7 +160,7 @@ function PageInner() {
             ))}
           </ul>
         ) : (
-          <div className="text-muted">No products</div>
+          <div className="text-muted">{t(lang, "orderDetail.noProducts")}</div>
         )}
       </div>
     </div>
