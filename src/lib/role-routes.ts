@@ -26,7 +26,7 @@ export function pickRouteByRole(
 
   if (flags.isAdmin || role === "admin" || claims?.admin) return "/admin";
   if (flags.isKitchen || role === "kitchen" || claims?.kitchen) return "/admin/kitchen";
-  if (flags.isWaiter || role === "waiter" || claims?.waiter) return "/admin/edit-orders";
+  if (flags.isWaiter || role === "waiter" || claims?.waiter) return "/admin/waiter";
   if (flags.isDelivery || role === "delivery" || claims?.delivery) return "/admin/delivery";
   if (flags.isCashier || role === "cashier" || claims?.cashier) return "/admin/cashier";
 

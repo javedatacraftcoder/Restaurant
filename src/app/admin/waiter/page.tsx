@@ -2,7 +2,9 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import Protected from "@/components/Protected";
+import { RoleGate } from "@/components/RoleGate";
 import "@/lib/firebase/client";
 import { useAuth } from "@/app/providers";
 import {
@@ -196,10 +198,14 @@ const STATUS_BADGE: Record<string, "secondary" | "warning" | "success" | "primar
 // Max items allowed in a Firestore "in" filter
 const IN_FILTER_MAX = 30;
 
+// 👉 URL base a donde quieres mandar al mesero al “Pick”
+//    Si prefieres otra (por ejemplo /app/menu), cámbiala aquí:
+const PICK_TARGET_BASE = "/checkout-cards?type=dine-in&table=";
+
 // =================== Page ===================
 export default function WaiterPage() {
   const db = useMemo(() => getFirestore(), []);
-  const { user, claims } = useAuth(); // claims?.role or claims?.roles
+  const { user } = useAuth(); // solo usamos user para saveNumTables
   const [numTables, setNumTables] = useState<number>(12);
   const [loadingSettings, setLoadingSettings] = useState(true);
 
@@ -210,18 +216,6 @@ export default function WaiterPage() {
 
   // ✅ formateador de moneda central (tenant)
   const fmtQ = useFmtQ();
-
-  // ------------- Role gate -------------
-  const allowed = useMemo(() => {
-    const role = (claims as any)?.role;
-    const roles = (claims as any)?.roles;
-    const has =
-      role === "admin" ||
-      role === "waiter" ||
-      role === "cashier" ||
-      (Array.isArray(roles) && (roles.includes("admin") || roles.includes("waiter") || roles.includes("cashier")));
-    return !!has;
-  }, [claims]);
 
   // ------------- Load & Save Settings -------------
   useEffect(() => {
@@ -369,12 +363,7 @@ export default function WaiterPage() {
   // =================== Render ===================
   return (
     <Protected>
-      {!allowed ? (
-        <main className="container py-4">
-          <h1 className="h4">Waiter</h1>
-          <p className="text-danger">You don’t have permission to view this page.</p>
-        </main>
-      ) : (
+      <RoleGate allow={['admin','waiter']}>
         <main className="container-fluid py-3">
           {/* Top Controls */}
           <div className="container mb-3">
@@ -427,7 +416,7 @@ export default function WaiterPage() {
                   }}
                   onClick={() => openTablePanel(t)}
                 >
-                  <div className="card-body d-flex flex-column justify-content-between" style={{ minHeight: 120 }}>
+                  <div className="card-body d-flex flex-column justify-content-between" style={{ minHeight: 140 }}>
                     <div className="d-flex align-items-center justify-content-between">
                       <div className="d-flex align-items-center">
                         <span
@@ -447,16 +436,30 @@ export default function WaiterPage() {
                       {statusBadgeFor(t)}
                     </div>
 
-                    <div className="mt-3">
+                    <div className="mt-3 d-flex align-items-center justify-content-between">
                       {occupied ? (
                         <>
-                          <div className="small text-muted">Open order</div>
-                          <div className="fw-semibold">
-                            {fmtQ(total)}
+                          <div>
+                            <div className="small text-muted">Open order</div>
+                            <div className="fw-semibold">
+                              {fmtQ(total)}
+                            </div>
                           </div>
+                          {/* Mesa ocupada: NO mostramos Pick */}
+                          <div />
                         </>
                       ) : (
-                        <div className="text-muted">Empty table</div>
+                        <>
+                          <div className="text-muted">Empty table</div>
+                          {/* ✅ Botón PICK — solo mesas vacías */}
+                          <Link
+                            href={`${PICK_TARGET_BASE}${encodeURIComponent(t)}`}
+                            className="btn btn-sm btn-primary"
+                            onClick={(e) => e.stopPropagation()} // evita abrir el panel
+                          >
+                            Pick
+                          </Link>
+                        </>
                       )}
                     </div>
                   </div>
@@ -484,7 +487,16 @@ export default function WaiterPage() {
             </div>
             <div className="offcanvas-body">
               {!selectedTable ? null : !selectedOrder ? (
-                <div className="text-muted">Empty table. No open order.</div>
+                <div className="d-flex align-items-center justify-content-between">
+                  <div className="text-muted">Empty table. No open order.</div>
+                  {/* ✅ También ofrecemos Pick dentro del panel si está vacía */}
+                  <Link
+                    href={`${PICK_TARGET_BASE}${encodeURIComponent(selectedTable)}`}
+                    className="btn btn-primary btn-sm"
+                  >
+                    Pick
+                  </Link>
+                </div>
               ) : (
                 <OrderDetailCard order={selectedOrder} onClose={closePanel} />
               )}
@@ -500,7 +512,7 @@ export default function WaiterPage() {
             />
           )}
         </main>
-      )}
+      </RoleGate>
     </Protected>
   );
 }

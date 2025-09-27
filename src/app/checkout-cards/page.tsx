@@ -4,8 +4,9 @@
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useNewCart } from '@/lib/newcart/context';
 import type { DineInInfo, DeliveryInfo } from '@/lib/newcart/types';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import '@/lib/firebase/client';
+import { Suspense } from 'react'; // ✅ NUEVO: para envolver el uso de useSearchParams
 
 import {
   getFirestore,
@@ -25,6 +26,9 @@ import { calculateTaxSnapshot } from '@/lib/tax/engine';
 
 // CurrencyUpdate: usar formateador global conectado a SettingsProvider
 import { useFmtQ } from '@/lib/settings/money';
+
+// ✅ NUEVO: mesas disponibles (no cambia tu colección orders)
+import { useAvailableTables } from '@/lib/tables/useAvailableTables';
 
 type PickupInfo = { type: 'pickup'; phone: string; notes?: string };
 type DeliveryOption = { id: string; title: string; description?: string; price: number; isActive?: boolean; sortOrder?: number; };
@@ -135,6 +139,8 @@ function useCheckoutState() {
   const cart = useNewCart();
   const subtotal = useMemo(() => cart.computeGrandTotal(), [cart, cart.items]);
 
+  const searchParams = useSearchParams();
+
   const [mode, setMode] = useState<'dine-in' | 'delivery' | 'pickup'>('dine-in');
   const [table, setTable] = useState('');
   const [notes, setNotes] = useState('');
@@ -175,6 +181,29 @@ function useCheckoutState() {
 
   const router = useRouter();
   const db = getFirestore();
+
+  // ✅ NUEVO: mesas disponibles (live)
+  const { available: availableTables, loading: tablesLoading } = useAvailableTables();
+
+  // ⚙️ Inicializar desde query params (una sola vez)
+  useEffect(() => {
+    const qpType = (searchParams?.get('type') || '').toLowerCase();
+    const qpTable = (searchParams?.get('table') || '').trim();
+
+    if (qpType === 'delivery' || qpType === 'pickup' || qpType === 'dine-in') {
+      setMode(qpType as any);
+    }
+    // Solo setea mesa si está disponible; si no, ignora
+    if (qpTable && availableTables.includes(qpTable)) {
+      setTable(qpTable);
+    }
+    // Si venimos a dine-in y no hay mesa set, auto-seleccionar primera libre (opcional)
+    if ((qpType === 'dine-in' || !qpType) && !qpTable && availableTables.length > 0) {
+      // no auto forzamos: lo dejamos para que usuario elija; comenta la siguiente línea si no quieres auto
+      // setTable(availableTables[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, availableTables.length]);
 
   // Cargar datos del customer (direcciones y teléfono) — COPIADO DEL CHECKOUT VIEJO (+ billing.*)
   useEffect(() => {
@@ -697,6 +726,9 @@ function useCheckoutState() {
       promoCode, promoApplying, promoError, promo,
       // ✅ NUEVO estado para UI de impuestos
       taxUI,
+      // ✅ NUEVO: mesas disponibles
+      availableTables,
+      tablesLoading,
     },
     actions: {
       setMode, setTable, setNotes, setAddress, setPhone, setAddressLabel,
@@ -713,7 +745,7 @@ function CheckoutUI(props: {
   actions: ReturnType<typeof useCheckoutState>['actions'],
   onSubmitCash: () => Promise<void>,
   paypalActiveHint?: string,
-  cart: ReturnType<typeof useCheckoutState>['helpers']['cart'], // ⬅️ nuevo
+  cart: ReturnType<typeof useCheckoutState>['helpers']['cart'],
 }) {
   const { state, actions, onSubmitCash, paypalActiveHint, cart } = props;
   const {
@@ -722,6 +754,7 @@ function CheckoutUI(props: {
     tip, tipEdited, saving, payMethod, hasDropdown, subtotal, deliveryFee, grandTotal,
     promoCode, promoApplying, promoError, promo,
     taxUI,
+    availableTables, tablesLoading,
   } = state;
   const {
     setMode, setTable, setNotes, setAddress, setPhone, setAddressLabel,
@@ -764,8 +797,29 @@ function CheckoutUI(props: {
                 <>
                   <div className="mb-3">
                     <label className="form-label">Table</label>
-                    <input className="form-control" value={table} onChange={(e) => setTable(e.target.value)} placeholder="Ex. Mesa 5" disabled={saving} />
+
+                    {/* ✅ Dropdown SOLO con mesas disponibles */}
+                    {tablesLoading ? (
+                      <div className="form-text">Loading tables…</div>
+                    ) : availableTables.length === 0 ? (
+                      <div className="alert alert-warning py-2 mb-2">
+                        No tables available right now.
+                      </div>
+                    ) : (
+                      <select
+                        className="form-select"
+                        value={table}
+                        onChange={(e) => setTable(e.target.value)}
+                        disabled={saving}
+                      >
+                        <option value="">Select a table…</option>
+                        {availableTables.map((t: string) => (
+                          <option key={t} value={t}>Table {t}</option>
+                        ))}
+                      </select>
+                    )}
                   </div>
+
                   <div className="mb-3">
                     <label className="form-label">Notes (optional)</label>
                     <textarea className="form-control" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Additional instructions" disabled={saving} />
@@ -823,7 +877,7 @@ function CheckoutUI(props: {
                             <div className="w-100">
                               <div className="d-flex justify-content-between">
                                 <div className="fw-semibold">{opt.title}</div>
-                                <div className="fw-semibold">{fmtQ(opt.price)}</div> {/* CurrencyUpdate */}
+                                <div className="fw-semibold">{fmtQ(opt.price)}</div>
                               </div>
                               {opt.description && <div className="text-muted small">{opt.description}</div>}
                             </div>
@@ -977,14 +1031,14 @@ function CheckoutUI(props: {
                         <div className="fw-semibold">
                           {ln.menuItemName} <span className="text-muted">× {ln.quantity}</span>
                         </div>
-                        <div className="fw-semibold">{fmtQ(lineSum)}</div> {/* CurrencyUpdate */}
+                        <div className="fw-semibold">{fmtQ(lineSum)}</div>
                       </div>
                       {(ln.addons.length > 0 || ln.optionGroups.some((g: any) => g.items.length > 0)) && (
                         <div className="mt-2">
                           {ln.addons.map((ad: any, i: number) => (
                             <div className="d-flex justify-content-between small" key={`ad-${idx}-${i}`}>
                               <div>— (addons) {ad.name}</div>
-                              <div>{fmtQ(ad.price)}</div> {/* CurrencyUpdate */}
+                              <div>{fmtQ(ad.price)}</div>
                             </div>
                           ))}
                           {ln.optionGroups.map((g: any) =>
@@ -994,14 +1048,14 @@ function CheckoutUI(props: {
                                 key={`gi-${idx}-${g.groupId}-${it.id}`}
                               >
                                 <div>— {it.name}</div>
-                                <div>{fmtQ(it.priceDelta)}</div> {/* CurrencyUpdate */}
+                                <div>{fmtQ(it.priceDelta)}</div>
                               </div>
                             ))
                           )}
                         </div>
                       )}
                       <div className="text-muted small mt-1">
-                        ({fmtQ(ln.basePrice + unitExtras)} each) {/* CurrencyUpdate */}
+                        ({fmtQ(ln.basePrice + unitExtras)} each)
                       </div>
                     </div>
                   );
@@ -1013,21 +1067,21 @@ function CheckoutUI(props: {
               <div className="mt-3">
                 <div className="d-flex justify-content-between">
                   <div>Subtotal</div>
-                  <div className="fw-semibold">{fmtQ(subtotal)}</div> {/* CurrencyUpdate */}
+                  <div className="fw-semibold">{fmtQ(subtotal)}</div>
                 </div>
 
                 {/* NUEVO: línea de descuento si hay promo */}
                 {promo && (
                   <div className="d-flex justify-content-between text-success">
                     <div>Discount ({promo.code})</div>
-                    <div className="fw-semibold">- {fmtQ((promo.discountTotalCents||0)/100)}</div> {/* CurrencyUpdate */}
+                    <div className="fw-semibold">- {fmtQ((promo.discountTotalCents||0)/100)}</div>
                   </div>
                 )}
 
                 {mode === 'delivery' && (
                   <div className="d-flex justify-content-between">
                     <div>Delivery</div>
-                    <div className="fw-semibold">{fmtQ(deliveryFee)}</div> {/* CurrencyUpdate */}
+                    <div className="fw-semibold">{fmtQ(deliveryFee)}</div>
                   </div>
                 )}
 
@@ -1035,7 +1089,7 @@ function CheckoutUI(props: {
                 {showTaxLine && (
                   <div className="d-flex justify-content-between">
                     <div>Tax</div>
-                    <div className="fw-semibold">{fmtQ(taxUI?.taxQ || 0)}</div> {/* CurrencyUpdate */}
+                    <div className="fw-semibold">{fmtQ(taxUI?.taxQ || 0)}</div>
                   </div>
                 )}
 
@@ -1046,14 +1100,14 @@ function CheckoutUI(props: {
                       <input type="number" min="0" step="0.01" className="form-control form-control-sm" style={{ width: 120 }}
                         value={Number.isFinite(tip) ? tip : 0}
                         onChange={(e) => { setTipEdited(true); const v = Number(e.target.value); setTip(Number.isFinite(v) ? v : 0); }} />
-                      <span className="text-muted small">{fmtQ(tip)}</span> {/* CurrencyUpdate */}
+                      <span className="text-muted small">{fmtQ(tip)}</span>
                     </div>
                   </div>
                 )}
                 <hr />
                 <div className="d-flex justify-content-between">
                   <div className="fw-semibold">Grand total</div>
-                  <div className="fw-bold">{fmtQ(grandToShow)}</div> {/* CurrencyUpdate */}
+                  <div className="fw-bold">{fmtQ(grandToShow)}</div>
                 </div>
               </div>
             </div>
@@ -1230,12 +1284,17 @@ function CheckoutCoreNoStripe() {
       actions={actions}
       onSubmitCash={onSubmitCash}
       paypalActiveHint={!process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ? '(Configura NEXT_PUBLIC_PAYPAL_CLIENT_ID)' : undefined}
-      cart={cart} // ⬅️ nuevo
+      cart={cart}
     />
   );
 }
 
 /** ------- Export por defecto (solo efectivo + PayPal) ------- */
 export default function CheckoutCardsPage() {
-  return <CheckoutCoreNoStripe />;
+  // ✅ Envolvemos el subtree donde se usa useSearchParams con Suspense
+  return (
+    <Suspense fallback={<div className="container py-4">Loading…</div>}>
+      <CheckoutCoreNoStripe />
+    </Suspense>
+  );
 }
