@@ -172,6 +172,12 @@ type TaxSnapshot = {
   customer?: { taxId?: string };
 } | null | undefined;
 
+// 🆕 Cliente (para override de facturación)
+type OrderCustomer = {
+  name?: string | null;
+  taxId?: string | null;
+} | null | undefined;
+
 type OrderDoc = {
   id: string;
   orderNumber?: string;
@@ -225,6 +231,9 @@ type OrderDoc = {
 
   // 🆕 Snapshot fiscal (agregado por el Checkout nuevo)
   taxSnapshot?: TaxSnapshot;
+
+  // 🆕 Datos de cliente (para override de facturación)
+  customer?: OrderCustomer;
 };
 
 const TitleMap: Record<StatusSnake, string> = {
@@ -555,14 +564,17 @@ function BadgeStatus({ s }: { s: StatusSnake }) {
   return <span className={cls}>{TitleMap[s] || s}</span>;
 }
 
+/* 🆕 Prop para abrir el editor de datos fiscales */
 function OrderCard({
   o,
   onClose,
   busy,
+  onEditTax, // 🆕
 }: {
   o: OrderDoc;
   onClose: (o: OrderDoc) => Promise<void>;
   busy: boolean;
+  onEditTax: (o: OrderDoc) => void; // 🆕
 }) {
   const fmtQ = useFmtQ(); // ✅ formateador global
   const created = toDate(o.createdAt ?? new Date());
@@ -781,6 +793,10 @@ function OrderCard({
           </div>
 
           <div className="btn-group">
+            {/* 🆕 Botón para editar datos fiscales */}
+            <button className="btn btn-outline-primary btn-sm" onClick={() => onEditTax(o)}>
+              Edit tax
+            </button>
             <a
               className="btn btn-outline-secondary btn-sm"
               href={`/admin/cashier/receipt/${o.id}`}
@@ -807,6 +823,58 @@ function CashierPage_Inner() {
   const { orders, loading, error, refresh } = useCashierOrders(!!user, 4000);
 
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  // 🆕 Estado del editor de datos fiscales
+  const [showEdit, setShowEdit] = useState(false);
+  const [editOrderId, setEditOrderId] = useState<string | null>(null);
+  const [editBillingName, setEditBillingName] = useState<string>('');
+  const [editTaxId, setEditTaxId] = useState<string>('');
+  const [savingTax, setSavingTax] = useState(false);
+  const [saveErr, setSaveErr] = useState<string | null>(null);
+
+  const startEditTax = (o: OrderDoc) => {
+    setEditOrderId(o.id);
+    // Prefill desde order.customer / orderInfo / taxSnapshot
+    const preName =
+      (o.customer?.name ?? '') ||
+      (o.orderInfo?.customerName ?? '') ||
+      '';
+    const preTax =
+      (o.customer?.taxId ?? '') ||
+      (o.taxSnapshot?.customer?.taxId ?? '') ||
+      '';
+    setEditBillingName(preName);
+    setEditTaxId(preTax);
+    setSaveErr(null);
+    setShowEdit(true);
+  };
+
+  const saveTaxOverride = async () => {
+    if (!editOrderId) return;
+    try {
+      setSavingTax(true);
+      setSaveErr(null);
+      await ensureFirebaseApp();
+      const { getFirestore, doc, updateDoc } = await import('firebase/firestore');
+      const db = getFirestore();
+
+      // 🆕 Override minimal-invasivo en el doc de la orden
+      await updateDoc(doc(db, 'orders', editOrderId), {
+        'customer.name': editBillingName?.trim() || null,
+        'customer.taxId': editTaxId?.trim() || null,
+        // Mantener consistencia con snapshots fiscales ya guardados
+        'taxSnapshot.customer.taxId': editTaxId?.trim() || null,
+      });
+
+      setShowEdit(false);
+      setEditOrderId(null);
+      await refresh(); // ver cambios inmediatamente
+    } catch (e: any) {
+      setSaveErr(e?.message || 'Could not save billing data.');
+    } finally {
+      setSavingTax(false);
+    }
+  };
 
   const onClose = async (o: OrderDoc) => {
     try {
@@ -887,7 +955,7 @@ function CashierPage_Inner() {
               <div className="row g-3">
                 {dineIn.map(o => (
                   <div key={o.id} className="col-12 col-md-6 col-lg-4">
-                    <OrderCard o={o} onClose={onClose} busy={busyId === o.id} />
+                    <OrderCard o={o} onClose={onClose} busy={busyId === o.id} onEditTax={startEditTax} />
                   </div>
                 ))}
               </div>
@@ -906,13 +974,67 @@ function CashierPage_Inner() {
               <div className="row g-3">
                 {delivery.map(o => (
                   <div key={o.id} className="col-12 col-md-6 col-lg-4">
-                    <OrderCard o={o} onClose={onClose} busy={busyId === o.id} />
+                    <OrderCard o={o} onClose={onClose} busy={busyId === o.id} onEditTax={startEditTax} />
                   </div>
                 ))}
               </div>
             )}
           </section>
         </>
+      )}
+
+      {/* 🆕 Modal simple controlado para editar datos de facturación */}
+      {showEdit && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="position-fixed top-0 start-0 w-100 h-100"
+          style={{ background: 'rgba(0,0,0,0.35)', zIndex: 1050 }}
+          onClick={(e) => {
+            // cerrar al clickear backdrop (no cerrar si se clickea el contenido)
+            if (e.target === e.currentTarget) setShowEdit(false);
+          }}
+        >
+          <div className="position-absolute top-50 start-50 translate-middle" style={{ minWidth: 320, width: 'min(92vw, 520px)' }}>
+            <div className="card shadow">
+              <div className="card-header d-flex justify-content-between align-items-center">
+                <span className="fw-semibold">Edit tax details</span>
+                <button className="btn btn-sm btn-outline-secondary" onClick={() => setShowEdit(false)} aria-label="Close">✕</button>
+              </div>
+              <div className="card-body">
+                <div className="mb-3">
+                  <label className="form-label">Billing name</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={editBillingName}
+                    onChange={(e) => setEditBillingName(e.target.value)}
+                    placeholder="Full name or company"
+                  />
+                </div>
+                <div className="mb-2">
+                  <label className="form-label">Tax ID</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={editTaxId}
+                    onChange={(e) => setEditTaxId(e.target.value)}
+                    placeholder="e.g. NIT / VAT"
+                  />
+                </div>
+                {saveErr && <div className="text-danger small mb-2">{saveErr}</div>}
+              </div>
+              <div className="card-footer d-flex justify-content-end gap-2">
+                <button className="btn btn-outline-secondary" onClick={() => setShowEdit(false)} disabled={savingTax}>
+                  Cancel
+                </button>
+                <button className="btn btn-primary" onClick={saveTaxOverride} disabled={savingTax || !editOrderId}>
+                  {savingTax ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

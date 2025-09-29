@@ -16,7 +16,15 @@ export function buildCSP({ isDev = false }: { isDev?: boolean } = {}) {
     "https://*.googleapis.com",
     "https://*.firebaseio.com",
     "wss://*.firebaseio.com",
+    "https://www.youtube.com," // (se conserva exactamente como estaba)
   ];
+
+  // ➕ AÑADIDOS (no destructivo): orígenes correctos para embeds y APIs de video
+  connectSrc.push(
+    "https://www.youtube.com",
+    "https://www.youtube-nocookie.com",
+    "https://player.vimeo.com"
+  );
 
   if (isDev) {
     connectSrc.push(
@@ -30,17 +38,22 @@ export function buildCSP({ isDev = false }: { isDev?: boolean } = {}) {
   const directives = [
     `default-src 'self'`,
     `base-uri 'self'`,
-    `img-src 'self' data: https://*.gstatic.com https://*.googleapis.com`,
+    // ⬇️ se mantiene tu línea original y se agregan hosts de miniaturas YouTube/Vimeo
+    `img-src 'self' data: https://*.gstatic.com https://*.googleapis.com https://i.ytimg.com https://i.vimeocdn.com`,
     // Nota: 'unsafe-inline' y 'unsafe-eval' facilitan dev. En prod, intenta remover 'unsafe-eval'.
     // 👇 AGREGADO Turnstile: https://challenges.cloudflare.com
     `script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com https://www.googletagmanager.com https://challenges.cloudflare.com`,
     `style-src 'self' 'unsafe-inline'`,
     `connect-src ${connectSrc.join(" ")}`,
     // 👇 AGREGADO Turnstile en frame-src
-    `frame-src https://*.firebaseapp.com https://*.google.com https://*.gstatic.com https://challenges.cloudflare.com`,
+    // ➕ AÑADIDOS (no destructivo): YouTube, YouTube-nocookie y Vimeo
+    `frame-src https://*.firebaseapp.com https://*.google.com https://*.gstatic.com https://challenges.cloudflare.com https://www.youtube.com https://www.youtube-nocookie.com https://player.vimeo.com`,
     `font-src 'self' data:`,
     `form-action 'self'`,
     `frame-ancestors 'self'`,
+
+    // ➕ NUEVO (recomendado para reproducir MP4 desde Firebase Storage)
+    `media-src 'self' blob: https://firebasestorage.googleapis.com`,
   ];
 
   return directives.join("; ");
@@ -112,5 +125,48 @@ export function addPaypalToCsp(existingHeader: string): string {
     map['script-src-elem'] = new Set(map['script-src']);
   }
 
+  return serialize(map);
+}
+
+/* ➕ OPCIONAL: helper para añadir YouTube/Vimeo a una CSP existente sin tocar lo previo */
+export function addVideoEmbedsToCsp(existingHeader: string): string {
+  type CspMap = Record<string, Set<string>>;
+
+  const EXTRAS: Record<string, string[]> = {
+    'frame-src': ['https://www.youtube.com', 'https://www.youtube-nocookie.com', 'https://player.vimeo.com'],
+    'img-src': ['https://i.ytimg.com', 'https://i.vimeocdn.com', 'data:', 'blob:'],
+    'media-src': ["'self'", 'blob:', 'https://firebasestorage.googleapis.com'],
+    'connect-src': ['https://www.youtube.com', 'https://www.youtube-nocookie.com', 'https://player.vimeo.com'],
+  };
+
+  const parse = (h: string): CspMap => {
+    const map: CspMap = {};
+    if (!h) return map;
+    for (const raw of h.split(';')) {
+      const s = raw.trim();
+      if (!s) continue;
+      const parts = s.split(/\s+/);
+      const name = parts.shift()!;
+      if (!name) continue;
+      map[name] = map[name] || new Set<string>();
+      for (const src of parts) map[name].add(src);
+    }
+    return map;
+  };
+
+  const serialize = (m: CspMap): string =>
+    Object.entries(m)
+      .filter(([, set]) => set?.size)
+      .map(([k, set]) => `${k} ${Array.from(set).join(' ')}`)
+      .join('; ');
+
+  const ensure = (m: CspMap, d: string) => { if (!m[d]) m[d] = new Set<string>(); };
+  const add = (m: CspMap, d: string, sources: string[]) => {
+    ensure(m, d);
+    for (const s of sources) m[d].add(s);
+  };
+
+  const map = parse(existingHeader || '');
+  for (const [dir, arr] of Object.entries(EXTRAS)) add(map, dir, arr);
   return serialize(map);
 }

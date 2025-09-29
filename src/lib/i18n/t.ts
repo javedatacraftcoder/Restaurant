@@ -8,8 +8,25 @@ export function getLang(raw?: string): keyof typeof MESSAGES {
   return (short in MESSAGES ? short : "es");
 }
 
-/** Traduce por clave con fallback a la propia clave si no existe */
-export function t(rawLang: string | undefined, key: string): string {
+/** Traduce por clave con fallback a la propia clave si no existe
+ *  Ahora soporta interpolación: t(lang, "key", { name: "Ana", count: 3 })
+ *  Ej.: "Hola {name}, tienes {count} mensajes"
+ */
+export function t(
+  rawLang: string | undefined,
+  key: string,
+  vars?: Record<string, unknown>
+): string {
   const lang = getLang(rawLang);
-  return MESSAGES[lang]?.[key] ?? key;
+  let s = MESSAGES[lang]?.[key] ?? key;
+
+  if (vars && typeof s === "string") {
+    s = s.replace(/\{(\w+)\}/g, (_, k: string) =>
+      Object.prototype.hasOwnProperty.call(vars, k) && vars[k] !== undefined && vars[k] !== null
+        ? String(vars[k])
+        : `{${k}}`
+    );
+  }
+
+  return s;
 }

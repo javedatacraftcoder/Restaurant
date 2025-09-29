@@ -151,6 +151,9 @@ type OrderDoc = {
   // Persistentes
   invoiceNumber?: string;      // ahora formateado (Prefix-Series-Number-Suffix)
   invoiceDate?: any | null;    // Timestamp de la primera emisión
+
+  // ➕ (para este cambio) posible objeto customer en la orden
+  customer?: { name?: string; names?: string; taxId?: string } | null;
 };
 
 const toNum = (x: any) => { const n = Number(x); return Number.isFinite(n) ? n : undefined; };
@@ -564,8 +567,13 @@ function ReceiptPage_Inner() {
             {phone ? <div className="muted">Phone: {phone}</div> : null}
 
             {(billingName || billingTaxId) && <div className="hr"></div>}
-            {billingName ? <div className="muted">Invoice to: {billingName}</div> : null}
-            {billingTaxId ? <div className="muted">NIT: {billingTaxId}</div> : null}
+            {/* 🔁 CAMBIO PEDIDO: mostrar lo guardado en order.customer.name / order.customer.taxId (con fallback al valor previo) */}
+            {(order?.customer?.name ?? order?.customer?.names ?? billingName)
+              ? <div className="muted">Invoice to: {order?.customer?.name ?? order?.customer?.names ?? billingName}</div>
+              : null}
+            {(order?.customer?.taxId ?? billingTaxId)
+              ? <div className="muted">NIT: {order?.customer?.taxId ?? billingTaxId}</div>
+              : null}
 
             {notes ? <div className="muted">Note: {notes}</div> : null}
 

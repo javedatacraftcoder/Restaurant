@@ -282,7 +282,7 @@ function computeOrderTotalsQ(o: OrderDoc) {
   const lines = preferredLines(o);
   const subtotal = lines.reduce((acc, l) => acc + lineTotalQ(l), 0);
   const tip = Number(o.amounts?.tip || 0);
-  return { subtotal, tax: 0, serviceFee: 0, discount: 0, tip, deliveryFee: 0, total: subtotal + tip };
+  return { subtotal, tax: 0, serviceFee: 0, discount: 0, deliveryFee: 0, total: subtotal + tip };
 }
 function safeLineTotalsQ(l: any) {
   const qty = getLineQty(l);
@@ -477,8 +477,12 @@ function PrintInvoicePage_Inner() {
 
             {/* Datos de cliente para factura (customer.Name / customer.taxId) */}
             {(billingName || billingTaxId) && <div className="hr"></div>}
-            {billingName ? <div className="muted">Customer: {billingName}</div> : null}
-            {billingTaxId ? <div className="muted">Tax ID: {billingTaxId}</div> : null}
+            {( (order as any)?.customer?.name ?? (order as any)?.customer?.names ?? billingName )
+              ? <div className="muted">Customer: {(order as any)?.customer?.name ?? (order as any)?.customer?.names ?? billingName}</div>
+              : null}
+            {( (order as any)?.customer?.taxId ?? billingTaxId )
+              ? <div className="muted">Tax ID: {(order as any)?.customer?.taxId ?? billingTaxId}</div>
+              : null}
 
             {fullAddress ? <div className="muted">Delivery: {fullAddress}</div> : null}
             {phone ? <div className="muted">Phone: {phone}</div> : null}

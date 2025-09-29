@@ -2,21 +2,36 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useNewCart } from '@/lib/newcart/context';
 import type { NewCartItem } from '@/lib/newcart/types';
 import { useFmtQ } from '@/lib/settings/money'; // CurrencyUpdate: usar formateador global basado en SettingsProvider
+import { useAuth } from '@/app/providers';     // 🔐 Nuevo: para saber si hay sesión
 
 // CurrencyUpdate: se elimina la función local fmtQ con "USD/es-GT" hardcodeado
 
 export default function CartViewNew() {
   const cart = useNewCart();
-
-  // CurrencyUpdate: obtener formateador desde el contexto (currency + locale por tenant)
-  const fmtQ = useFmtQ();
+  const fmtQ = useFmtQ();            // CurrencyUpdate: obtener formateador desde el contexto (currency + locale por tenant)
+  const { user } = useAuth();        // 🔐 Nuevo: usuario actual (null/undefined si no logueado)
+  const router = useRouter();        // 🔐 Nuevo: navegación programática
 
   const lines: NewCartItem[] = cart.items;
   const grand = useMemo(() => cart.computeGrandTotal(), [cart, lines]);
+
+  // 🔐 Nuevo: manejar click al checkout con verificación de sesión
+  const handleGoToCheckout = () => {
+    if (!lines.length) return; // No hacer nada si el carrito está vacío
+
+    if (!user) {
+      // Redirigir a login y, tras login, volver a checkout
+      router.push('/login?next=/checkout-cards');
+      return;
+    }
+
+    // Usuario logueado: continuar a checkout
+    router.push('/checkout-cards');
+  };
 
   return (
     <div className="card border-0 shadow-sm">
@@ -102,7 +117,17 @@ export default function CartViewNew() {
         <div className="fw-semibold">Total to pay</div>
         <div className="d-flex align-items-center gap-2">
           <div className="fw-bold fs-5">{fmtQ(grand)}</div>
-          <Link href="/checkout-cards" className="btn btn-primary">Go to checkout</Link>
+          {/* 🔐 Cambiamos Link por botón para controlar la navegación y validar sesión */}
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={handleGoToCheckout}
+            disabled={!lines.length}
+            aria-disabled={!lines.length}
+            title={!lines.length ? 'Your cart is empty.' : (user ? 'Proceed to checkout' : 'Log in to continue')}
+          >
+            Go to checkout
+          </button>
         </div>
       </div>
     </div>

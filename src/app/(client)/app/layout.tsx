@@ -1,6 +1,7 @@
+// src/app/(client)/app/layout.tsx
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import CartBadge from '@/components/CartBadge';
@@ -9,16 +10,34 @@ import CartBadge from '@/components/CartBadge';
 import { t, getLang } from '@/lib/i18n/t';
 import { useTenantSettings } from '@/lib/settings/hooks';
 
-export default function ClientLayout({ children }: { children: React.ReactNode }) {
+export default function ClientLayout(
+  props: { children: React.ReactNode } & { serverLang?: string } // 👈 compat con Next layouts
+) {
+  const { children } = props;
+  // serverLang puede venir cuando usas este layout como componente (p.ej. desde /menu/layout)
+  const serverLang = (props as any)?.serverLang as string | undefined;
+
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
-  // idioma actual
+  // idioma actual desde settings / localStorage (tu lógica original)
   const { settings } = useTenantSettings();
   const rawLang =
     (settings as any)?.language ??
     (typeof window !== 'undefined' ? localStorage.getItem('tenant.language') || undefined : undefined);
-  const lang = getLang(rawLang);
+
+  // 1) Primer render: usa el idioma de servidor si viene, para evitar hydration mismatch
+  const [lang, setLang] = useState<string>(serverLang ? getLang(serverLang) : getLang(rawLang));
+
+  // 2) Tras el mount, si el cliente tiene override distinto, aplícalo
+  useEffect(() => {
+    const next = getLang(
+      (settings as any)?.language ??
+        (typeof window !== 'undefined' ? localStorage.getItem('tenant.language') || undefined : undefined)
+    );
+    if (next !== lang) setLang(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings]);
 
   const isActive = (href: string) => pathname?.startsWith(href);
 
@@ -65,7 +84,6 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
             </ul>
 
             <div className="d-flex align-items-center gap-2">
-              {/* CartBadge ya cuenta items con useCart */}
               <CartBadge href="/cart-new" />
               <Link className="btn btn-outline-secondary btn-sm" href="/logout">
                 {t(lang, 'nav.logout')}

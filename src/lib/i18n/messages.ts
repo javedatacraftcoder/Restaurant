@@ -1,7 +1,8 @@
+// src/lib/i18n/messages.ts
 // Diccionario simple en memoria
 export const MESSAGES: Record<string, Record<string, string>> = {
   es: {
-    // ====== HOME ======
+    // ====== HOME (básicos) ======
     "home.welcome": "¡Bienvenido!",
     "home.start": "Empieza viendo el",
     "home.menuLink": "menú",
@@ -24,6 +25,10 @@ export const MESSAGES: Record<string, Record<string, string>> = {
     "home.copy": "Copiar",
     "home.copyAria": "Copiar código {code}",
     "home.noPromos": "No hay promociones activas en este momento.",
+    "home.promos.couponsLabel": "Cupones",
+    "home.about.kicker": "Nuestra historia",
+    "home.about.title": "Sobre nosotros",
+    "home.about.badge": "Desde 20XX",
 
     // ====== COMMON ======
     "common.refresh": "Actualizar",
@@ -42,6 +47,7 @@ export const MESSAGES: Record<string, Record<string, string>> = {
     "uc.profile.save": "Guardar perfil",
     "uc.profile.updated": "Perfil actualizado",
     "uc.profile.saveError": "No se pudo guardar el perfil",
+
     "uc.addresses.title": "Direcciones",
     "uc.addresses.home": "Casa",
     "uc.addresses.office": "Oficina",
@@ -60,6 +66,7 @@ export const MESSAGES: Record<string, Record<string, string>> = {
     "uc.addresses.save": "Guardar direcciones",
     "uc.addresses.saved": "Direcciones guardadas",
     "uc.addresses.saveError": "No se pudieron guardar las direcciones",
+
     "uc.billing.title": "Facturación",
     "uc.billing.name": "Nombre de facturación",
     "uc.billing.namePh": "Razón social / Nombre de facturación",
@@ -68,6 +75,7 @@ export const MESSAGES: Record<string, Record<string, string>> = {
     "uc.billing.save": "Guardar facturación",
     "uc.billing.saved": "Datos de facturación guardados",
     "uc.billing.saveError": "No se pudo guardar la facturación",
+
     "uc.sec.title": "Seguridad",
     "uc.sec.subtitle": "cambiar contraseña",
     "uc.sec.current": "Contraseña actual",
@@ -99,6 +107,7 @@ export const MESSAGES: Record<string, Record<string, string>> = {
     "track.signInPrompt": "Inicia sesión para ver tus órdenes.",
     "track.loadingOrders": "Cargando órdenes…",
     "track.noDeliveries": "No tienes entregas en curso en este momento.",
+
     "track.status.cart": "Carrito",
     "track.status.received": "Recibido",
     "track.status.inKitchen": "En cocina",
@@ -109,14 +118,17 @@ export const MESSAGES: Record<string, Record<string, string>> = {
     "track.status.delivered": "Entregado",
     "track.status.closed": "Cerrado",
     "track.status.cancelled": "Cancelado",
+
     "track.step.received": "Recibido",
     "track.step.inKitchen": "En cocina",
     "track.step.kitchenReady": "Cocina lista",
     "track.step.assigned": "Asignado a repartidor",
     "track.step.onTheWay": "En ruta",
     "track.step.delivered": "Entregado",
+
     "track.a11y.current": "actual",
     "track.a11y.completed": "completado",
+
     "track.err.signIn": "Debes iniciar sesión.",
     "track.err.unauthorized": "No autorizado (401).",
     "track.err.loading": "Error cargando",
@@ -161,10 +173,51 @@ export const MESSAGES: Record<string, Record<string, string>> = {
     "nav.orders": "Pedidos",
     "nav.tracking": "Seguimiento",
     "nav.logout": "Cerrar sesión",
+
+    // ====== HOME HERO / PROMOS / FEATURED / GALLERY ======
+    "home.hero.videoAria": "Video destacado",
+    "home.hero.carouselAria": "Carrusel principal",
+    "home.hero.slide": "Diapositiva",
+    "home.hero.slideAlt": "Diapositiva del hero",
+    "home.hero.imageAria": "Imagen destacada",
+    "home.hero.imageAlt": "Imagen del hero",
+    "home.hero.headline": "Momentos deliciosos",
+    "home.hero.sub": "Pide tus favoritos ahora",
+    "home.hero.cta": "Ordenar ahora",
+    "home.hero.fallbackHeadline": "Bienvenido",
+    "home.hero.fallbackSub": "Fresco y rápido",
+
+    "home.promos.title": "Promociones",
+    "home.promos.hot": "Ofertas calientes",
+    "home.promos.explore": "Explorar",
+    "home.promos.dishesOne": "plato en promoción",
+    "home.promos.dishesMany": "platos en promoción",
+    "home.promos.couponsOne": "cupón asociado",
+    "home.promos.couponsMany": "cupones asociados",
+
+    "home.featured.title": "Destacados",
+    "home.featured.navAria": "Categorías destacadas",
+    "home.featured.view": "Ver",
+    "home.featured.empty": "Aún no hay elementos destacados.",
+
+    "home.gallery.title": "Galería",
+    "home.gallery.subtitle": "Momentos de nuestra cocina",
+    "home.gallery.aria": "Galería",
+    "home.gallery.imageAlt": "Imagen de galería",
+
+    // ====== NAV secciones + auth extras ======
+    "nav.home": "Inicio",
+    "nav.promotions": "Promociones",
+    "nav.featured": "Destacados",
+    "nav.gallery": "Galería",
+    "nav.login": "Iniciar sesión",
+    "nav.signin": "Entrar",
+    "nav.signup": "Crear cuenta",
+    "nav.aboutus":"Quienes somos"
   },
 
   en: {
-    // ====== HOME ======
+    // ====== HOME (basic) ======
     "home.welcome": "Welcome!",
     "home.start": "Start by viewing the",
     "home.menuLink": "menu",
@@ -187,6 +240,10 @@ export const MESSAGES: Record<string, Record<string, string>> = {
     "home.copy": "Copy",
     "home.copyAria": "Copy code {code}",
     "home.noPromos": "There are no active promotions at the moment.",
+    "home.promos.couponsLabel": "Coupons",
+    "home.about.kicker": "Our story",
+    "home.about.title": "About us",
+    "home.about.badge": "Since 20XX",
 
     // ====== COMMON ======
     "common.refresh": "Refresh",
@@ -205,6 +262,7 @@ export const MESSAGES: Record<string, Record<string, string>> = {
     "uc.profile.save": "Save profile",
     "uc.profile.updated": "Profile updated",
     "uc.profile.saveError": "Could not save profile",
+
     "uc.addresses.title": "Addresses",
     "uc.addresses.home": "Home",
     "uc.addresses.office": "Office",
@@ -223,6 +281,7 @@ export const MESSAGES: Record<string, Record<string, string>> = {
     "uc.addresses.save": "Save addresses",
     "uc.addresses.saved": "Addresses saved",
     "uc.addresses.saveError": "Could not save addresses",
+
     "uc.billing.title": "Billing",
     "uc.billing.name": "Billing name",
     "uc.billing.namePh": "Business name / Billing name",
@@ -231,6 +290,7 @@ export const MESSAGES: Record<string, Record<string, string>> = {
     "uc.billing.save": "Save billing",
     "uc.billing.saved": "Billing details saved",
     "uc.billing.saveError": "Could not save billing details",
+
     "uc.sec.title": "Security",
     "uc.sec.subtitle": "change password",
     "uc.sec.current": "Current password",
@@ -262,6 +322,7 @@ export const MESSAGES: Record<string, Record<string, string>> = {
     "track.signInPrompt": "Sign in to see your orders.",
     "track.loadingOrders": "Loading orders…",
     "track.noDeliveries": "You have no deliveries in progress right now.",
+
     "track.status.cart": "Cart",
     "track.status.received": "Received",
     "track.status.inKitchen": "In kitchen",
@@ -272,14 +333,17 @@ export const MESSAGES: Record<string, Record<string, string>> = {
     "track.status.delivered": "Delivered",
     "track.status.closed": "Closed",
     "track.status.cancelled": "Cancelled",
+
     "track.step.received": "Received",
     "track.step.inKitchen": "In kitchen",
     "track.step.kitchenReady": "Kitchen ready",
     "track.step.assigned": "Assigned to courier",
     "track.step.onTheWay": "On the way",
     "track.step.delivered": "Delivered",
+
     "track.a11y.current": "current",
     "track.a11y.completed": "completed",
+
     "track.err.signIn": "You must sign in.",
     "track.err.unauthorized": "Unauthorized (401).",
     "track.err.loading": "Error loading",
@@ -324,5 +388,47 @@ export const MESSAGES: Record<string, Record<string, string>> = {
     "nav.orders": "Orders",
     "nav.tracking": "Order Tracking",
     "nav.logout": "Logout",
+
+    // ====== HOME HERO / PROMOS / FEATURED / GALLERY ======
+    "home.hero.videoAria": "Featured video",
+    "home.hero.carouselAria": "Main carousel",
+    "home.hero.slide": "Slide",
+    "home.hero.slideAlt": "Hero slide",
+    "home.hero.imageAria": "Featured image",
+    "home.hero.imageAlt": "Hero image",
+    "home.hero.headline": "Delicious moments",
+    "home.hero.sub": "Order your favorites now",
+    "home.hero.cta": "Order Now",
+    "home.hero.fallbackHeadline": "Welcome",
+    "home.hero.fallbackSub": "Fresh & Fast",
+
+    "home.promos.title": "Promotions",
+    "home.promos.hot": "Hot deals",
+    "home.promos.explore": "Explore",
+    "home.promos.dishesOne": "dish on promo",
+    "home.promos.dishesMany": "dishes on promo",
+    "home.promos.couponsOne": "coupon attached",
+    "home.promos.couponsMany": "coupons attached",
+
+    "home.featured.title": "Featured",
+    "home.featured.navAria": "Featured categories",
+    "home.featured.view": "View",
+    "home.featured.empty": "No featured items yet.",
+
+    "home.gallery.title": "Gallery",
+    "home.gallery.subtitle": "Moments from our kitchen",
+    "home.gallery.aria": "Gallery",
+    "home.gallery.imageAlt": "Gallery image",
+
+    // ====== NAV sections + auth ======
+    "nav.home": "Home",
+    "nav.promotions": "Promotions",
+    "nav.featured": "Featured",
+    "nav.gallery": "Gallery",
+    "nav.login": "Log in",
+    "nav.signin": "Sign in",
+    "nav.signup": "Sign up",
+    "nav.aboutus":"About Us"
+    
   },
 };
