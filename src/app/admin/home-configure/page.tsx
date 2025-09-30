@@ -70,6 +70,17 @@ type FeaturedMenuItem = {
   tags?: string[];
 };
 
+/* === Contact & Newsletter types (ACTUALIZADO) === */
+/* ContactUpdate: usamos campos simples: phone, email, webpage, address */
+type ContactBranch = {
+  branchId: string;      // uuid
+  branchName?: string;
+  address?: string;
+  phone?: string;        // ContactUpdate: antes era phones[]
+  email?: string;        // ContactUpdate: antes era emails[]
+  webpage?: string;      // ContactUpdate: nuevo
+};
+
 type HomeConfig = {
   updatedAt?: TimestampLike;
   hero: {
@@ -93,6 +104,24 @@ type HomeConfig = {
     title?: string;
     text?: string;
     imageUrl?: string;
+  };
+
+  /* 👇 NUEVO: Newsletter (Brevo) */
+  newsletter?: {
+    title?: string;
+    text?: string;
+    placeholderEmail?: string;
+    buttonLabel?: string;
+    successMsg?: string;
+    errorMsg?: string;
+    // imageUrl?: string; // opcional futuro
+  };
+
+  /* 👇 NUEVO: Contact (sucursales sin formulario) */
+  contact?: {
+    title?: string;
+    text?: string;
+    branches?: ContactBranch[];
   };
 
   publish: { status: 'draft' | 'published'; version: number };
@@ -164,7 +193,7 @@ function buildYtEmbedUrl(id: string, opts: { autoplay?: boolean; muted?: boolean
     autoplay: String(ap),
     mute: String(mu),
   });
-  return `https://www.youtube-nocookie.com/embed/${id}?${params.toString()}`;
+    return `https://www.youtube-nocookie.com/embed/${id}?${params.toString()}`;
 }
 
 function maybeNormalizeYouTubeUrl(raw: string, opts: { autoplay?: boolean; muted?: boolean; loop?: boolean }) {
@@ -241,6 +270,21 @@ export default function AdminHomeConfigurePage() {
     /* 👇 NUEVO: estado inicial About Us */
     aboutUs: { title: '', text: '', imageUrl: '' },
 
+    /* 👇 NUEVO: Newsletter & Contact */
+    newsletter: {
+      title: 'Join our newsletter',
+      text: 'News, promos & seasonal dishes — no spam.',
+      placeholderEmail: 'Your email',
+      buttonLabel: 'Subscribe',
+      successMsg: 'Thanks! Check your inbox.',
+      errorMsg: 'Sorry, something went wrong. Try again.',
+    },
+    contact: {
+      title: 'Contact us',
+      text: 'Find us or reach out by phone/email.',
+      branches: [],
+    },
+
     publish: { status: 'draft', version: 1 },
   });
 
@@ -248,7 +292,9 @@ export default function AdminHomeConfigurePage() {
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
-  const [tab, setTab] = useState<'hero' | 'promos' | 'featured' | 'gallery' | 'about' | 'seo' | 'publish'>('hero');
+  const [tab, setTab] = useState<
+    'hero' | 'promos' | 'featured' | 'gallery' | 'about' | 'newsletter' | 'contact' | 'seo' | 'publish'
+  >('hero');
 
   useEffect(() => {
     (async () => {
@@ -285,6 +331,38 @@ export default function AdminHomeConfigurePage() {
             title: data.aboutUs?.title ?? '',
             text: data.aboutUs?.text ?? '',
             imageUrl: data.aboutUs?.imageUrl ?? '',
+          };
+
+          /* 👇 NUEVO: asegurar Newsletter & Contact */
+          data.newsletter = {
+            title: data.newsletter?.title ?? 'Join our newsletter',
+            text: data.newsletter?.text ?? 'News, promos & seasonal dishes — no spam.',
+            placeholderEmail: data.newsletter?.placeholderEmail ?? 'Your email',
+            buttonLabel: data.newsletter?.buttonLabel ?? 'Subscribe',
+            successMsg: data.newsletter?.successMsg ?? 'Thanks! Check your inbox.',
+            errorMsg: data.newsletter?.errorMsg ?? 'Sorry, something went wrong. Try again.',
+          };
+
+          // ContactUpdate: normalizar branches a {phone,email,webpage,address}
+          const legacyBranches = (data as any)?.contact?.branches || [];
+          const normalizedBranches: ContactBranch[] = Array.isArray(legacyBranches)
+            ? legacyBranches.map((b: any, i: number) => {
+                const firstPhone = Array.isArray(b?.phones) ? (b.phones[0] ?? '') : (typeof b?.phone === 'string' ? b.phone : '');
+                const firstEmail = Array.isArray(b?.emails) ? (b.emails[0] ?? '') : (typeof b?.email === 'string' ? b.email : '');
+                return {
+                  branchId: b?.branchId || `${Date.now()}-${i}`,
+                  branchName: b?.branchName ?? '',
+                  address: b?.address ?? '',
+                  phone: firstPhone ?? '',
+                  email: firstEmail ?? '',
+                  webpage: typeof b?.webpage === 'string' ? b.webpage : '',
+                };
+              })
+            : [];
+          data.contact = {
+            title: (data as any)?.contact?.title ?? 'Contact us',
+            text: (data as any)?.contact?.text ?? 'Find us or reach out by phone/email.',
+            branches: normalizedBranches,
           };
 
           setCfg(data);
@@ -581,6 +659,8 @@ export default function AdminHomeConfigurePage() {
               { k: 'featured', label: 'Featured Menu' },
               { k: 'gallery', label: 'Gallery' },
               { k: 'about', label: 'About Us' }, // 👈 NUEVO
+              { k: 'newsletter', label: 'Newsletter' }, // 👈 NUEVO
+              { k: 'contact', label: 'Contact' }, // 👈 NUEVO
               { k: 'seo', label: 'SEO' },
               { k: 'publish', label: 'Publish' },
             ].map((t) => (
@@ -856,7 +936,7 @@ export default function AdminHomeConfigurePage() {
                     <h2 className="h5 m-0">Promotions</h2>
                     <small className="text-muted">Resalta tus promos con imágenes de los platos seleccionados.</small>
                   </div>
-                <button className="btn btn-primary" onClick={addEmptyPromo}>
+                  <button className="btn btn-primary" onClick={addEmptyPromo}>
                     + Add promotion
                   </button>
                 </div>
@@ -1322,6 +1402,298 @@ export default function AdminHomeConfigurePage() {
                       </div>
                     </div>
                   )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* === NEWSLETTER (NEW) === */}
+          {tab === 'newsletter' && (
+            <div className="card shadow-sm border-0">
+              <div className="card-body">
+                <div className="d-flex justify-content-between align-items-center mb-3">
+                  <div>
+                    <h2 className="h5 m-0">Newsletter</h2>
+                    <small className="text-muted">
+                      Configura textos del bloque (UI/UX) y mensajes de estado del formulario.
+                    </small>
+                  </div>
+                </div>
+
+                <div className="row g-3">
+                  <div className="col-md-6">
+                    <label className="form-label">Title</label>
+                    <input
+                      className="form-control"
+                      placeholder="Join our newsletter"
+                      value={cfg?.newsletter?.title || ''}
+                      onChange={(e) =>
+                        setCfg((prev) => ({ ...prev, newsletter: { ...(prev as any).newsletter, title: e.target.value } as any }))
+                      }
+                    />
+                  </div>
+                  <div className="col-md-6">
+                    <label className="form-label">Subtext</label>
+                    <input
+                      className="form-control"
+                      placeholder="News, promos & seasonal dishes — no spam."
+                      value={cfg?.newsletter?.text || ''}
+                      onChange={(e) =>
+                        setCfg((prev) => ({ ...prev, newsletter: { ...(prev as any).newsletter, text: e.target.value } as any }))
+                      }
+                    />
+                  </div>
+
+                  <div className="col-md-4">
+                    <label className="form-label">Email placeholder</label>
+                    <input
+                      className="form-control"
+                      placeholder="Your email"
+                      value={cfg?.newsletter?.placeholderEmail || ''}
+                      onChange={(e) =>
+                        setCfg((prev) => ({
+                          ...prev,
+                          newsletter: { ...(prev as any).newsletter, placeholderEmail: e.target.value } as any,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="col-md-4">
+                    <label className="form-label">Button label</label>
+                    <input
+                      className="form-control"
+                      placeholder="Subscribe"
+                      value={cfg?.newsletter?.buttonLabel || ''}
+                      onChange={(e) =>
+                        setCfg((prev) => ({
+                          ...prev,
+                          newsletter: { ...(prev as any).newsletter, buttonLabel: e.target.value } as any,
+                        }))
+                      }
+                    />
+                  </div>
+
+                  <div className="col-md-4">
+                    <div className="alert alert-info mb-0">
+                      El formulario hace POST a <code>/api/newsletter/subscribe</code> con validación de email y honeypot.
+                    </div>
+                  </div>
+
+                  <div className="col-md-6">
+                    <label className="form-label">Success message</label>
+                    <input
+                      className="form-control"
+                      placeholder="Thanks! Check your inbox."
+                      value={cfg?.newsletter?.successMsg || ''}
+                      onChange={(e) =>
+                        setCfg((prev) => ({
+                          ...prev,
+                          newsletter: { ...(prev as any).newsletter, successMsg: e.target.value } as any,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="col-md-6">
+                    <label className="form-label">Error message</label>
+                    <input
+                      className="form-control"
+                      placeholder="Sorry, something went wrong. Try again."
+                      value={cfg?.newsletter?.errorMsg || ''}
+                      onChange={(e) =>
+                        setCfg((prev) => ({
+                          ...prev,
+                          newsletter: { ...(prev as any).newsletter, errorMsg: e.target.value } as any,
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* === CONTACT (ACTUALIZADO) === */}
+          {tab === 'contact' && (
+            <div className="card shadow-sm border-0">
+              <div className="card-body">
+                <div className="d-flex justify-content-between align-items-center mb-3">
+                  <div>
+                    <h2 className="h5 m-0">Contact</h2>
+                    <small className="text-muted">
+                      Renderiza tarjetas de sucursales (sin formulario). Tel/Email/Web como enlaces clicables.
+                    </small>
+                  </div>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => {
+                      const newBranch: ContactBranch = {
+                        branchId:
+                          typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : String(Date.now()),
+                        branchName: 'New branch',
+                        address: '',
+                        phone: '',
+                        email: '',
+                        webpage: '',
+                      };
+                      setCfg((prev) => {
+                        const prevList = (prev as any)?.contact?.branches || [];
+                        return {
+                          ...prev,
+                          contact: {
+                            title: (prev as any)?.contact?.title || 'Contact us',
+                            text: (prev as any)?.contact?.text || 'Find us or reach out by phone/email.',
+                            branches: [...prevList, newBranch],
+                          } as any,
+                        };
+                      });
+                    }}
+                  >
+                    + Add branch
+                  </button>
+                </div>
+
+                <div className="row g-3 mb-3">
+                  <div className="col-md-6">
+                    <label className="form-label">Section title</label>
+                    <input
+                      className="form-control"
+                      placeholder="Contact us"
+                      value={(cfg as any)?.contact?.title || ''}
+                      onChange={(e) =>
+                        setCfg((prev) => ({
+                          ...prev,
+                          contact: { ...(prev as any).contact, title: e.target.value } as any,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="col-md-6">
+                    <label className="form-label">Intro text</label>
+                    <input
+                      className="form-control"
+                      placeholder="We’d love to hear from you."
+                      value={(cfg as any)?.contact?.text || ''}
+                      onChange={(e) =>
+                        setCfg((prev) => ({
+                          ...prev,
+                          contact: { ...(prev as any).contact, text: e.target.value } as any,
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+
+                {/* Branches */}
+                {(((cfg as any)?.contact?.branches || []) as Array<ContactBranch>).length === 0 && (
+                  <div className="text-muted">No branches yet. Usa “Add branch”.</div>
+                )}
+
+                <div className="row g-3">
+                  {(((cfg as any)?.contact?.branches || []) as Array<ContactBranch>).map((b, idx) => (
+                    <div className="col-12" key={b.branchId || idx}>
+                      <div className="card shadow-sm">
+                        <div className="card-body">
+                          <div className="d-flex justify-content-between align-items-start mb-2">
+                            <span className="badge bg-secondary">Branch</span>
+                            <button
+                              className="btn btn-outline-danger btn-sm"
+                              onClick={() =>
+                                setCfg((prev) => {
+                                  const list = [ ...(((prev as any)?.contact?.branches || []) as Array<ContactBranch>) ];
+                                  list.splice(idx, 1);
+                                  return { 
+                                    ...prev, 
+                                    contact: { ...(prev as any).contact, branches: list } as any 
+                                  };
+                                })
+                              }
+                            >
+                              Remove
+                            </button>
+                          </div>
+
+                          <div className="row g-3">
+                            <div className="col-md-4">
+                              <label className="form-label">Branch name</label>
+                              <input
+                                className="form-control"
+                                value={b.branchName || ''}
+                                onChange={(e) =>
+                                  setCfg((prev) => {
+                                    const list = [ ...(((prev as any)?.contact?.branches || []) as Array<ContactBranch>) ];
+                                    list[idx] = { ...list[idx], branchName: e.target.value };
+                                    return { ...prev, contact: { ...(prev as any).contact, branches: list } as any };
+                                  })
+                                }
+                              />
+                            </div>
+                            <div className="col-md-8">
+                              <label className="form-label">Address</label>
+                              <input
+                                className="form-control"
+                                value={b.address || ''}
+                                onChange={(e) =>
+                                  setCfg((prev) => {
+                                    const list = [ ...(((prev as any)?.contact?.branches || []) as Array<ContactBranch>) ];
+                                    list[idx] = { ...list[idx], address: e.target.value };
+                                    return { ...prev, contact: { ...(prev as any).contact, branches: list } as any };
+                                  })
+                                }
+                              />
+                            </div>
+
+                            <div className="col-md-4">
+                              <label className="form-label">Phone</label>
+                              <input
+                                className="form-control"
+                                placeholder="+502 1234 5678"
+                                value={b.phone || ''}
+                                onChange={(e) =>
+                                  setCfg((prev) => {
+                                    const list = [ ...(((prev as any)?.contact?.branches || []) as Array<ContactBranch>) ];
+                                    list[idx] = { ...list[idx], phone: e.target.value };
+                                    return { ...prev, contact: { ...(prev as any).contact, branches: list } as any };
+                                  })
+                                }
+                              />
+                            </div>
+                            <div className="col-md-4">
+                              <label className="form-label">Email</label>
+                              <input
+                                type="email"
+                                className="form-control"
+                                placeholder="info@example.com"
+                                value={b.email || ''}
+                                onChange={(e) =>
+                                  setCfg((prev) => {
+                                    const list = [ ...(((prev as any)?.contact?.branches || []) as Array<ContactBranch>) ];
+                                    list[idx] = { ...list[idx], email: e.target.value };
+                                    return { ...prev, contact: { ...(prev as any).contact, branches: list } as any };
+                                  })
+                                }
+                              />
+                            </div>
+                            <div className="col-md-4">
+                              <label className="form-label">Webpage</label>
+                              <input
+                                type="url"
+                                className="form-control"
+                                placeholder="https://example.com"
+                                value={b.webpage || ''}
+                                onChange={(e) =>
+                                  setCfg((prev) => {
+                                    const list = [ ...(((prev as any)?.contact?.branches || []) as Array<ContactBranch>) ];
+                                    list[idx] = { ...list[idx], webpage: e.target.value };
+                                    return { ...prev, contact: { ...(prev as any).contact, branches: list } as any };
+                                  })
+                                }
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>

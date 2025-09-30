@@ -14,7 +14,8 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es" data-bs-theme="light">
-      <body className="bg-white text-dark">
+      {/* 👇 cambio mínimo: suprime warnings si el cliente ajusta clases */}
+      <body className="bg-white text-dark" suppressHydrationWarning>
         <SettingsProvider>
           <NewCartProvider>
             <Providers>{children}</Providers>

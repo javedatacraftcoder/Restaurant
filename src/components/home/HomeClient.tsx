@@ -7,14 +7,32 @@ import Hero from "@/components/home/Hero";
 import PromoStrip from "@/components/home/PromoStrip";
 import FeaturedMenu from "@/components/home/FeaturedMenu";
 import Gallery from "@/components/home/Gallery";
-import AboutUs from "@/components/home/AboutUs"; // ← NUEVO
 
 /** Tipos mínimos para las props que le pasa page.tsx */
-type HeroSlide = { imageUrl: string; imageAlt?: string; headline: string; sub?: string; cta?: { label: string; href: string }; overlay?: "dark" | "light" | "none" };
+type HeroSlide = {
+  imageUrl: string;
+  imageAlt?: string;
+  headline: string;
+  sub?: string;
+  cta?: { label: string; href: string };
+  overlay?: "dark" | "light" | "none";
+};
 type HeroVideo = { url: string; posterUrl?: string; autoplay?: boolean; loop?: boolean; muted?: boolean; blurPx?: number };
 type HeroData = { variant: "image" | "carousel" | "video"; slides?: HeroSlide[]; video?: HeroVideo };
-type Promo = { id: string; title: string; subtitle?: string; badge?: "primary" | "success" | "warning" | "danger" | "info"; imageUrl?: string; discountPct?: number; href?: string; menuItemIds?: string[]; couponIds?: string[]; dishes?: Array<{ id: string; name: string; imageUrl?: string; price?: number }> };
+type Promo = {
+  id: string;
+  title: string;
+  subtitle?: string;
+  badge?: "primary" | "success" | "warning" | "danger" | "info";
+  imageUrl?: string;
+  discountPct?: number;
+  href?: string;
+  menuItemIds?: string[];
+  couponIds?: string[];
+  dishes?: Array<{ id: string; name: string; imageUrl?: string; price?: number }>;
+};
 type Item = { id: string; name: string; price?: number; imageUrl?: string };
+type CategoryChip = { id: string; name: string };
 
 export default function HomeClient({
   serverLang,
@@ -30,16 +48,19 @@ export default function HomeClient({
   promos: Promo[];
   featuredTitle?: string;
   featuredItems: Item[];
-  featuredCategories: Array<{ id: string; name: string }>;
+  featuredCategories: CategoryChip[];
   galleryImages: Array<{ url: string; alt?: string }>;
 }) {
   const [clientLang, setClientLang] = useState<string | null>(null);
   useEffect(() => {
-    try { const raw = localStorage.getItem("tenant.language"); if (raw) setClientLang(raw); } catch {}
+    try {
+      const raw = localStorage.getItem("tenant.language");
+      if (raw) setClientLang(raw);
+    } catch {}
   }, []);
   const lang = clientLang || serverLang;
 
-  // Cambia el contraste de textos al salir del hero
+  // Estado visual del navbar (claro/oscuro) al hacer scroll
   const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 80);
@@ -48,35 +69,66 @@ export default function HomeClient({
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  // 👇 Control propio del menú móvil (sin Bootstrap JS)
+  const [open, setOpen] = useState(false);
+  const toggle = () => setOpen((v) => !v);
+  const close = () => setOpen(false);
+
+  // Cerrar al cambiar hash (navegación a secciones) o al redimensionar a ≥992px (lg)
+  useEffect(() => {
+    const onHash = () => close();
+    const onResize = () => {
+      if (window.innerWidth >= 992) close();
+    };
+    window.addEventListener("hashchange", onHash);
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("hashchange", onHash);
+      window.removeEventListener("resize", onResize);
+    };
+  }, []);
+
   /** Navbar fijo, transparente con fondo borroso (glass) */
   const Navbar = () => (
-    <nav className={`navbar navbar-expand-lg fixed-top border-0 ${scrolled ? "nav--dark" : "nav--light"}`}>
+    <nav
+      className={`navbar navbar-expand-lg fixed-top border-0 ${
+        scrolled ? "nav--dark navbar-light" : "nav--light navbar-dark"
+      }`}
+    >
       <div className="container">
-        <a className="navbar-brand fw-semibold" href="/">OrderCraft</a>
+        <a className="navbar-brand fw-semibold" href="/" onClick={close}>
+          OrderCraft
+        </a>
 
+        {/* 👉 Sin data-bs-* ni aria-controls; controlamos con estado */}
         <button
           className="navbar-toggler"
           type="button"
-          data-bs-toggle="collapse"
-          data-bs-target="#mainNav"
-          aria-controls="mainNav"
-          aria-expanded="false"
           aria-label={t(lang, "nav.toggle")}
+          aria-expanded={open ? "true" : "false"}
+          onClick={toggle}
         >
           <span className="navbar-toggler-icon" />
         </button>
 
-        <div className="collapse navbar-collapse" id="mainNav">
-          <ul className="navbar-nav me-auto mb-2 mb-lg-0">
+        {/* En desktop (≥lg) siempre visible; en móvil mostramos si open */}
+        <div className={`navbar-collapse ${open ? "d-block" : "d-none"} d-lg-flex align-items-lg-center`}>
+          <ul className="navbar-nav me-auto mb-2 mb-lg-0" onClick={close}>
             <li className="nav-item"><a className="nav-link" href="#promos">{t(lang, "nav.promotions")}</a></li>
             <li className="nav-item"><a className="nav-link" href="#featured">{t(lang, "nav.featured")}</a></li>
             <li className="nav-item"><a className="nav-link" href="#gallery">{t(lang, "nav.gallery")}</a></li>
             <li className="nav-item"><a className="nav-link" href="#aboutus">{t(lang, "nav.aboutus")}</a></li>
-            <li className="nav-item"><a className="nav-link" href="/menu">{t(lang, "nav.menu")}</a></li>            
+            <li className="nav-item"><a className="nav-link" href="#newsletter">Newsletter</a></li>
+            <li className="nav-item"><a className="nav-link" href="#contact">Contact</a></li>
+            <li className="nav-item"><a className="nav-link" href="/menu">{t(lang, "nav.menu")}</a></li>
           </ul>
-          <div className="d-flex gap-2">
-            <a className="btn btn-outline-light swap-outline" href="/login">{t(lang, "nav.login")}</a>
-            <a className="btn btn-primary btn-cta" href="/signup">{t(lang, "nav.signup")}</a>
+          <div className="d-flex gap-2 pb-3 pb-lg-0">
+            <a className="btn btn-outline-light swap-outline" href="/login" onClick={close}>
+              {t(lang, "nav.login")}
+            </a>
+            <a className="btn btn-primary btn-cta" href="/signup" onClick={close}>
+              {t(lang, "nav.signup")}
+            </a>
           </div>
         </div>
       </div>
@@ -87,10 +139,7 @@ export default function HomeClient({
         :global(html) { scroll-padding-top: 72px; }
         .navbar { z-index: 1040; transition: color .2s ease, background-color .2s ease; }
 
-        /* ===== GLASS BACKDROP =====
-           - Sobre el video (nav--light): vidrio oscuro translúcido
-           - Tras hacer scroll (nav--dark): vidrio claro translúcido
-        */
+        /* ===== GLASS BACKDROP ===== */
         .nav--light {
           background: rgba(0, 0, 0, 0.24);
           -webkit-backdrop-filter: saturate(140%) blur(10px);
@@ -110,7 +159,6 @@ export default function HomeClient({
           text-shadow: 0 1px 2px rgba(0,0,0,0.35);
         }
         .nav--light :global(.navbar-toggler) { border-color: rgba(255, 255, 255, 0.55); }
-        .nav--light :global(.navbar-toggler-icon) { filter: invert(1) grayscale(100%); }
 
         .nav--dark :global(.navbar-brand),
         .nav--dark :global(.nav-link) {
@@ -118,7 +166,6 @@ export default function HomeClient({
           text-shadow: none;
         }
         .nav--dark :global(.navbar-toggler) { border-color: rgba(0, 0, 0, 0.25); }
-        .nav--dark :global(.navbar-toggler-icon) { filter: none; }
 
         /* Botón outline adaptativo sin cambiar clases */
         .nav--light :global(.swap-outline) { color:#fff; border-color: rgba(255,255,255,0.7); }
@@ -138,6 +185,7 @@ export default function HomeClient({
 
       <main>
         <Hero data={heroData} lang={lang} />
+
         {promos?.length > 0 && (
           <section id="promos" aria-labelledby="promos-heading" className="py-5 border-top">
             <div className="container">
@@ -163,7 +211,11 @@ export default function HomeClient({
                   <ul className="nav flex-wrap">
                     {featuredCategories.map((c) => (
                       <li key={c.id} className="nav-item">
-                        <a className="nav-link px-3 py-1 rounded-pill bg-light border me-2 mb-2" href={`/menu?cat=${encodeURIComponent(c.id)}`}>
+                        <a
+                          className="nav-link px-3 py-1 rounded-pill bg-light border me-2 mb-2"
+                          href={`/menu?cat=${encodeURIComponent(c.id)}`}
+                          onClick={close}
+                        >
                           {c.name}
                         </a>
                       </li>
@@ -188,13 +240,6 @@ export default function HomeClient({
             </div>
           </section>
         )}
-
-        {/* ===== NUEVO: About Us ===== */}
-        <section id="aboutus" className="py-5 border-top">
-          <div className="container">
-            <AboutUs />
-          </div>
-        </section>
       </main>
     </>
   );

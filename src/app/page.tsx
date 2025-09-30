@@ -1,8 +1,10 @@
 import type { Metadata } from 'next';
 import HomeClient from '@/components/home/HomeClient';
 
-// 👇 NUEVO
+// 👇 NUEVO: secciones separadas para controlar el orden
 import AboutUs from '@/components/home/AboutUs';
+import Newsletter from '@/components/home/Newsletter';
+import ContactList from '@/components/home/ContactList';
 
 // 🔐 Firestore Admin
 import { db } from '@/lib/firebase/admin';
@@ -49,6 +51,40 @@ type FeaturedMenuItem = {
   imageUrl?: string;
   tags?: string[];
 };
+
+/* 👇 NEW: tipos de Newsletter y Contact */
+type NewsletterCfg = {
+  title?: string;
+  text?: string;
+  placeholderEmail?: string;
+  buttonLabel?: string;
+  successMsg?: string;
+  errorMsg?: string;
+  // imageUrl?: string; // opcional futuro
+};
+
+/** Contacto ACTUALIZADO para soportar nuevo esquema y legacy */
+type ContactBranch = {
+  branchId: string;
+  branchName?: string;
+  address?: string;
+
+  // nuevo esquema
+  phone?: string;
+  email?: string;
+  webpage?: string;
+
+  // legacy (tolerado)
+  phones?: string[];
+  emails?: string[];
+  // schedule?: string; // opcional futuro
+};
+type ContactCfg = {
+  title?: string;
+  text?: string;
+  branches?: ContactBranch[];
+};
+
 type HomeConfig = {
   hero: { variant: 'image' | 'carousel' | 'video'; slides?: HeroSlide[]; video?: HeroVideo };
   promos: PromoEntry[];
@@ -68,6 +104,10 @@ type HomeConfig = {
     text?: string;
     imageUrl?: string;
   };
+
+  /* 👇 NUEVO: Newsletter + Contact opcionales */
+  newsletter?: NewsletterCfg;
+  contact?: ContactCfg;
 
   publish: { status: 'draft' | 'published'; version: number };
 };
@@ -208,6 +248,22 @@ function toPlainPromo(p: PromoEntry) {
   };
 }
 
+/** Normalizar contact para asegurar phone/email/webpage con fallback a legacy arrays */
+function normalizeContact(c?: ContactCfg): ContactCfg | undefined {
+  if (!c) return c;
+  const branches = (c.branches || []).map((b) => {
+    const phone = (b.phone && b.phone.trim()) || (b.phones && b.phones[0]) || '';
+    const email = (b.email && b.email.trim()) || (b.emails && b.emails[0]) || '';
+    return {
+      ...b,
+      phone: phone || undefined,
+      email: email || undefined,
+      webpage: (b.webpage && b.webpage.trim()) || undefined,
+    };
+  });
+  return { ...c, branches };
+}
+
 export default async function HomePage() {
   const serverLang = await getUiLanguage();
 
@@ -219,6 +275,21 @@ export default async function HomePage() {
 
     // 👇 NUEVO: default vacío es seguro
     aboutUs: { title: '', text: '', imageUrl: '' },
+
+    // 👇 NUEVO: defaults seguros para secciones nuevas
+    newsletter: {
+      title: 'Join our newsletter',
+      text: 'News, promos & seasonal dishes — no spam.',
+      placeholderEmail: 'Your email',
+      buttonLabel: 'Subscribe',
+      successMsg: 'Thanks! Check your inbox.',
+      errorMsg: 'Sorry, something went wrong. Try again.',
+    },
+    contact: {
+      title: 'Contact us',
+      text: 'Find us or reach out by phone/email.',
+      branches: [],
+    },
 
     publish: { status: 'draft', version: 0 },
   } as HomeConfig;
@@ -303,9 +374,17 @@ export default async function HomePage() {
     video: cfg.hero.video ? { blurPx: 3, ...cfg.hero.video } : cfg.hero.video,
   };
 
+  // ✅ Normalizamos contact (phone/email/webpage) antes de pasar al cliente
+  const contactNormalized = normalizeContact(cfg.contact);
+
   return (
     <>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+
+      {/* 1) HERO + FEATURED + PROMOTIONS (+ gallery si aplica) */}
       <HomeClient
         serverLang={serverLang}
         heroData={heroData as any}
@@ -313,15 +392,35 @@ export default async function HomePage() {
         featuredTitle={cfg.featuredMenu?.title}
         featuredItems={featuredItems as any}
         featuredCategories={featuredCategories as any}
-        galleryImages={(cfg.gallery?.images || []).map((g) => ({ url: String(g.url), alt: g.alt ? String(g.alt) : undefined }))}
+        galleryImages={(cfg.gallery?.images || []).map((g) => ({
+          url: String(g.url),
+          alt: g.alt ? String(g.alt) : undefined,
+        }))}
+        // ⛔️ No pasamos newsletter/contact para controlar el orden abajo
+        // newsletter={cfg.newsletter}
+        // contact={contactNormalized}
       />
 
-      {/* 👇 NUEVO: render About Us debajo del contenido principal */}
+      {/* 4) ABOUT US */}
       <AboutUs
         title={cfg.aboutUs?.title}
         text={cfg.aboutUs?.text}
         imageUrl={cfg.aboutUs?.imageUrl}
       />
+
+      {/* 5) NEWSLETTER */}
+      <section id="newsletter" className="py-5">
+        <div className="container">
+          <div className="mx-auto" style={{ maxWidth: 760 }}>
+            <Newsletter
+              cfg={cfg.newsletter}
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* 6) CONTACT */}
+      <ContactList cfg={contactNormalized} />
     </>
   );
 }
