@@ -28,21 +28,23 @@ function isAdmin(user: any) {
 }
 
 /** GET: devuelve la orden por id (requiere auth) */
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params; // ⬅️ cambio mínimo: await params
-
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> } // ← params es Promise
+) {
+  const { id } = await params; // ← ¡IMPORTANTE!
   try {
     const user = await getUserFromRequest(req);
     if (!user) return json({ error: 'Unauthorized' }, 401);
 
-    const ref = db.collection('orders').doc(id); // ⬅️ usamos id
+    const ref = db.collection('orders').doc(String(id));
     const snap = await ref.get();
     if (!snap.exists) return json({ error: 'Not found' }, 404);
 
-    const data = { id: snap.id, ...snap.data() };
-    return json(data, 200);
+    const data = snap.data() || {};
+    return json({ ok: true, order: { id: snap.id, ...data } }, 200);
   } catch (e) {
-    console.error(e);
+    console.error('[GET /api/orders/[id]]', e);
     return json({ error: 'Server error' }, 500);
   }
 }
@@ -51,22 +53,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
  * PATCH: editar ítems/amounts/campos de una orden existente
  * - Auth obligatorio, rol admin o waiter
  * - Estado debe ser editable (no closed/cancelled)
- * Payload esperado (mismo shape que creación):
- * {
- *   items: [{ menuItemId, quantity, options:[{groupId, optionItemIds}], unitPriceCents? }],
- *   amounts: { subtotalCents, taxCents, serviceFeeCents, discountCents, tipCents, totalCents },
- *   currency, type, tableNumber, notes
- * }
  */
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params; // ⬅️ cambio mínimo: await params
-
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> } // ← Promise
+) {
+  const { id } = await params; // ← ¡IMPORTANTE!
   try {
     const user = await getUserFromRequest(req);
     if (!user) return json({ error: 'Unauthorized' }, 401);
     if (!isAdminOrWaiter(user)) return json({ error: 'Forbidden' }, 403);
 
-    const ref = db.collection('orders').doc(id); // ⬅️ usamos id
+    const ref = db.collection('orders').doc(String(id));
     const snap = await ref.get();
     if (!snap.exists) return json({ error: 'Not found' }, 404);
 
@@ -78,7 +76,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     const body = await req.json();
 
-    // Normaliza items (OPS) y lines (legacy) para compatibilidad visual
+    // Normaliza items (OPS) y lines (legacy)
     const items = Array.isArray(body.items)
       ? body.items.map((it: any) => ({
           menuItemId: it.menuItemId,
@@ -114,47 +112,40 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       tableNumber: body.tableNumber ?? current.tableNumber ?? '',
       notes: body.notes ?? current.notes ?? '',
 
-      // Compatibilidad legacy:
+      // Compat legacy:
       lines: legacyLines,
 
-      // serverTimestamp permitido en campo suelto
       updatedAt: FieldValue.serverTimestamp(),
-
-      // Dentro de arrays NO se permite FieldValue.serverTimestamp():
-      // usar Timestamp.now() para el log
       statusLogs: [
         ...(Array.isArray(current.statusLogs) ? current.statusLogs : []),
-        {
-          at: Timestamp.now(),
-          by: (user as any)?.uid ?? 'system',
-          type: 'edited_lines',
-        },
+        { at: Timestamp.now(), by: (user as any)?.uid ?? 'system', type: 'edited_lines' },
       ],
     };
 
     await ref.update(patch);
     const updated = (await ref.get()).data();
-    return json({ id, ...updated }, 200); // ⬅️ usamos id
+    return json({ id: String(id), ...updated }, 200);
   } catch (e: any) {
-    console.error(e);
+    console.error('[PATCH /api/orders/[id]]', e);
     return json({ error: e?.message || 'Server error' }, 500);
   }
 }
 
 /**
  * DELETE: cancelar la orden (soft-cancel)
- * Reglas:
- * - Admin: puede cancelar siempre.
- * - Cliente: sólo si es el creador y estado = 'placed'.
+ * - Admin: siempre
+ * - Creador: sólo si status = 'placed'
  */
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params; // ⬅️ cambio mínimo: await params
-
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> } // ← Promise
+) {
+  const { id } = await params; // ← ¡IMPORTANTE!
   try {
     const user = await getUserFromRequest(req);
     if (!user) return json({ error: 'Unauthorized' }, 401);
 
-    const ref = db.collection('orders').doc(id); // ⬅️ usamos id
+    const ref = db.collection('orders').doc(String(id));
     const snap = await ref.get();
     if (!snap.exists) return json({ error: 'Not found' }, 404);
 
@@ -166,7 +157,6 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       if (data.status !== 'placed') return json({ error: 'Only placed orders can be cancelled' }, 409);
     }
 
-    // Opcional: loguear cancelación con Timestamp.now()
     await ref.update({
       status: 'cancelled',
       updatedAt: FieldValue.serverTimestamp(),
@@ -178,7 +168,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
     return json({ ok: true }, 200);
   } catch (e) {
-    console.error(e);
+    console.error('[DELETE /api/orders/[id]]', e);
     return json({ error: 'Server error' }, 500);
   }
 }

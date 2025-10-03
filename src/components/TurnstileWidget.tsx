@@ -3,7 +3,6 @@ import React, { useEffect, useRef, forwardRef, useImperativeHandle } from "react
 
 declare global {
   interface Window {
-    onTurnstileLoad?: () => void;
     turnstile?: any;
   }
 }
@@ -17,6 +16,33 @@ export type TurnstileWidgetHandle = {
   reset: () => void;
   getToken: () => string | null;
 };
+
+// ✅ loader único del script, compartido por todas las instancias
+let turnstileScriptPromise: Promise<void> | null = null;
+function loadTurnstileScript() {
+  if (typeof window === "undefined") return Promise.resolve();
+  if (turnstileScriptPromise) return turnstileScriptPromise;
+
+  turnstileScriptPromise = new Promise<void>((resolve) => {
+    const existing = document.querySelector<HTMLScriptElement>(
+      'script[src^="https://challenges.cloudflare.com/turnstile/v0/api.js"]'
+    );
+    if (existing) {
+      if ((window as any).turnstile) resolve();
+      else existing.addEventListener("load", () => resolve());
+      return;
+    }
+    const s = document.createElement("script");
+    // ✅ render explícito; no usamos onload global
+    s.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+    s.async = true;
+    s.defer = true;
+    s.onload = () => resolve();
+    document.head.appendChild(s);
+  });
+
+  return turnstileScriptPromise;
+}
 
 const TurnstileWidget = forwardRef<TurnstileWidgetHandle, Props>(function TurnstileWidget(
   { siteKey, onToken },
@@ -47,49 +73,49 @@ const TurnstileWidget = forwardRef<TurnstileWidgetHandle, Props>(function Turnst
   }));
 
   useEffect(() => {
-    const id = "turnstile-script";
+    let cancelled = false;
 
-    const render = () => {
+    (async () => {
+      await loadTurnstileScript();
+      if (cancelled) return;
       if (!containerRef.current || !window?.turnstile) return;
-      containerRef.current.innerHTML = "";
-      widgetIdRef.current = window.turnstile.render(containerRef.current, {
-        sitekey: siteKey,
-        callback: (token: string) => {
-          lastTokenRef.current = token;
-          onToken(token);
-        },
-        "expired-callback": () => {
-          lastTokenRef.current = null;
-          onToken("");
-        },
-        "timeout-callback": () => {
-          lastTokenRef.current = null;
-          onToken("");
-        },
-        "error-callback": () => {
-          lastTokenRef.current = null;
-          onToken("");
-        },
-        // Token se renueva automáticamente al expirar
-        "refresh-expired": "auto",
-        // Evita crear <input hidden> con el response
-        "response-field": false,
-        theme: "auto",
-      });
+
+      // ⚠️ No limpiar si ya existe: evita flicker
+      if (!widgetIdRef.current) {
+        widgetIdRef.current = window.turnstile.render(containerRef.current, {
+          sitekey: siteKey,
+          "refresh-expired": "auto",
+          "response-field": false,
+          theme: "auto",
+          callback: (token: string) => {
+            lastTokenRef.current = token;
+            onToken(token);
+          },
+          "expired-callback": () => {
+            lastTokenRef.current = null;
+            onToken("");
+          },
+          "timeout-callback": () => {
+            lastTokenRef.current = null;
+            onToken("");
+          },
+          "error-callback": () => {
+            lastTokenRef.current = null;
+            onToken("");
+          },
+        });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      try {
+        if (window?.turnstile && widgetIdRef.current) {
+          window.turnstile.remove(widgetIdRef.current);
+        }
+      } catch {}
+      widgetIdRef.current = null;
     };
-
-    if (!document.getElementById(id)) {
-      const s = document.createElement("script");
-      s.id = id;
-      s.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoad";
-      s.async = true;
-      document.head.appendChild(s);
-    }
-
-    window.onTurnstileLoad = () => render();
-    if (window?.turnstile) render();
-
-    return () => {};
   }, [siteKey, onToken]);
 
   return <div ref={containerRef} />;

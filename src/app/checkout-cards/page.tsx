@@ -6,7 +6,7 @@ import { useNewCart } from '@/lib/newcart/context';
 import type { DineInInfo, DeliveryInfo } from '@/lib/newcart/types';
 import { useRouter, useSearchParams } from 'next/navigation';
 import '@/lib/firebase/client';
-import { Suspense } from 'react'; // ✅ NUEVO: para envolver el uso de useSearchParams
+import { Suspense } from 'react';
 
 import {
   getFirestore,
@@ -17,17 +17,16 @@ import {
   query,
   where,
   orderBy,
+  doc,
+  getDoc,            // ✅ NUEVO
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 
-// ✅ NUEVO: motor de impuestos
 import { getActiveTaxProfile } from '@/lib/tax/profile';
 import { calculateTaxSnapshot } from '@/lib/tax/engine';
 
-// CurrencyUpdate: usar formateador global conectado a SettingsProvider
 import { useFmtQ } from '@/lib/settings/money';
 
-// ✅ NUEVO: mesas disponibles (no cambia tu colección orders)
 import { useAvailableTables } from '@/lib/tables/useAvailableTables';
 
 /* 🔤 i18n */
@@ -39,15 +38,12 @@ type DeliveryOption = { id: string; title: string; description?: string; price: 
 type Addr = { line1?: string; city?: string; country?: string; zip?: string; notes?: string };
 type PayMethod = 'cash' | 'paypal';
 
-// --- NUEVO: tipos de promo en el cliente ---
 type AppliedPromo = {
   promoId: string;
   code: string;
   discountTotalCents: number;
   discountByLine: Array<{ lineId: string; menuItemId: string; discountCents: number; eligible: boolean; lineSubtotalCents: number; }>;
 };
-
-// CurrencyUpdate: eliminada la función local fmtQ con "USD/es-GT" hardcodeado
 
 /* --------------------------------------------
    🔤 Helper i18n (igual al de Kitchen)
@@ -70,6 +66,48 @@ function useLangTT() {
   return { lang, tt } as const;
 }
 
+/* --------------------------------------------
+   🔧 Hook: leer /paymentProfile/default
+   Estructura mínima esperada del doc:
+   { cash: boolean, paypal: boolean }  // o anidado en { payments: { ... } }
+--------------------------------------------- */
+function usePaymentProfile() {
+  const [flags, setFlags] = useState<{ cash: boolean; paypal: boolean } | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const db = getFirestore();
+        const ref = doc(db, 'paymentProfile', 'default');
+        const snap = await getDoc(ref);
+        if (cancelled) return;
+
+        if (snap.exists()) {
+          const data: any = snap.data() || {};
+          // Soportar tanto top-level como anidado en "payments"
+          const src = (data && typeof data === 'object') ? (data.payments || data) : {};
+          const cash = !!src.cash;
+          const paypal = !!src.paypal;
+          setFlags({ cash, paypal });
+        } else {
+          // Defaults conservadores si no hay doc
+          setFlags({ cash: true, paypal: false });
+        }
+      } catch (e) {
+        console.warn('paymentProfile read failed:', e);
+        setFlags({ cash: true, paypal: false }); // fallback seguro
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  return { flags: flags ?? { cash: true, paypal: false }, loading };
+}
+
 /** Convierte undefined -> null (solo para `orderInfo`) */
 function undefToNullDeep<T>(value: T): T {
   if (Array.isArray(value)) return value.map(undefToNullDeep) as any;
@@ -81,7 +119,7 @@ function undefToNullDeep<T>(value: T): T {
   return (value === undefined ? (null as any) : value) as T;
 }
 
-/** ✅ Detector robusto y a prueba de errores (no bloquea la orden) */
+/** ✅ Detector robusto (no bloquea la orden) */
 function detectOrderSource() {
   try {
     if (typeof window === 'undefined') {
@@ -90,19 +128,15 @@ function detectOrderSource() {
         deviceInfo: { os: 'unknown', isMobile: false, ua: '' as string, brands: [] as string[] },
       };
     }
-
     const nav: any = window.navigator || {};
     const ua: string = String(nav.userAgent || '');
     const uaLower = ua.toLowerCase();
-
-    // Client Hints (UA Reduction)
     const uaData = nav.userAgentData || null;
     const chPlatform = String(uaData?.platform || '').toLowerCase();
     const legacyPlatform = String(nav.platform || '').toLowerCase();
     const brandsArr: string[] = Array.isArray(uaData?.brands)
       ? uaData.brands.map((b: any) => String(b.brand || b.brandName || '')).filter(Boolean)
       : [];
-
     const hasTouch = (('maxTouchPoints' in nav) ? Number(nav.maxTouchPoints) > 0 : 'ontouchstart' in window);
     const pointerCoarse = typeof window.matchMedia === 'function'
       ? window.matchMedia('(pointer:coarse)').matches
@@ -111,14 +145,12 @@ function detectOrderSource() {
       ? window.matchMedia('(max-width: 812px)').matches
       : (window.innerWidth && window.innerWidth <= 812);
 
-    // OS detection
     const isAndroid =
       /android/.test(uaLower) ||
       /android/.test(chPlatform) ||
       /android/.test(legacyPlatform) ||
       brandsArr.some((b) => /android|chrome on android/i.test(b));
 
-    // iPadOS puede reportar "MacIntel" pero touchpoints elevados
     const isIOSFamily =
       /iphone|ipad|ipod/.test(uaLower) ||
       ((/mac/.test(chPlatform) || /mac/.test(legacyPlatform) || /mac os x|macintosh/.test(uaLower)) && Number(nav.maxTouchPoints || 0) > 2) ||
@@ -131,7 +163,6 @@ function detectOrderSource() {
     else if (/mac os x|macintosh/.test(uaLower) || /mac/.test(chPlatform) || /mac/.test(legacyPlatform)) os = 'macos';
     else if (/linux/.test(uaLower) || /linux/.test(chPlatform) || /linux/.test(legacyPlatform)) os = 'linux';
 
-    // Heurística de "mobile"
     const isMobile =
       (uaData?.mobile === true) ||
       /mobi|iphone|ipad|ipod|phone|tablet/.test(uaLower) ||
@@ -140,7 +171,6 @@ function detectOrderSource() {
 
     const orderSource = `web:${isMobile ? 'mobile' : 'desktop'}`;
 
-    // Asegurar estructura JSON-safe y sin undefined
     return {
       orderSource,
       deviceInfo: {
@@ -151,7 +181,6 @@ function detectOrderSource() {
       },
     };
   } catch {
-    // Pase lo que pase, nunca rompemos el flujo de compra
     return {
       orderSource: 'web:unknown',
       deviceInfo: { os: 'unknown', isMobile: false, ua: '', brands: [] as string[] },
@@ -159,11 +188,9 @@ function detectOrderSource() {
   }
 }
 
-/** ------- Hook compartido con lógica de checkout (sin Stripe) ------- */
 function useCheckoutState() {
   const cart = useNewCart();
   const subtotal = useMemo(() => cart.computeGrandTotal(), [cart, cart.items]);
-
   const searchParams = useSearchParams();
 
   const [mode, setMode] = useState<'dine-in' | 'delivery' | 'pickup'>('dine-in');
@@ -182,18 +209,15 @@ function useCheckoutState() {
   const [saving, setSaving] = useState(false);
   const [payMethod, setPayMethod] = useState<PayMethod>('cash');
 
-  // --- NUEVO: estado para promociones ---
   const [promoCode, setPromoCode] = useState('');
   const [promoApplying, setPromoApplying] = useState(false);
   const [promoError, setPromoError] = useState<string | null>(null);
   const [promo, setPromo] = useState<AppliedPromo | null>(null);
   const promoDiscountGTQ = useMemo(() => (promo?.discountTotalCents ?? 0) / 100, [promo]);
 
-  // ✅ NUEVO: datos de facturación (para snapshot fiscal)
   const [customerTaxId, setCustomerTaxId] = useState<string>('');
   const [customerBillingName, setCustomerBillingName] = useState<string>('');
 
-  // ✅ NUEVO: perfil y snapshot para UI
   const [activeProfile, setActiveProfile] = useState<any | null>(null);
   const [taxUI, setTaxUI] = useState<{
     pricesIncludeTax: boolean;
@@ -201,16 +225,14 @@ function useCheckoutState() {
     subTotalQ: number;
     taxQ: number;
     itemsGrandQ: number;
-    grandPayableQ: number; // itemsGrand + deliveryOutside + tip - discount
+    grandPayableQ: number;
   } | null>(null);
 
   const router = useRouter();
   const db = getFirestore();
 
-  // ✅ NUEVO: mesas disponibles (live)
   const { available: availableTables, loading: tablesLoading } = useAvailableTables();
 
-  // ⚙️ Inicializar desde query params (una sola vez)
   useEffect(() => {
     const qpType = (searchParams?.get('type') || '').toLowerCase();
     const qpTable = (searchParams?.get('table') || '').trim();
@@ -218,19 +240,12 @@ function useCheckoutState() {
     if (qpType === 'delivery' || qpType === 'pickup' || qpType === 'dine-in') {
       setMode(qpType as any);
     }
-    // Solo setea mesa si está disponible; si no, ignora
     if (qpTable && availableTables.includes(qpTable)) {
       setTable(qpTable);
-    }
-    // Si venimos a dine-in y no hay mesa set, auto-seleccionar primera libre (opcional)
-    if ((qpType === 'dine-in' || !qpType) && !qpTable && availableTables.length > 0) {
-      // no auto forzamos: lo dejamos para que usuario elija; comenta la siguiente línea si no quieres auto
-      // setTable(availableTables[0]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, availableTables.length]);
 
-  // Cargar datos del customer (direcciones y teléfono) — COPIADO DEL CHECKOUT VIEJO (+ billing.*)
   useEffect(() => {
     const run = async () => {
       try {
@@ -250,7 +265,6 @@ function useCheckoutState() {
         setCustomerName(c.displayName || u.displayName || '');
         if (c.phone && !phone) setPhone(c.phone);
 
-        // ✅ NUEVO: billing.taxId / billing.name
         const taxId = c?.taxID ? String(c.taxID) : (c?.billing?.taxId ? String(c.billing.taxId) : '');
         if (taxId) setCustomerTaxId(taxId);
         const bName = c?.billing?.name ? String(c.billing.name) : '';
@@ -276,7 +290,6 @@ function useCheckoutState() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Cargar opciones de envío (idéntico al viejo)
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
@@ -343,7 +356,6 @@ function useCheckoutState() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
-  // Tip 10% para dine-in/pickup
   useEffect(() => {
     if (mode === 'delivery') {
       if (!tipEdited) setTip(0);
@@ -361,7 +373,6 @@ function useCheckoutState() {
     return Number(opt?.price || 0);
   }, [mode, deliveryOptions, selectedDeliveryOptionId]);
 
-  // --- NUEVO: cargar perfil ACTIVO (una vez) para la UI
   useEffect(() => {
     (async () => {
       const p = await getActiveTaxProfile();
@@ -369,7 +380,6 @@ function useCheckoutState() {
     })();
   }, []);
 
-  // --- NUEVO: calcular snapshot para la UI y total pagable con impuestos
   useEffect(() => {
     const toCents = (n: number | undefined | null) => Math.round(((n as number) || 0) * 100);
 
@@ -386,7 +396,6 @@ function useCheckoutState() {
 
     const profile = activeProfile || zeroProfile;
 
-    // mapear líneas del carrito → motor (mismo criterio que buildOrderPayload)
     const linesForTax = cart.items.map((ln: any) => {
       const perUnitTotal = cart.computeLineTotal({ ...ln, quantity: 1 });
       const perUnitExtras = perUnitTotal - ln.basePrice;
@@ -402,7 +411,6 @@ function useCheckoutState() {
       };
     });
 
-    // dirección para jurisdicción
     let addressInfo: any = undefined;
     if (mode === 'delivery') {
       const selectedAddr = addressLabel === 'home' ? homeAddr
@@ -424,7 +432,7 @@ function useCheckoutState() {
 
     const draftInput = {
       currency: profile?.currency ?? 'USD',
-      orderType: mode, // 'dine-in' | 'delivery' | 'pickup'
+      orderType: mode,
       lines: linesForTax,
       customer: {
         taxId: customerTaxId || undefined,
@@ -444,8 +452,6 @@ function useCheckoutState() {
 
     const tipQ = mode === 'delivery' ? 0 : tip;
     const discountQ = promoDiscountGTQ;
-
-    // si delivery va fuera del engine (out_of_scope), lo sumamos aparte
     const deliveryOutsideQ =
       (profile?.delivery?.mode === 'as_line') ? 0 : deliveryFee;
 
@@ -475,13 +481,11 @@ function useCheckoutState() {
     setAddress(src?.line1 ? String(src.line1) : '');
   }
 
-  // --- NUEVO: aplicar descuento de promoción al gran total (visual legacy)
   const grandTotal = useMemo(() => {
     const t = (mode === 'delivery' ? 0 : tip) || 0;
     return subtotal + deliveryFee + t - promoDiscountGTQ;
   }, [subtotal, deliveryFee, tip, mode, promoDiscountGTQ]);
 
-  // --- NUEVO: aplicar/quitar código ---
   const applyPromo = useCallback(async () => {
     setPromoError(null);
     const code = (promoCode || '').trim().toUpperCase();
@@ -502,7 +506,7 @@ function useCheckoutState() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           code,
-          orderType: mode,         // 'dine-in' | 'delivery' | 'pickup'
+          orderType: mode,
           userUid: u?.uid || null,
           lines,
         }),
@@ -545,7 +549,6 @@ function useCheckoutState() {
     const auth = getAuth();
     const u = auth.currentUser;
 
-    // 👇 Bloque de dirección COPIADO del viejo (snapshot + label + notes)
     let orderInfo: any = meta;
     if (mode === 'delivery') {
       const selectedAddr = addressLabel === 'home' ? homeAddr
@@ -574,14 +577,12 @@ function useCheckoutState() {
       };
     }
 
-    // ✅ NUEVO: canal y dispositivo (a prueba de fallos)
     const { orderSource, deviceInfo } = detectOrderSource();
-    (orderInfo as any).orderSource = orderSource; // 'web:mobile' | 'web:desktop' | 'web:unknown'
-    (orderInfo as any).deviceInfo = deviceInfo;   // { os, isMobile, ua, brands[] }
+    (orderInfo as any).orderSource = orderSource;
+    (orderInfo as any).deviceInfo = deviceInfo;
 
     const cleanOrderInfo = undefToNullDeep(orderInfo);
 
-    // --- NUEVO: snapshot de promociones aplicadas ---
     const appliedPromotions = promo ? [{
       promoId: promo.promoId,
       code: promo.code,
@@ -590,9 +591,6 @@ function useCheckoutState() {
       byLine: promo.discountByLine,
     }] : [];
 
-    // =========================
-    // ✅ NUEVO: TAX SNAPSHOT (Fase B/C)
-    // =========================
     const toCents = (n: number | undefined | null) => Math.round(((n as number) || 0) * 100);
 
     const active = await getActiveTaxProfile();
@@ -611,7 +609,6 @@ function useCheckoutState() {
 
     const profile = active || (zeroProfile as any);
 
-    // mapear líneas del carrito → motor
     const linesForTax = cart.items.map((ln: any) => {
       const perUnitTotal = cart.computeLineTotal({ ...ln, quantity: 1 });
       const perUnitExtras = perUnitTotal - ln.basePrice;
@@ -627,10 +624,7 @@ function useCheckoutState() {
       };
     });
 
-    // ✅ orderType con GUION (el engine ya lo entiende en Fase B)
-    const orderTypeForTax = mode; // 'dine-in' | 'delivery' | 'pickup'
-
-    // ✅ delivery como línea gravable opcional (según perfil)
+    const orderTypeForTax = mode;
     const rawDeliveryFeeCents = toCents(mode === 'delivery' ? deliveryFee : 0);
 
     const draftInput = {
@@ -641,12 +635,10 @@ function useCheckoutState() {
         taxId: customerTaxId || undefined,
         name: customerBillingName || customerName || undefined,
       },
-      // Phase B: si el perfil dice "as_line", el engine suma el envío como línea
       deliveryFeeCents:
         (profile?.delivery?.mode === 'as_line' && mode === 'delivery')
           ? toCents(deliveryFee)
           : 0,
-      // Phase C: jurisdicción por dirección de entrega
       deliveryAddressInfo:
         mode === 'delivery'
           ? ((orderInfo as any)?.addressInfo ?? {
@@ -661,7 +653,6 @@ function useCheckoutState() {
 
     const taxSnapshot = calculateTaxSnapshot(draftInput as any, profile as any);
 
-    // delivery/tip/discount en CENTAVOS (evitar doble conteo si va inside-engine)
     const tipCents = toCents(mode === 'delivery' ? 0 : tip);
     const discountCents = promo?.discountTotalCents ?? 0;
 
@@ -678,10 +669,6 @@ function useCheckoutState() {
 
     const grandTotalWithTax = grandTotalWithTaxCents / 100;
 
-    // =========================
-    // FIN TAX SNAPSHOT
-    // =========================
-
     return {
       items: cart.items.map((ln) => ({
         menuItemId: ln.menuItemId,
@@ -693,11 +680,10 @@ function useCheckoutState() {
           groupId: g.groupId,
           groupName: g.groupName,
           type: g.type || 'single',
-          items: g.items.map((it) => ({ id: it.id, name: it.name, priceDelta: it.priceDelta })),
+          items: g.items.map((it: any) => ({ id: it.id, name: it.name, priceDelta: it.priceDelta })),
         })),
         lineTotal: cart.computeLineTotal(ln),
       })),
-      // Mantengo tu total visual actual:
       orderTotal: grandTotal,
       orderInfo: cleanOrderInfo,
       totals: {
@@ -706,28 +692,22 @@ function useCheckoutState() {
         tip: mode === 'delivery' ? 0 : tip,
         discount: promoDiscountGTQ,
         currency: process.env.NEXT_PUBLIC_PAY_CURRENCY || 'USD',
-        // ✅ NUEVO:
         tax: (taxSnapshot?.totals?.taxCents || 0) / 100,
-        grandTotalWithTax, // items (+delivery si fuera de engine) + tip - descuento
+        grandTotalWithTax,
       },
-      // ✅ NUEVO: Totales exactos en centavos
       totalsCents: {
         itemsSubTotalCents: taxSnapshot?.totals?.subTotalCents ?? 0,
         itemsTaxCents: taxSnapshot?.totals?.taxCents ?? 0,
         itemsGrandTotalCents: taxSnapshot?.totals?.grandTotalCents ?? 0,
-        deliveryFeeCents: rawDeliveryFeeCents, // persistimos el valor elegido (independiente de si va in-engine)
+        deliveryFeeCents: rawDeliveryFeeCents,
         tipCents,
         discountCents,
         grandTotalWithTaxCents,
         currency: draftInput.currency,
       },
-      // ✅ NUEVO: Snapshot fiscal completo — NORMALIZADO para Firestore
       taxSnapshot: taxSnapshot ? undefToNullDeep(taxSnapshot) : null,
-
-      // Promos
-      appliedPromotions,                          // <-- NUEVO
-      promotionCode: promo?.code || null,         // <-- NUEVO
-
+      appliedPromotions,
+      promotionCode: promo?.code || null,
       status: 'placed',
       createdAt: serverTimestamp(),
       ...(u ? {
@@ -740,7 +720,6 @@ function useCheckoutState() {
     address, addressLabel, customerName, customerBillingName, customerTaxId,
     deliveryFee, deliveryOptions, grandTotal, homeAddr, mode, notes, officeAddr, phone,
     selectedDeliveryOptionId, subtotal, table, tip, promoDiscountGTQ, promo,
-    // cart.items
   ]);
 
   return {
@@ -749,9 +728,7 @@ function useCheckoutState() {
       homeAddr, officeAddr, addressLabel, deliveryOptions, selectedDeliveryOptionId,
       tip, tipEdited, saving, payMethod, hasDropdown, subtotal, deliveryFee, grandTotal,
       promoCode, promoApplying, promoError, promo,
-      // ✅ NUEVO estado para UI de impuestos
       taxUI,
-      // ✅ NUEVO: mesas disponibles
       availableTables,
       tablesLoading,
     },
@@ -788,20 +765,37 @@ function CheckoutUI(props: {
   } = actions;
 
   const { tt } = useLangTT();
-
-  // CurrencyUpdate: obtener formateador por tenant
   const fmtQ = useFmtQ();
+
+  // ✅ NUEVO: flags desde /paymentProfile/default
+  const { flags: paymentsFlags, loading: paymentsLoading } = usePaymentProfile();
+
+  // Ajustar método si el seleccionado queda desactivado
+  useEffect(() => {
+    if (paymentsLoading) return;
+    if (payMethod === 'paypal' && !paymentsFlags.paypal) {
+      setPayMethod('cash');
+    }
+    if (payMethod === 'cash' && !paymentsFlags.cash && paymentsFlags.paypal) {
+      setPayMethod('paypal');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentsFlags.cash, paymentsFlags.paypal, paymentsLoading]);
+
+  // Submit deshabilitado si el método elegido está desactivado
+  const submitMethodDisabled =
+    (payMethod === 'paypal' && !paymentsFlags.paypal) ||
+    (payMethod === 'cash' && !paymentsFlags.cash);
 
   const disableSubmit =
     saving ||
+    submitMethodDisabled ||
     (mode === 'dine-in' ? !table.trim() :
      mode === 'delivery' ? !(address && phone && selectedDeliveryOptionId) :
      !phone);
 
-  const showTaxLine = !!taxUI && !taxUI.pricesIncludeTax && taxUI.taxQ > 0;
   const grandToShow = (taxUI?.grandPayableQ ?? grandTotal);
 
-  // 🔁 Helper para mapear errores conocidos de promo a i18n sin tocar lógica
   const promoErrorText = promoError === 'Enter the coupon.'
     ? tt('checkout.promo.error.enter', 'Enter the coupon.')
     : promoError === 'Invalid coupon.'
@@ -833,8 +827,6 @@ function CheckoutUI(props: {
                 <>
                   <div className="mb-3">
                     <label className="form-label">{tt('checkout.table.label', 'Table')}</label>
-
-                    {/* ✅ Dropdown SOLO con mesas disponibles */}
                     {tablesLoading ? (
                       <div className="form-text">{tt('checkout.table.loading', 'Loading tables…')}</div>
                     ) : availableTables.length === 0 ? (
@@ -953,7 +945,7 @@ function CheckoutUI(props: {
                 </>
               )}
 
-              {/* --- NUEVO: Código de promoción --- */}
+              {/* --- Código de promoción --- */}
               <div className="mb-3">
                 <label className="form-label fw-semibold">{tt('checkout.promo.label', 'Promotion coupon')}</label>
                 <div className="d-flex gap-2">
@@ -985,22 +977,39 @@ function CheckoutUI(props: {
               {/* MÉTODO DE PAGO */}
               <div className="mb-3">
                 <label className="form-label fw-semibold">{tt('checkout.payment.method', 'Payment Method')}</label>
-                <div className="d-flex flex-column gap-2">
-                  <label className="d-flex align-items-center gap-2">
-                    <input type="radio" name="pm" className="form-check-input" checked={payMethod==='cash'} onChange={() => setPayMethod('cash')} />
-                    <span>{tt('checkout.payment.cash', 'Cash')}</span>
-                  </label>
 
-                  <label className="d-flex align-items-center gap-2">
-                    <input type="radio" name="pm" className="form-check-input" checked={payMethod==='paypal'} onChange={() => setPayMethod('paypal')} />
-                    <span>{tt('checkout.payment.paypal', 'PayPal')}</span>
-                    {paypalActiveHint && <span className="small text-muted ms-2">{paypalActiveHint}</span>}
-                  </label>
-                </div>
+                {/* Mientras carga el perfil, evitamos flicker */}
+                {paymentsLoading ? (
+                  <div className="form-text">{tt('common.loading', 'Loading…')}</div>
+                ) : (
+                  <div className="d-flex flex-column gap-2">
+                    {paymentsFlags.cash && (
+                      <label className="d-flex align-items-center gap-2">
+                        <input type="radio" name="pm" className="form-check-input" checked={payMethod==='cash'} onChange={() => setPayMethod('cash')} />
+                        <span>{tt('checkout.payment.cash', 'Cash')}</span>
+                      </label>
+                    )}
+
+                    {paymentsFlags.paypal && (
+                      <label className="d-flex align-items-center gap-2">
+                        <input type="radio" name="pm" className="form-check-input" checked={payMethod==='paypal'} onChange={() => setPayMethod('paypal')} />
+                        <span>{tt('checkout.payment.paypal', 'PayPal')}</span>
+                        {paypalActiveHint && <span className="small text-muted ms-2">{paypalActiveHint}</span>}
+                      </label>
+                    )}
+
+                    {/* Si ninguna está habilitada */}
+                    {!paymentsFlags.cash && !paymentsFlags.paypal && (
+                      <div className="alert alert-warning py-2 mb-0">
+                        {tt('checkout.payment.none', 'No payment methods available.')}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* PayPal Buttons */}
-              {payMethod === 'paypal' && (
+              {payMethod === 'paypal' && paymentsFlags.paypal && (
                 <div className="mb-3">
                   <div id="paypal-buttons-container" />
                 </div>
@@ -1034,7 +1043,6 @@ function CheckoutUI(props: {
               <div className="fw-semibold">{tt('checkout.summary.title', 'Summary')}</div>
             </div>
             <div className="card-body">
-              {/* Resumen de entrega */}
               {mode === 'delivery' && (
                 <div className="border rounded p-2 mb-3 bg-light">
                   <div className="small text-muted">{tt('checkout.summary.deliver.title', 'Deliver')}</div>
@@ -1070,7 +1078,6 @@ function CheckoutUI(props: {
                 </div>
               )}
 
-              {/* ⬇️ LÍNEAS DEL CARRITO (nuevo) */}
               <div className="d-flex flex-column gap-3 mb-3">
                 {cart.items.map((ln: any, idx: number) => {
                   const unitExtras = cart.computeLineTotal({ ...ln, quantity: 1 }) - ln.basePrice;
@@ -1111,16 +1118,13 @@ function CheckoutUI(props: {
                   );
                 })}
               </div>
-              {/* ⬆️ LÍNEAS DEL CARRITO (nuevo) */}
               
-              {/* Totales */}
               <div className="mt-3">
                 <div className="d-flex justify-content-between">
                   <div>{tt('checkout.totals.subtotal', 'Subtotal')}</div>
                   <div className="fw-semibold">{fmtQ(subtotal)}</div>
                 </div>
 
-                {/* NUEVO: línea de descuento si hay promo */}
                 {promo && (
                   <div className="d-flex justify-content-between text-success">
                     <div>{tt('checkout.totals.discount', 'Discount ({code})', { code: promo.code })}</div>
@@ -1135,8 +1139,7 @@ function CheckoutUI(props: {
                   </div>
                 )}
 
-                {/* NUEVO: Tax SOLO si el perfil es tax-exclusive */}
-                {showTaxLine && (
+                {!!taxUI && !taxUI.pricesIncludeTax && taxUI.taxQ > 0 && (
                   <div className="d-flex justify-content-between">
                     <div>{tt('checkout.totals.tax', 'Tax')}</div>
                     <div className="fw-semibold">{fmtQ(taxUI?.taxQ || 0)}</div>
@@ -1182,13 +1185,16 @@ function CheckoutCoreNoStripe() {
   const { cart, db, router, buildOrderPayload } = helpers;
   const { tt } = useLangTT();
 
+  // ✅ Ahora desde paymentProfile
+  const { flags: corePayFlags, loading: pfLoading } = usePaymentProfile();
+  const enabledPaypal = corePayFlags.paypal && !pfLoading;
+
   // Efectivo
   const onSubmitCash = async () => {
     const payload = await buildOrderPayload();
     (payload as any).payment = {
       provider: 'cash',
       status: 'pending',
-      // ✅ Usar total con impuestos cuando esté disponible
       amount: (payload as any).totals?.grandTotalWithTax ?? (payload as any).orderTotal,
       currency: (payload as any).totals?.currency || 'USD',
       createdAt: serverTimestamp(),
@@ -1197,7 +1203,6 @@ function CheckoutCoreNoStripe() {
       actions.setSaving(true);
       const ref = await addDoc(collection(db, 'orders'), payload);
 
-      // NUEVO: consumir límite global de la promo (idempotente por orderId)
       if (state.promo?.promoId) {
         try {
           await fetch('/api/promotions/consume', {
@@ -1219,11 +1224,12 @@ function CheckoutCoreNoStripe() {
     }
   };
 
-  // PayPal: carga SDK si hay client id
+  // PayPal: CARGA SDK SOLO si está habilitado por perfil
   const [paypalReady, setPaypalReady] = useState(false);
   const paypalButtonsRef = useRef<any>(null);
 
   useEffect(() => {
+    if (!enabledPaypal) return; // evita cargar el SDK si está desactivado
     if (typeof window === 'undefined') return;
     const cid = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID;
     if (!cid) return;
@@ -1235,11 +1241,12 @@ function CheckoutCoreNoStripe() {
     s.onload = () => setPaypalReady(true);
     s.onerror = () => console.warn('PayPal could not be loaded SDK.');
     document.body.appendChild(s);
-  }, []);
+  }, [enabledPaypal]);
 
   useEffect(() => {
     if (helpers == null) return;
     if (state.payMethod !== 'paypal') return;
+    if (!enabledPaypal) return;
     if (!paypalReady) return;
     const paypal = (window as any).paypal;
     if (!paypal?.Buttons) return;
@@ -1249,7 +1256,6 @@ function CheckoutCoreNoStripe() {
       const el = document.getElementById('paypal-buttons-container');
       if (!el) return;
 
-      // Cierra instancia previa antes de re-render
       if (paypalButtonsRef.current?.close) {
         try { await paypalButtonsRef.current.close(); } catch {}
         paypalButtonsRef.current = null;
@@ -1257,7 +1263,7 @@ function CheckoutCoreNoStripe() {
 
       const btns = paypal.Buttons({
         createOrder: async () => {
-          const draft = await helpers.buildOrderPayload(); // <-- incluye taxSnapshot y grandTotalWithTax
+          const draft = await helpers.buildOrderPayload();
           const res = await fetch('/api/pay/paypal/create-order', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1282,7 +1288,6 @@ function CheckoutCoreNoStripe() {
               throw new Error(j?.error || 'Could not capture PayPal.');
             }
 
-            // NUEVO: intentar leer { orderId } para consumir promo
             let captured: any = null;
             try { captured = await res.json(); } catch {}
             const orderId = captured?.orderId;
@@ -1297,7 +1302,6 @@ function CheckoutCoreNoStripe() {
               } catch {}
             }
 
-            // Cierra el botón ANTES de navegar
             if (paypalButtonsRef.current?.close) {
               try { await paypalButtonsRef.current.close(); } catch {}
               paypalButtonsRef.current = null;
@@ -1331,7 +1335,7 @@ function CheckoutCoreNoStripe() {
         paypalButtonsRef.current = null;
       }
     };
-  }, [state.payMethod, paypalReady, helpers, state.promo]);
+  }, [state.payMethod, paypalReady, helpers, state.promo, enabledPaypal]);
 
   return (
     <CheckoutUI
@@ -1346,7 +1350,6 @@ function CheckoutCoreNoStripe() {
 
 /** ------- Export por defecto (solo efectivo + PayPal) ------- */
 export default function CheckoutCardsPage() {
-  // ✅ Envolvemos el subtree donde se usa useSearchParams con Suspense
   const { tt } = useLangTT();
   return (
     <Suspense fallback={<div className="container py-4">{tt('common.loading', 'Loading…')}</div>}>

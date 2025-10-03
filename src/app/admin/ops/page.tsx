@@ -43,7 +43,6 @@ function useOrdersForOps(
           (String(data?.paymentProvider || '').toLowerCase() === 'paypal' &&
             okPayStatus(data?.paymentStatus));
 
-        // 👇 Resolución robusta de currency
         const currency: string =
           data?.taxSnapshot?.currency ||
           data?.totalsCents?.currency ||
@@ -52,7 +51,6 @@ function useOrdersForOps(
           defaultCurrency ||
           'USD';
 
-        // Totales en centavos si existen
         const totalsCents =
           data?.totalsCents && typeof data.totalsCents === 'object'
             ? {
@@ -80,7 +78,7 @@ function useOrdersForOps(
                       data?.taxSnapshot?.totals?.grandTotalWithTaxCents ??
                       0
                   ) || undefined,
-                currency, // para referencia
+                currency,
               }
             : undefined;
 
@@ -91,7 +89,7 @@ function useOrdersForOps(
           items: Array.isArray(data?.items) ? data.items : [],
           orderTotal: Number(
             data?.orderTotal ?? data?.totals?.grandTotalWithTax ?? 0
-          ), // legado (decimal)
+          ),
           orderInfo: data?.orderInfo,
           createdAt: data?.createdAt,
           updatedAt: data?.updatedAt,
@@ -113,7 +111,6 @@ function useOrdersForOps(
 export default function AdminOpsPage() {
   const db = getFirestore();
 
-  // 🔤 idioma (mismo patrón que Kitchen)
   const { settings } = useTenantSettings();
   const lang = React.useMemo(() => {
     try {
@@ -129,7 +126,6 @@ export default function AdminOpsPage() {
     return s === key ? fallback : s;
   };
 
-  // 👇 Traemos el perfil activo para usar su currency como fallback
   const [activeProfile, setActiveProfile] = useState<TaxProfile | null>(null);
   useEffect(() => {
     (async () => {
@@ -154,10 +150,7 @@ export default function AdminOpsPage() {
     if (filter === 'closed') list = orders.filter((o) => isClosed(o.status || ''));
     if (filter === 'cancelled') list = orders.filter((o) => isCancelled(o.status || ''));
 
-    // Ocultar cerradas por defecto
-    if (filter !== 'closed') {
-      list = list.filter((o) => !isClosed(o.status || ''));
-    }
+    if (filter !== 'closed') list = list.filter((o) => !isClosed(o.status || ''));
 
     if (search.trim()) {
       const s = search.trim().toLowerCase();
@@ -235,14 +228,22 @@ export default function AdminOpsPage() {
               {filtered.map((ord) => (
                 <div className="col-12 col-md-6 col-xl-4" key={ord.id}>
                   <div className="position-relative">
+                    {/* Badge dentro de la tarjeta, alineado al padding y debajo del número */}
                     {(ord as any).paidByPaypal && (
                       <span
-                        className="badge bg-info text-dark position-absolute"
-                        style={{ right: 8, top: 8, zIndex: 2 }}
+                        className="badge bg-info text-dark position-absolute rounded-pill shadow-sm"
+                        style={{
+                          left: 16,       // alinea con padding del card header
+                          top: 54,        // justo debajo del número de orden
+                          zIndex: 2,
+                          border: '1px solid rgba(255,255,255,.8)',
+                          pointerEvents: 'none',
+                        }}
                       >
                         {tt('ops.badge.paypal', 'PayPal')}
                       </span>
                     )}
+
                     <OrderCardOps db={db} order={ord} />
                   </div>
                 </div>

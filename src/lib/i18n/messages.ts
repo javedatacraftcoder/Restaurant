@@ -566,7 +566,7 @@ export const MESSAGES: Record<string, Record<string, string>> = {
     "admin.menu.subcategories.btn.image": "Imagen",
     "admin.menu.subcategories.btn.edit": "Editar",
     "admin.menu.subcategories.btn.delete": "Eliminar",
-    "admin.menu.subcategories.empty": "Sin subcategorías.",
+    "admin.menu.subcategories.empty": "Cargando el menu, porfavor espere.",
     "admin.menu.subcategories.noImg": "Sin img",
     "admin.menu.subcategories.meta.category": "Categoría",
     "admin.menu.subcategories.meta.order": "orden",
@@ -1792,7 +1792,7 @@ export const MESSAGES: Record<string, Record<string, string>> = {
     "menu.category.title": "Categoría",
     "menu.category.back": "Volver",
     "menu.category.noImage": "Sin imagen",
-    "menu.category.empty": "Aún no hay subcategorías en esta categoría.",
+    "menu.category.empty": "Cargando menu, porfavor espere.",
 
     // Cart
     "cart.title": "Tu carrito",
@@ -2456,7 +2456,7 @@ export const MESSAGES: Record<string, Record<string, string>> = {
     "admin.menu.subcategories.btn.image": "Image",
     "admin.menu.subcategories.btn.edit": "Edit",
     "admin.menu.subcategories.btn.delete": "Delete",
-    "admin.menu.subcategories.empty": "No subcategories.",
+    "admin.menu.subcategories.empty": "Loading menu, please wait.",
     "admin.menu.subcategories.noImg": "No img",
     "admin.menu.subcategories.meta.category": "Category",
     "admin.menu.subcategories.meta.order": "order",
@@ -3705,7 +3705,7 @@ export const MESSAGES: Record<string, Record<string, string>> = {
   "menu.category.title": "Category",
   "menu.category.back": "Back",
   "menu.category.noImage": "No image",
-  "menu.category.empty": "There are no subcategories in this category yet.",
+  "menu.category.empty": "Loading menu, please wait.",
 
   // Cart
   "cart.title": "Your Cart",

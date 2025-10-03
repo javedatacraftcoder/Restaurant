@@ -475,10 +475,10 @@ export default function AdminTimeReportsPage() {
 
   function OrderTimeline({ r, minutesMode }: { r: Row; minutesMode: boolean }) {
     const segs = [
-      { key: tt("admin.time.seg.p2k", "Placed→KIP"), ms: r.d_placed_to_kip, color: "#198754" },
+      { key: tt("admin.time.seg.p2k", "Placed→KIP"), ms: r.d_placed_to_kip, color: "#20c997" }, // teal-ish
       { key: tt("admin.time.seg.k2d", "KIP→Done"), ms: r.d_kip_to_done, color: "#0d6efd" },
-      { key: tt("admin.time.seg.d2i", "Done→Inroute"), ms: r.d_done_to_inroute, color: "#ffc107" },
-      { key: tt("admin.time.seg.i2d", "Inroute→Delivered"), ms: r.d_inroute_to_delivered, color: "#dc3545" },
+      { key: tt("admin.time.seg.d2i", "Done→Inroute"), ms: r.d_done_to_inroute, color: "#f59f00" },
+      { key: tt("admin.time.seg.i2d", "Inroute→Delivered"), ms: r.d_inroute_to_delivered, color: "#e03131" },
     ];
     const totalMs = segs.reduce((s, x) => (x.ms ? s + x.ms : s), 0);
     if (!totalMs) {
@@ -486,9 +486,9 @@ export default function AdminTimeReportsPage() {
         <div
           className="w-100"
           style={{
-            height: 10,
+            height: 12,
             background:
-              "repeating-linear-gradient(90deg,#e9ecef,#e9ecef 8px,#f8f9fa 8px,#f8f9fa 16px)",
+              "repeating-linear-gradient(90deg,#eef2f6,#eef2f6 8px,#f8f9fa 8px,#f8f9fa 16px)",
             borderRadius: 8,
           }}
           title={tt("admin.time.timeline.none", "No timeline")}
@@ -498,14 +498,23 @@ export default function AdminTimeReportsPage() {
     return (
       <div className="d-flex align-items-center gap-2">
         <div
-          className="flex-grow-1 d-flex"
-          style={{ height: 12, borderRadius: 8, overflow: "hidden", background: "#e9ecef" }}
+          className="flex-grow-1 d-flex shadow-sm"
+          style={{ height: 14, borderRadius: 10, overflow: "hidden", background: "#e9ecef" }}
         >
           {segs.map((s, idx) => {
-            const w = s.ms ? Math.max(2, Math.round((s.ms / totalMs) * 100)) : 0;
+            const w = s.ms ? Math.max(3, Math.round((s.ms / totalMs) * 100)) : 0;
             if (!s.ms) return null;
             const tooltip = `${s.key}: ${minutesMode ? fmtMin(msToMin(s.ms)) : fmtHMS(s.ms)}`;
-            return <div key={idx} title={tooltip} style={{ width: `${w}%`, background: s.color }} />;
+            return (
+              <div
+                key={idx}
+                title={tooltip}
+                style={{
+                  width: `${w}%`,
+                  background: s.color,
+                }}
+              />
+            );
           })}
         </div>
         <div
@@ -518,10 +527,37 @@ export default function AdminTimeReportsPage() {
     );
   }
 
+  /** Chips bonitos para fechas/hora (presentación únicamente) */
+  function DateChip({ d }: { d: Date | null }) {
+    if (!d) return <span className="badge text-bg-secondary">—</span>;
+    const full = fmtLocal(d); // mm/dd/yyyy HH:MM:SS
+    const [date, time] = full.split(" ");
+    return (
+      <div className="d-inline-flex flex-column align-items-start gap-1">
+        <span className="badge bg-light text-dark border">{date}</span>
+        <span className="text-muted small font-monospace">{time}</span>
+      </div>
+    );
+  }
+
   return (
     <Protected>
       <AdminOnly>
         <main className="container py-4">
+          {/* estilos globales (solo UI) */}
+          <style jsx global>{`
+            .table-sticky thead th {
+              position: sticky;
+              top: 0;
+              z-index: 2;
+              background: #fff;
+              box-shadow: inset 0 -1px 0 rgba(0,0,0,0.06);
+            }
+            .table-tight td, .table-tight th { padding-top: .6rem; padding-bottom: .6rem; }
+            .badge.rounded-pill { font-weight: 600; }
+            .card .card-header { background: #fafbfc; }
+          `}</style>
+
           <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
             <h1 className="h4 mb-0">{tt("admin.time.title", "Operational Time Reports")}</h1>
             <div className="form-check form-switch">
@@ -761,37 +797,53 @@ export default function AdminTimeReportsPage() {
             </div>
             <div className="card-body p-0">
               <div className="table-responsive">
-                <table className="table mb-0 align-middle">
+                <table className="table table-hover table-striped mb-0 align-middle table-tight table-sticky">
                   <thead>
                     <tr>
-                      <th style={{ minWidth: 100 }}>{tt("admin.time.table.order", "Order")}</th>
+                      <th style={{ minWidth: 140 }}>{tt("admin.time.table.order", "Order")}</th>
                       <th>{tt("admin.time.table.placed", "Placed")}</th>
                       <th>{tt("admin.time.table.kip", "K.InProgress")}</th>
                       <th>{tt("admin.time.table.done", "K.Done")}</th>
                       <th>{tt("admin.time.table.inroute", "Inroute")}</th>
                       <th>{tt("admin.time.table.delivered", "Delivered")}</th>
-                      <th className="text-end">{tt("admin.time.table.durations", "Durations")}</th>
+                      <th className="text-end" style={{ minWidth: 380 }}>{tt("admin.time.table.durations", "Durations")}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {rows.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="text-center text-muted">
+                        <td colSpan={7} className="text-center text-muted py-4">
                           {tt("common.nodata", "No data")}
                         </td>
                       </tr>
                     )}
                     {rows.map((r) => {
                       const id = r.orderNumber ? `#${r.orderNumber}` : r.id;
-
+                      const totalMs =
+                        (r.d_placed_to_kip || 0) +
+                        (r.d_kip_to_done || 0) +
+                        (r.d_done_to_inroute || 0) +
+                        (r.d_inroute_to_delivered || 0);
                       return (
                         <tr key={r.id}>
-                          <td className="fw-semibold">{id}</td>
-                          <td>{fmtLocal(r.placedAt)}</td>
-                          <td>{fmtLocal(r.kipAt)}</td>
-                          <td>{fmtLocal(r.doneAt)}</td>
-                          <td>{fmtLocal(r.inrouteAt)}</td>
-                          <td>{fmtLocal(r.deliveredAt)}</td>
+                          <td className="fw-semibold">
+                            <div className="d-flex flex-column">
+                              <span>{id}</span>
+                              <span className="text-muted small">
+                                {tt("admin.time.table.placed", "Placed")} · {fmtLocal(r.placedAt)}
+                              </span>
+                              {totalMs > 0 && (
+                                <span className="badge bg-light text-dark border mt-1">
+                                  {tt("admin.time.timeline.total", "Total")}: {showMinutes ? fmtMin(msToMin(totalMs)) : fmtHMS(totalMs)}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td><DateChip d={r.placedAt} /></td>
+                          <td><DateChip d={r.kipAt} /></td>
+                          <td><DateChip d={r.doneAt} /></td>
+                          <td><DateChip d={r.inrouteAt} /></td>
+                          <td><DateChip d={r.deliveredAt} /></td>
                           <td className="text-end">
                             <div className="d-flex flex-column gap-2">
                               <OrderTimeline r={r} minutesMode={showMinutes} />

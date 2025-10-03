@@ -8,6 +8,9 @@ import "@/lib/firebase/client";
 import { useTenantSettings } from "@/lib/settings/hooks";
 import { writeGeneralSettings } from "@/lib/settings/storage";
 
+// 👉 Imports necesarios SOLO para la sección de pagos
+import { getFirestore, doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+
 // 🔤 i18n
 import { t as translate } from "@/lib/i18n/t";
 
@@ -33,7 +36,7 @@ const LOCALES = [
   { code: "fr-FR", label: "Français (France)" },
 ];
 
-// 🔥 NUEVO: Opciones de idioma (para textos del cliente)
+// 🔥 Opciones de idioma (para textos del cliente)
 const LANGUAGES = [
   { code: "es", label: "Español" },
   { code: "en", label: "English" },
@@ -41,10 +44,24 @@ const LANGUAGES = [
   { code: "fr", label: "Français" },
 ];
 
+// ✅ Métodos de pago por defecto
+const DEFAULT_PAYMENTS: Record<string, boolean> = {
+  cash: true,
+  card: true,
+  paypal: true,
+};
+
+// 🔧 Normaliza lenguaje tipo "en-US" → "en"
+function normalizeLanguageCode(value?: string): "es" | "en" | "pt" | "fr" {
+  const base = String(value || "").split("-")[0].toLowerCase();
+  if (base === "en" || base === "es" || base === "pt" || base === "fr") return base as any;
+  return "es";
+}
+
 export default function AdminSettingsPage() {
   const { settings, loading, error, fmtCurrency, reload } = useTenantSettings();
 
-  // 🔤 idioma actual (como en Kitchen/Ops: localStorage -> settings.language)
+  // 🔤 idioma actual usado para traducir labels (no afecta el valor del select)
   const lang = useMemo(() => {
     try {
       if (typeof window !== "undefined") {
@@ -62,16 +79,105 @@ export default function AdminSettingsPage() {
 
   const [currency, setCurrency] = useState<string>("USD");
   const [locale, setLocale] = useState<string>("en-US");
-  const [uiLanguage, setUiLanguage] = useState<string>("es"); // (estado controlado)
+  const [uiLanguage, setUiLanguage] = useState<"es" | "en" | "pt" | "fr">("es"); // controlado
+
+  // ===========================
+  //   SECCIÓN DE PAGOS (NUEVA)
+  // ===========================
+  const db = getFirestore();
+  const [payments, setPayments] = useState<Record<string, boolean>>(DEFAULT_PAYMENTS);
+  const [paymentsLoading, setPaymentsLoading] = useState<boolean>(true);
+  const [paymentsSaving, setPaymentsSaving] = useState<boolean>(false);
+  const [paymentsSaved, setPaymentsSaved] = useState<null | "ok" | "err">(null);
+
+  // Cargar paymentProfile desde /paymentProfile/default
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setPaymentsLoading(true);
+      setPaymentsSaved(null);
+      try {
+        const ref = doc(db, "paymentProfile", "default");
+        const snap = await getDoc(ref);
+        if (cancelled) return;
+        if (snap.exists()) {
+          const data = snap.data() as any;
+          const merged = {
+            ...DEFAULT_PAYMENTS,
+            cash: typeof data.cash === "boolean" ? data.cash : DEFAULT_PAYMENTS.cash,
+            card: typeof data.card === "boolean" ? data.card : DEFAULT_PAYMENTS.card,
+            paypal: typeof data.paypal === "boolean" ? data.paypal : DEFAULT_PAYMENTS.paypal,
+          };
+          setPayments(merged);
+        } else {
+          setPayments({ ...DEFAULT_PAYMENTS });
+        }
+      } catch (e) {
+        console.error("load paymentProfile error:", e);
+        setPayments({ ...DEFAULT_PAYMENTS });
+      } finally {
+        if (!cancelled) setPaymentsLoading(false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [db]);
+
+  // Guardar paymentProfile en /paymentProfile/default
+  async function onSavePayments(e?: React.FormEvent) {
+    if (e) e.preventDefault();
+    setPaymentsSaving(true);
+    setPaymentsSaved(null);
+    try {
+      const ref = doc(db, "paymentProfile", "default");
+      await setDoc(
+        ref,
+        {
+          cash: !!payments.cash,
+          card: !!payments.card,
+          paypal: !!payments.paypal,
+          updatedAt: serverTimestamp(),
+          createdAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      setPaymentsSaved("ok");
+    } catch (err) {
+      console.error("save paymentProfile error:", err);
+      setPaymentsSaved("err");
+    } finally {
+      setPaymentsSaving(false);
+    }
+  }
+
+  // ===========================
+  //   FIN SECCIÓN DE PAGOS
+  // ===========================
 
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<null | "ok" | "err">(null);
 
+  // Cargar settings generales y **reflejar idioma real** en el select
   useEffect(() => {
+    // Siempre que lleguen settings, sincronizamos los estados visibles
     if (settings) {
       setCurrency(settings.currency || "USD");
       setLocale(settings.currencyLocale || "en-US");
-      setUiLanguage((settings as any).language || "es");
+
+      // 1) Preferimos lo que viene de Firestore
+      let fromFS = normalizeLanguageCode((settings as any).language);
+
+      // 2) Si Firestore no trae nada usable, usamos localStorage como fallback
+      if (!fromFS) {
+        try {
+          if (typeof window !== "undefined") {
+            const ls = localStorage.getItem("tenant.language") || "";
+            fromFS = normalizeLanguageCode(ls);
+          }
+        } catch {}
+      }
+
+      setUiLanguage(fromFS || "es"); // asegura valor válido del dropdown
     }
   }, [settings]);
 
@@ -85,8 +191,10 @@ export default function AdminSettingsPage() {
       await writeGeneralSettings({
         currency,
         currencyLocale: locale,
-        language: uiLanguage,
+        language: uiLanguage, // guardamos código base normalizado (es|en|pt|fr)
       } as any);
+
+      // Mantén UI coherente en el cliente
       if (typeof window !== "undefined") localStorage.setItem("tenant.language", uiLanguage);
 
       await reload();
@@ -115,77 +223,167 @@ export default function AdminSettingsPage() {
           {error && <div className="alert alert-danger">{tt("admin.settings.errorPrefix", "Error:")} {error}</div>}
 
           {!loading && (
-            <form className="card p-3 shadow-sm" onSubmit={onSave}>
-              <div className="row gy-3">
-                {/* Currency */}
-                <div className="col-12 col-md-4">
-                  <label className="form-label fw-semibold">{tt("admin.settings.currency.label", "Currency (ISO)")}</label>
-                  <select
-                    className="form-select"
-                    value={currency}
-                    onChange={(e) => setCurrency(e.target.value)}
-                  >
-                    {CURRENCIES.map((c) => (
-                      <option key={c.code} value={c.code}>{c.label}</option>
-                    ))}
-                  </select>
-                  <div className="form-text">
-                    {tt("admin.settings.currency.help", "Affects symbol and money rules. Ex.:")} {fmtCurrency(1500)}
+            <>
+              {/* Form de settings generales (SIN pagos) */}
+              <form className="card p-3 shadow-sm mb-4" onSubmit={onSave}>
+                <div className="row gy-3">
+                  {/* Currency */}
+                  <div className="col-12 col-md-4">
+                    <label className="form-label fw-semibold">{tt("admin.settings.currency.label", "Currency (ISO)")}</label>
+                    <select
+                      className="form-select"
+                      value={currency}
+                      onChange={(e) => setCurrency(e.target.value)}
+                    >
+                      {CURRENCIES.map((c) => (
+                        <option key={c.code} value={c.code}>{c.label}</option>
+                      ))}
+                    </select>
+                    <div className="form-text">
+                      {tt("admin.settings.currency.help", "Affects symbol and money rules. Ex.:")} {fmtCurrency(1500)}
+                    </div>
+                  </div>
+
+                  {/* Locale */}
+                  <div className="col-12 col-md-4">
+                    <label className="form-label fw-semibold">{tt("admin.settings.locale.label", "Locale")}</label>
+                    <select
+                      className="form-select"
+                      value={locale}
+                      onChange={(e) => setLocale(e.target.value)}
+                    >
+                      {LOCALES.map((l) => (
+                        <option key={l.code} value={l.code}>{l.label}</option>
+                      ))}
+                    </select>
+                    <div className="form-text">
+                      {tt("admin.settings.locale.help.prefix", "Affects separators, order and format. Ex.:")}{" "}
+                      {new Intl.NumberFormat(locale, { style: "currency", currency }).format(1500)}
+                    </div>
+                  </div>
+
+                  {/* Language */}
+                  <div className="col-12 col-md-4">
+                    <label className="form-label fw-semibold">{tt("admin.settings.language.label", "Language (customer area)")}</label>
+                    <select
+                      className="form-select"
+                      value={uiLanguage}
+                      onChange={(e) => setUiLanguage(normalizeLanguageCode(e.target.value))}
+                    >
+                      {LANGUAGES.map((l) => (
+                        <option key={l.code} value={l.code}>{l.label}</option>
+                      ))}
+                    </select>
+                    <div className="form-text">
+                      {tt("admin.settings.language.help", "Defines the interface language customers will see.")}
+                    </div>
                   </div>
                 </div>
 
-                {/* Locale */}
-                <div className="col-12 col-md-4">
-                  <label className="form-label fw-semibold">{tt("admin.settings.locale.label", "Locale")}</label>
-                  <select
-                    className="form-select"
-                    value={locale}
-                    onChange={(e) => setLocale(e.target.value)}
-                  >
-                    {LOCALES.map((l) => (
-                      <option key={l.code} value={l.code}>{l.label}</option>
-                    ))}
-                  </select>
-                  <div className="form-text">
-                    {tt("admin.settings.locale.help.prefix", "Affects separators, order and format. Ex.:")}{" "}
-                    {new Intl.NumberFormat(locale, { style: "currency", currency }).format(1500)}
-                  </div>
+                <hr className="my-4" />
+
+                <div className="d-flex align-items-center gap-3">
+                  <button className="btn btn-primary" disabled={saving}>
+                    {saving ? tt("admin.settings.btn.saving", "Saving…") : tt("admin.settings.btn.save", "Save changes")}
+                  </button>
+                  {saved === "ok" && <span className="text-success">{tt("admin.settings.saved.ok", "✅ Saved")}</span>}
+                  {saved === "err" && <span className="text-danger">{tt("admin.settings.saved.err", "❌ Error saving")}</span>}
                 </div>
 
-                {/* Language */}
-                <div className="col-12 col-md-4">
-                  <label className="form-label fw-semibold">{tt("admin.settings.language.label", "Language (customer area)")}</label>
-                  <select
-                    className="form-select"
-                    value={uiLanguage}
-                    onChange={(e) => setUiLanguage(e.target.value)}
-                  >
-                    {LANGUAGES.map((l) => (
-                      <option key={l.code} value={l.code}>{l.label}</option>
-                    ))}
-                  </select>
-                  <div className="form-text">
-                    {tt("admin.settings.language.help", "Defines the interface language customers will see.")}
-                  </div>
+                <div className="mt-4">
+                  <span className="badge text-bg-light">
+                    {tt("admin.settings.preview.currency", "Currency preview:")} <strong>{example}</strong>
+                  </span>
                 </div>
-              </div>
+              </form>
 
-              <hr className="my-4" />
+              {/* ===========================
+                  SECCIÓN: PAYMENTS (paymentProfile)
+                 =========================== */}
+              <form className="card p-3 shadow-sm" onSubmit={onSavePayments}>
+                <fieldset disabled={paymentsLoading || paymentsSaving}>
+                  <legend className="h6 mb-3">{tt("admin.settings.payments.title", "Payments")}</legend>
 
-              <div className="d-flex align-items-center gap-3">
-                <button className="btn btn-primary" disabled={saving}>
-                  {saving ? tt("admin.settings.btn.saving", "Saving…") : tt("admin.settings.btn.save", "Save changes")}
-                </button>
-                {saved === "ok" && <span className="text-success">{tt("admin.settings.saved.ok", "✅ Saved")}</span>}
-                {saved === "err" && <span className="text-danger">{tt("admin.settings.saved.err", "❌ Error saving")}</span>}
-              </div>
+                  {paymentsLoading && (
+                    <div className="alert alert-info py-2 mb-3">
+                      {tt("admin.settings.payments.loading", "Loading payment profile…")}
+                    </div>
+                  )}
 
-              <div className="mt-4">
-                <span className="badge text-bg-light">
-                  {tt("admin.settings.preview.currency", "Currency preview:")} <strong>{example}</strong>
-                </span>
-              </div>
-            </form>
+                  <div className="row gy-2">
+                    {/* Cash */}
+                    <div className="col-12 col-md-4">
+                      <div className="form-check form-switch">
+                        <input
+                          id="pay-cash"
+                          className="form-check-input"
+                          type="checkbox"
+                          checked={!!payments.cash}
+                          onChange={(e) => setPayments((p) => ({ ...p, cash: e.target.checked }))}
+                        />
+                        <label className="form-check-label" htmlFor="pay-cash">
+                          {tt("admin.settings.payments.cash", "Cash")}
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Card */}
+                    <div className="col-12 col-md-4">
+                      <div className="form-check form-switch">
+                        <input
+                          id="pay-card"
+                          className="form-check-input"
+                          type="checkbox"
+                          checked={!!payments.card}
+                          onChange={(e) => setPayments((p) => ({ ...p, card: e.target.checked }))}
+                        />
+                        <label className="form-check-label" htmlFor="pay-card">
+                          {tt("admin.settings.payments.card", "Credit/Debit Card")}
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* PayPal */}
+                    <div className="col-12 col-md-4">
+                      <div className="form-check form-switch">
+                        <input
+                          id="pay-paypal"
+                          className="form-check-input"
+                          type="checkbox"
+                          checked={!!payments.paypal}
+                          onChange={(e) => setPayments((p) => ({ ...p, paypal: e.target.checked }))}
+                        />
+                        <label className="form-check-label" htmlFor="pay-paypal">
+                          {tt("admin.settings.payments.paypal", "PayPal")}
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="form-text mt-2 mb-3">
+                    {tt(
+                      "admin.settings.payments.help",
+                      "Toggle which payment methods are shown at checkout. Saved in /paymentProfile/default."
+                    )}
+                  </div>
+
+                  <div className="d-flex align-items-center gap-3">
+                    <button className="btn btn-outline-primary" type="submit">
+                      {paymentsSaving ? tt("admin.settings.btn.saving", "Saving…") : tt("admin.settings.payments.save", "Save payments")}
+                    </button>
+                    {paymentsSaved === "ok" && (
+                      <span className="text-success">{tt("admin.settings.saved.ok", "✅ Saved")}</span>
+                    )}
+                    {paymentsSaved === "err" && (
+                      <span className="text-danger">{tt("admin.settings.saved.err", "❌ Error saving")}</span>
+                    )}
+                  </div>
+                </fieldset>
+              </form>
+              {/* ===========================
+                  FIN SECCIÓN: PAYMENTS
+                 =========================== */}
+            </>
           )}
         </main>
       </AdminOnly>

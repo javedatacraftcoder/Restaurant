@@ -4,6 +4,8 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/firebase/admin";
 import { getUserFromRequest } from "@/lib/server/auth";
+// ✅ NUEVO: verificación opcional
+import { verifyTurnstile } from "@/lib/security/turnstile";
 
 type Addr = {
   line1?: string;
@@ -60,7 +62,7 @@ export async function GET(req: NextRequest) {
     const snap = await ref.get();
 
     if (!snap.exists) {
-      // Crear doc inicial (sin cambios: billing es opcional)
+      // Crear doc inicial
       const initial: CustomerDoc = {
         uid,
         email: user.email ?? null,
@@ -89,6 +91,13 @@ export async function PUT(req: NextRequest) {
   try {
     const user = await getUserFromRequest(req);
     if (!user) return json({ error: "Unauthorized" }, 401);
+
+    // ✅ NUEVO: verificación Turnstile opcional (solo si mandan token)
+    const tokenFromHeader = req.headers.get("x-turnstile-token") || undefined;
+    if (tokenFromHeader) {
+      const ok = await verifyTurnstile(tokenFromHeader);
+      if (!ok) return json({ error: "Captcha verification failed" }, 400);
+    }
 
     const uid = user.uid;
     const body = await req.json().catch(() => ({} as any));

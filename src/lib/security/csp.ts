@@ -1,5 +1,3 @@
-// src/lib/security/csp.ts
-
 /**
  * Genera el valor del header Content-Security-Policy.
  * - En dev agrega localhost/127.0.0.1 y WS para emuladores/hmr.
@@ -16,12 +14,11 @@ export function buildCSP({ isDev = false }: { isDev?: boolean } = {}) {
     "https://*.googleapis.com",
     "https://*.firebaseio.com",
     "wss://*.firebaseio.com",
-    "https://www.youtube.com," // (se conserva exactamente como estaba)
+    "https://www.youtube.com" // ✅ corregido: antes tenía una coma dentro de la cadena
   ];
 
   // ➕ AÑADIDOS (no destructivo): orígenes correctos para embeds y APIs de video
   connectSrc.push(
-    "https://www.youtube.com",
     "https://www.youtube-nocookie.com",
     "https://player.vimeo.com"
   );
@@ -35,24 +32,37 @@ export function buildCSP({ isDev = false }: { isDev?: boolean } = {}) {
     );
   }
 
+  // Construimos script-src (base + turnstile)
+  const scriptSrc = [
+    "'self'",
+    "'unsafe-inline'",
+    "'unsafe-eval'",
+    "https://www.gstatic.com",
+    "https://www.googletagmanager.com",
+    "https://challenges.cloudflare.com",
+  ].join(" ");
+
   const directives = [
     `default-src 'self'`,
     `base-uri 'self'`,
     // ⬇️ se mantiene tu línea original y se agregan hosts de miniaturas YouTube/Vimeo
     `img-src 'self' data: https://*.gstatic.com https://*.googleapis.com https://i.ytimg.com https://i.vimeocdn.com`,
     // Nota: 'unsafe-inline' y 'unsafe-eval' facilitan dev. En prod, intenta remover 'unsafe-eval'.
-    // 👇 AGREGADO Turnstile: https://challenges.cloudflare.com
-    `script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com https://www.googletagmanager.com https://challenges.cloudflare.com`,
+    `script-src ${scriptSrc}`,
+    // ✅ nuevo: algunos navegadores requieren script-src-elem explícito
+    `script-src-elem ${scriptSrc}`,
     `style-src 'self' 'unsafe-inline'`,
     `connect-src ${connectSrc.join(" ")}`,
-    // 👇 AGREGADO Turnstile en frame-src
-    // ➕ AÑADIDOS (no destructivo): YouTube, YouTube-nocookie y Vimeo
+    // 👇 AGREGADO Turnstile en frame-src + YouTube/Vimeo
     `frame-src https://*.firebaseapp.com https://*.google.com https://*.gstatic.com https://challenges.cloudflare.com https://www.youtube.com https://www.youtube-nocookie.com https://player.vimeo.com`,
+    // ✅ nuevo: child-src espeja frame-src para compatibilidad
+    `child-src https://*.firebaseapp.com https://*.google.com https://*.gstatic.com https://challenges.cloudflare.com https://www.youtube.com https://www.youtube-nocookie.com https://player.vimeo.com`,
     `font-src 'self' data:`,
     `form-action 'self'`,
+    // (tu csp original tenía 'frame-ancestors self' aquí; lo conservamos)
     `frame-ancestors 'self'`,
-
-    // ➕ NUEVO (recomendado para reproducir MP4 desde Firebase Storage)
+    // ➕ NUEVO (recomendado para workers/retos y para reproducir MP4 desde Firebase Storage)
+    `worker-src 'self' blob:`,
     `media-src 'self' blob: https://firebasestorage.googleapis.com`,
   ];
 

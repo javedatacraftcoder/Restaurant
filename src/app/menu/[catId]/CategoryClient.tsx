@@ -1,5 +1,3 @@
-// src/app/menu/[catId]/CategroyClient.tsx
-
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -11,6 +9,7 @@ import {
   onSnapshot,
   getDoc,
   doc,
+  orderBy,
 } from "firebase/firestore";
 import Image from "next/image";
 import Link from "next/link";
@@ -57,10 +56,16 @@ export default function CategoryClient({ catId }: { catId: string }) {
       const snap = await getDoc(doc(db, "categories", catId));
       if (snap.exists()) setCategory({ id: snap.id, ...(snap.data() as any) });
 
-      const q = query(collection(db, "subcategories"), where("categoryId", "==", catId));
-      const unsub = onSnapshot(q, (s) => {
+      // ⚡️ Ordenar en servidor por sortOrder (si existe índice compuesto con where+orderBy, mejor)
+      // Mantiene misma lógica de datos, solo quita el sort manual.
+      const qSub = query(
+        collection(db, "subcategories"),
+        where("categoryId", "==", catId),
+        orderBy("sortOrder", "asc")
+      );
+
+      const unsub = onSnapshot(qSub, (s) => {
         const rows = s.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
-        rows.sort((a, b) => Number(a.sortOrder ?? 0) - Number(b.sortOrder ?? 0));
         setSubcats(rows);
       });
       unsubList.push(unsub);
@@ -77,7 +82,7 @@ export default function CategoryClient({ catId }: { catId: string }) {
       </div>
 
       <div className="row g-4">
-        {subcats.map((sub) => (
+        {subcats.map((sub, i) => (
           <div className="col-12 col-sm-6 col-lg-3" key={sub.id}>
             <Link href={`/menu/${catId}/${sub.id}`} className="text-decoration-none">
               <div className="card border-0 shadow-sm h-100 position-relative">
@@ -89,6 +94,8 @@ export default function CategoryClient({ catId }: { catId: string }) {
                       fill
                       sizes="(max-width: 576px) 100vw, (max-width: 992px) 50vw, 25vw"
                       className="object-fit-cover"
+                      // prioridad solo a la primera imagen en grid (micro-perf percibida)
+                      priority={i < 1}
                     />
                   ) : (
                     <div className="d-flex align-items-center justify-content-center bg-light text-muted">

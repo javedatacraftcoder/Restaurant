@@ -1,7 +1,7 @@
 // src/app/account/page.tsx
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 import { auth } from "@/lib/firebase/client";
 import { useRouter } from "next/navigation";
@@ -11,21 +11,25 @@ import { useAuth } from "@/app/providers";
 import { t as translate } from "@/lib/i18n/t";
 import { useTenantSettings } from "@/lib/settings/hooks";
 
+// ✅ Turnstile (mismo patrón que admin/ai-studio)
+import TurnstileWidget, { TurnstileWidgetHandle } from "@/components/TurnstileWidget";
+const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "";
+
 export default function AccountsRegisterPage() {
   const router = useRouter();
   const { user, loading } = useAuth();
 
-  // idioma actual + helper
+  // ===== Idioma estable: inicializa con settings (SSR) y sincroniza localStorage tras mount =====
   const { settings } = useTenantSettings();
-  const lang = useMemo(() => {
+  const initialLang = (settings as any)?.language;
+  const [lang, setLang] = useState<string | undefined>(initialLang);
+  useEffect(() => {
     try {
-      if (typeof window !== "undefined") {
-        const ls = localStorage.getItem("tenant.language");
-        if (ls) return ls;
-      }
+      const ls = localStorage.getItem("tenant.language");
+      if (ls && ls !== initialLang) setLang(ls);
     } catch {}
-    return (settings as any)?.language;
-  }, [settings]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
     const s = translate(lang, key, vars);
     return s === key ? fallback : s;
@@ -43,9 +47,29 @@ export default function AccountsRegisterPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // ✅ CAPTCHA (idéntico enfoque que admin/ai-studio)
+  const [captchaToken, setCaptchaToken] = useState<string>("");
+  const tRef = useRef<TurnstileWidgetHandle | null>(null);
+
   useEffect(() => {
-    if (!loading && user) router.replace("/");
+    if (!loading && user) router.replace("/app");
   }, [loading, user, router]);
+
+  // === Helper: obtener token fresco (reset + polling corto) ===
+  async function getFreshCaptchaToken(maxMs = 2500): Promise<string> {
+    const started = Date.now();
+    // intenta leer el token actual del widget
+    let token = tRef.current?.getToken() || "";
+    if (token) return token;
+
+    // resetea y espera a que emita un token
+    tRef.current?.reset();
+    while (!token && Date.now() - started < maxMs) {
+      await new Promise((r) => setTimeout(r, 200));
+      token = tRef.current?.getToken() || "";
+    }
+    return token;
+  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -72,6 +96,17 @@ export default function AccountsRegisterPage() {
       return;
     }
 
+    // ✅ Exigir token Turnstile (como en admin/ai-studio)
+    let token = await getFreshCaptchaToken();
+    if (!token) {
+      tRef.current?.reset();
+      token = await getFreshCaptchaToken();
+    }
+    if (!token) {
+      setErr(tt("account.err.captcha", "Please complete the CAPTCHA to continue."));
+      return;
+    }
+
     setBusy(true);
     try {
       // 1) Create email+password account
@@ -83,7 +118,7 @@ export default function AccountsRegisterPage() {
       // 3) Force-refresh ID token
       const idToken = await cred.user.getIdToken(true);
 
-      // 4) Initialize customers/{uid} (stores AUTH email server-side)
+      // 4) Initialize customers/{uid}
       try {
         await fetch("/api/customers/me", {
           method: "GET",
@@ -92,13 +127,14 @@ export default function AccountsRegisterPage() {
         });
       } catch {}
 
-      // 5) Save profile fields & marketing preference
+      // 5) Save profile fields & marketing preference (manda token Turnstile para verificación server-side)
       try {
         await fetch("/api/customers/me", {
           method: "PUT",
           headers: {
             Authorization: `Bearer ${idToken}`,
             "content-type": "application/json",
+            "x-turnstile-token": token, // si tu backend espera x-captcha-token, cámbialo aquí
           },
           body: JSON.stringify({
             displayName: fullName.trim(),
@@ -119,9 +155,10 @@ export default function AccountsRegisterPage() {
       } catch {}
 
       // 7) Redirect
-      router.replace("/");
+      router.replace("/app");
     } catch (e: any) {
       setErr(tt("account.err.createFail", "The account could not be created. Please try again."));
+      try { tRef.current?.reset(); } catch {}
     } finally {
       setBusy(false);
     }
@@ -225,6 +262,17 @@ export default function AccountsRegisterPage() {
         <p className="text-muted small mb-3">
           {tt("account.optin.note", "You can unsubscribe at any time using the links in our emails.")}
         </p>
+
+        {/* ✅ CAPTCHA (idéntico a admin: widget + ref + onToken) */}
+        <div className="mb-3">
+          {TURNSTILE_SITE_KEY ? (
+            <TurnstileWidget ref={tRef} siteKey={TURNSTILE_SITE_KEY} onToken={setCaptchaToken} />
+          ) : (
+            <div className="alert alert-warning py-2">
+              {tt("admin.aistudio.turnstileMissing", "Missing")} <code>NEXT_PUBLIC_TURNSTILE_SITE_KEY</code> {tt("admin.aistudio.envVar", "env var.")}
+            </div>
+          )}
+        </div>
 
         <button className="btn btn-success w-100" disabled={busy}>
           {busy ? tt("account.submit.creating", "Creating...") : tt("account.submit.create", "Create account")}

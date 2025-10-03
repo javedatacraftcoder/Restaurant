@@ -66,6 +66,8 @@ type OrderDoc = {
     discount?: number;
     deliveryFee?: number;
     grandTotalWithTax?: number;
+    /** opcional en algunos pipelines */
+    pricesIncludeTax?: boolean;
   } | null;
   totalsCents?: {
     currency?: string;
@@ -76,6 +78,10 @@ type OrderDoc = {
     discountCents?: number;
     deliveryFeeCents?: number;
   } | null;
+  /** en algunos pipelines puede venir */
+  taxProfile?: { pricesIncludeTax?: boolean } | null;
+  taxSnapshot?: { pricesIncludeTax?: boolean } | null;
+
   invoiceNumber?: string | null;
   invoiceDate?: FirestoreTS;
 };
@@ -103,7 +109,6 @@ function safeNum(n: any): number {
 }
 
 function sumLine(ln: OrderItem): number {
-  // Usa lineTotal si viene; sino calcula: (base + addons + options) * qty
   if (typeof ln.lineTotal === "number") return ln.lineTotal;
   const qty = safeNum(ln.quantity || 1);
   const base = safeNum(ln.basePrice);
@@ -163,6 +168,21 @@ function pickAmount(
   return undefined;
 }
 
+/** 🔎 Detecta si los precios ya incluyen impuestos (pricesIncludeTax) */
+function detectPricesIncludeTax(order?: OrderDoc): boolean {
+  if (!order) return true; // ✅ por defecto NO sumar impuesto
+
+  // 1) Señales explícitas (las más confiables)
+  const explicit =
+    order.totals?.pricesIncludeTax ??
+    order.taxProfile?.pricesIncludeTax ??
+    order.taxSnapshot?.pricesIncludeTax;
+  if (typeof explicit === "boolean") return explicit;
+
+  // 2) Fallback seguro: asumir que SÍ incluyen (evita sumar doble)
+  return true;
+}
+
 // 🔁 usa siempre getFreshSubtotal si hay items; solo usa stored total si NO hay items
 function computeGrandTotal(order?: OrderDoc): number | undefined {
   if (!order) return undefined;
@@ -172,7 +192,10 @@ function computeGrandTotal(order?: OrderDoc): number | undefined {
   if (!hasItems && typeof storedTotal === "number") return storedTotal;
 
   const sub = getFreshSubtotal(order);
-  const tax = pickAmount(order, "tax") ?? 0;
+  const includeTaxInPrice = detectPricesIncludeTax(order);
+
+  // Si los precios incluyen impuesto, NO lo sumamos aparte.
+  const tax = includeTaxInPrice ? 0 : (pickAmount(order, "tax") ?? 0);
   const tip = pickAmount(order, "tip") ?? 0;
   const fee = pickAmount(order, "deliveryFee") ?? 0;
   const disc = pickAmount(order, "discount") ?? 0;
@@ -203,13 +226,12 @@ const STATUS_BADGE: Record<string, "secondary" | "warning" | "success" | "primar
 const IN_FILTER_MAX = 30;
 
 // 👉 URL base a donde quieres mandar al mesero al “Pick”
-//    Si prefieres otra (por ejemplo /app/menu), cámbiala aquí:
 const PICK_TARGET_BASE = "/checkout-cards?type=dine-in&table=";
 
 // =================== Page ===================
 export default function WaiterPage() {
   const db = useMemo(() => getFirestore(), []);
-  const { user } = useAuth(); // solo usamos user para saveNumTables
+  const { user } = useAuth();
   const [numTables, setNumTables] = useState<number>(12);
   const [loadingSettings, setLoadingSettings] = useState(true);
 
@@ -270,17 +292,14 @@ export default function WaiterPage() {
       { merge: true }
     );
     setNumTables(safe);
-    // Re-arm listeners with new table set
     armOrderListeners(safe);
   }
 
   // ------------- Live Orders per Table -------------
   useEffect(() => {
-    // First arm after settings load
     if (!loadingSettings) {
       armOrderListeners(numTables);
     }
-    // cleanup on unmount
     return () => {
       unsubRef.current.forEach((u) => u && u());
       unsubRef.current = [];
@@ -289,24 +308,20 @@ export default function WaiterPage() {
   }, [loadingSettings]);
 
   function armOrderListeners(count: number) {
-    // cleanup old
     unsubRef.current.forEach((u) => u && u());
     unsubRef.current = [];
 
     const allTables = Array.from({ length: count }, (_, i) => String(i + 1));
 
-    // chunk tables for "in" (≤30)
     const chunks: string[][] = [];
     for (let i = 0; i < allTables.length; i += IN_FILTER_MAX) {
       chunks.push(allTables.slice(i, i + IN_FILTER_MAX));
     }
 
-    // Prime state: todas vacías
     const nextState: Record<string, OrderDoc | undefined> = {};
     allTables.forEach((t) => (nextState[t] = undefined));
     setActiveByTable(nextState);
 
-    // Una query por estado × chunk de mesas (evita disyunciones > 30)
     OPEN_STATUSES.forEach((st) => {
       chunks.forEach((tableChunk) => {
         const qRef = query(
@@ -325,7 +340,6 @@ export default function WaiterPage() {
             const tbl = String(data?.orderInfo?.table ?? "");
             if (!tbl) continue;
 
-            // Usa updatedAt || createdAt para determinar el más reciente
             const incoming: OrderDoc = { id: d.id, ...data } as OrderDoc;
             const ex = draft[tbl];
             if (!ex) {
@@ -417,11 +431,11 @@ export default function WaiterPage() {
           >
             {tables.map((t) => {
               const occupied = tableOccupied(t);
-              const bg = occupied ? "#e8f5e9" : "#f2f2f2"; // greenish / grey
+              const bg = occupied ? "#e8f5e9" : "#f2f2f2";
               const border = occupied ? "1px solid #2e7d32" : "1px solid #bdbdbd";
               const text = occupied ? "#1b5e20" : "#616161";
               const order = activeByTable[t];
-              const total = computeGrandTotal(order); // usa subtotal fresco si hay items
+              const total = computeGrandTotal(order);
 
               return (
                 <button
@@ -450,10 +464,7 @@ export default function WaiterPage() {
                           }}
                         />
                         <span className="fw-bold" style={{ fontSize: 22 }}>
-                          {
-                            // 👇 fallback ya interpolado para evitar "Table {n}"
-                            tt("admin.waiter.floor.table", `Table ${t}`, { n: t })
-                          }
+                          {tt("admin.waiter.floor.table", `Table ${t}`, { n: t })}
                         </span>
                       </div>
                       {statusBadgeFor(t)}
@@ -468,17 +479,15 @@ export default function WaiterPage() {
                               {fmtQ(total)}
                             </div>
                           </div>
-                          {/* Mesa ocupada: NO mostramos Pick */}
                           <div />
                         </>
                       ) : (
                         <>
                           <div className="text-muted">{tt("admin.waiter.floor.emptyTable", "Empty table")}</div>
-                          {/* ✅ Botón PICK — solo mesas vacías */}
                           <Link
                             href={`${PICK_TARGET_BASE}${encodeURIComponent(t)}`}
                             className="btn btn-sm btn-primary"
-                            onClick={(e) => e.stopPropagation()} // evita abrir el panel
+                            onClick={(e) => e.stopPropagation()}
                           >
                             {tt("admin.waiter.floor.pick", "Pick")}
                           </Link>
@@ -505,7 +514,6 @@ export default function WaiterPage() {
             <div className="offcanvas-header">
               <h5 id="tableDetailTitle" className="offcanvas-title">
                 {selectedTable
-                  // 👇 fallback ya interpolado
                   ? tt("admin.waiter.drawer.title", `Table ${selectedTable}`, { n: selectedTable })
                   : tt("admin.waiter.floor.tableShort", "Table")}
               </h5>
@@ -514,7 +522,6 @@ export default function WaiterPage() {
               {!selectedTable ? null : !selectedOrder ? (
                 <div className="d-flex align-items-center justify-content-between">
                   <div className="text-muted">{tt("admin.waiter.drawer.empty", "Empty table. No open order.")}</div>
-                  {/* ✅ También ofrecemos Pick dentro del panel si está vacía */}
                   <Link
                     href={`${PICK_TARGET_BASE}${encodeURIComponent(selectedTable)}`}
                     className="btn btn-primary btn-sm"
@@ -544,9 +551,9 @@ export default function WaiterPage() {
 
 // =================== Detail Panel ===================
 function OrderDetailCard({ order, onClose }: { order: OrderDoc; onClose: () => void }) {
-  const fmtQ = useFmtQ(); // ✅ usa settings
+  const fmtQ = useFmtQ();
 
-  // 🔤 idioma local (igual patrón)
+  // 🔤 idioma local
   const { settings } = useTenantSettings();
   const lang = React.useMemo(() => {
     try {
@@ -565,11 +572,12 @@ function OrderDetailCard({ order, onClose }: { order: OrderDoc; onClose: () => v
   const createdAt = tsToDate(order.createdAt);
   const invoiceDate = tsToDate(order.invoiceDate);
 
-  const subtotal = getFreshSubtotal(order); // 👈 ahora siempre viene de items si existen
-  const tax = pickAmount(order, "tax");
+  const subtotal = getFreshSubtotal(order);
+  const includeTaxInPrice = detectPricesIncludeTax(order);
+  const tax = includeTaxInPrice ? 0 : (pickAmount(order, "tax") ?? 0);
   const tip = pickAmount(order, "tip");
   const discount = pickAmount(order, "discount");
-  const total = computeGrandTotal(order); // 👈 compuesto con subtotal fresco
+  const total = computeGrandTotal(order);
 
   return (
     <div className="card border-0">
@@ -577,10 +585,7 @@ function OrderDetailCard({ order, onClose }: { order: OrderDoc; onClose: () => v
         <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
           <div>
             <div className="fw-bold h5 mb-0">
-              {
-                // 👇 fallback ya interpolado para evitar "Order #{id}"
-                tt("admin.waiter.detail.order", `Order #${order.id.slice(-6)}`, { id: order.id.slice(-6) })
-              }
+              {tt("admin.waiter.detail.order", `Order #${order.id.slice(-6)}`, { id: order.id.slice(-6) })}
             </div>
             <div className="text-muted small">
               {createdAt ? createdAt.toLocaleString() : ""}
@@ -624,27 +629,23 @@ function OrderDetailCard({ order, onClose }: { order: OrderDoc; onClose: () => v
                     </div>
                   </div>
                   <div className="fw-semibold">
-                    {/* Si no viene lineTotal, calcula como fallback */}
                     {fmtQ(typeof ln.lineTotal === "number" ? ln.lineTotal : sumLine(ln))}
                   </div>
                 </div>
 
-                {/* Addons */}
                 {(ln.addons?.length ?? 0) > 0 && (
                   <div className="mt-2 ps-2">
                     <div className="small fw-semibold">{tt("admin.waiter.detail.addons", "Add-ons")}</div>
                     <ul className="small mb-0">
                       {ln.addons!.map((a, i) => (
                         <li key={`a-${i}`}>
-                          {a.name}{" "}
-                          {typeof a.price === "number" ? `(${fmtQ(a.price)})` : ""}
+                          {a.name} {typeof a.price === "number" ? `(${fmtQ(a.price)})` : ""}
                         </li>
                       ))}
                     </ul>
                   </div>
                 )}
 
-                {/* Option Groups */}
                 {(ln.optionGroups?.length ?? 0) > 0 && (
                   <div className="mt-2 ps-2">
                     <div className="small fw-semibold">{tt("admin.waiter.detail.options", "Options")}</div>
@@ -686,10 +687,15 @@ function OrderDetailCard({ order, onClose }: { order: OrderDoc; onClose: () => v
               <span>{tt("admin.waiter.detail.subtotal", "Subtotal")}</span>
               <span>{fmtQ(subtotal)}</span>
             </div>
-            <div className="d-flex justify-content-between">
-              <span>{tt("admin.waiter.detail.tax", "Tax")}</span>
-              <span>{fmtQ(tax)}</span>
-            </div>
+
+            {/* 👇 Mostrar impuesto solo si los precios NO incluyen impuesto */}
+            {!includeTaxInPrice && (
+              <div className="d-flex justify-content-between">
+                <span>{tt("admin.waiter.detail.tax", "Tax")}</span>
+                <span>{fmtQ(tax)}</span>
+              </div>
+            )}
+
             <div className="d-flex justify-content-between">
               <span>{tt("admin.waiter.detail.tip", "Tip")}</span>
               <span>{fmtQ(tip)}</span>

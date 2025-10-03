@@ -126,7 +126,7 @@ export default function HomeClient({
             <a className="btn btn-outline-light swap-outline" href="/login" onClick={close}>
               {t(lang, "nav.login")}
             </a>
-            <a className="btn btn-primary btn-cta" href="/signup" onClick={close}>
+            <a className="btn btn-primary btn-cta" href="/account" onClick={close}>
               {t(lang, "nav.signup")}
             </a>
           </div>

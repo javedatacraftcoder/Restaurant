@@ -417,7 +417,15 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
           return (
             <div className="col-12 col-sm-6 col-lg-4" key={it.id}>
               <div className="card border-0 shadow-sm h-100 d-flex flex-column">
-                <div className="ratio ratio-4x3 rounded-top overflow-hidden">
+                {/* 👇 ÚNICO CAMBIO: hacer clic en la imagen también abre/cierra opciones */}
+                <div
+                  className="ratio ratio-4x3 rounded-top overflow-hidden"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onToggleOptions(it)}
+                  title="Open options"
+                  style={{ cursor: "pointer" }}
+                >
                   {it.imageUrl ? (
                     <Image
                       src={it.imageUrl}
