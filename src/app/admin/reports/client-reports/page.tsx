@@ -16,6 +16,10 @@ import {
   DocumentData,
 } from "firebase/firestore";
 
+// 🔤 i18n
+import { t as translate } from "@/lib/i18n/t";
+import { useTenantSettings } from "@/lib/settings/hooks";
+
 /** ========= Types ========= */
 type OrderDoc = {
   id: string;
@@ -72,10 +76,9 @@ function getOrderType(o: OrderDoc): string {
   return (o.orderInfo?.type || "unknown") as string;
 }
 function getOrderChannel(o: OrderDoc): string | null {
-  // Si guardas orderInfo.orderSource ('app'|'web'|'pos'...), lo usamos.
   const src = (o.orderInfo as any)?.orderSource;
   if (typeof src === "string" && src.trim()) return src.trim();
-  return null; // no channel data
+  return null;
 }
 function customerKey(o: OrderDoc): { key: string; label: string } {
   const email =
@@ -112,6 +115,33 @@ function PieChart({
   size?: number;
   title: string;
 }) {
+  // 🔤 i18n dentro del componente
+  const { settings } = useTenantSettings();
+  const lang = React.useMemo(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const sp = new URLSearchParams(window.location.search);
+        const q = sp.get("lang");
+        if (q) {
+          const v = q.toLowerCase();
+          try { localStorage.setItem("tenant.language", v); } catch {}
+          return v;
+        }
+      }
+    } catch {}
+    try {
+      if (typeof window !== "undefined") {
+        const ls = localStorage.getItem("tenant.language");
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language || "en";
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
+
   const total = rows.reduce((s, r) => s + (Number(r.value) || 0), 0);
   const cx = size / 2, cy = size / 2, r = size / 2 - 4;
   let angle = 0;
@@ -134,11 +164,13 @@ function PieChart({
     <div className="card border-0 shadow-sm h-100">
       <div className="card-header fw-semibold d-flex justify-content-between align-items-center">
         <span>{title}</span>
-        <span className="small text-muted">{total === 0 ? "No data" : `${rows.length} segments`}</span>
+        <span className="small text-muted">
+          {total === 0 ? tt("admin.clientrep.nodata", "No data") : tt("admin.clientrep.segments", "{n} segments", { n: rows.length })}
+        </span>
       </div>
       <div className="card-body">
         {total === 0 ? (
-          <div className="text-muted small">No data</div>
+          <div className="text-muted small">{tt("admin.clientrep.nodata", "No data")}</div>
         ) : (
           <div className="d-flex flex-column flex-md-row align-items-center gap-3">
             <div style={{ width: "100%", maxWidth: size }}>
@@ -229,6 +261,33 @@ function downloadExcelXml(filename: string, xml: string) {
 /** ========= Page ========= */
 export default function AdminClientReportsPage() {
   const db = getFirestore();
+
+  // 🔤 i18n init (URL ?lang → localStorage → settings)
+  const { settings } = useTenantSettings();
+  const lang = React.useMemo(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const sp = new URLSearchParams(window.location.search);
+        const q = sp.get("lang");
+        if (q) {
+          const v = q.toLowerCase();
+          try { localStorage.setItem("tenant.language", v); } catch {}
+          return v;
+        }
+      }
+    } catch {}
+    try {
+      if (typeof window !== "undefined") {
+        const ls = localStorage.getItem("tenant.language");
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language || "en";
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
 
   // Filters
   const [preset, setPreset] = useState<"today" | "7d" | "30d" | "thisMonth" | "custom">("30d");
@@ -328,7 +387,7 @@ export default function AdminClientReportsPage() {
       });
       setOrdersUntilTo(arrUntil);
     } catch (e: any) {
-      setError(e?.message || "Failed to load data.");
+      setError(e?.message || tt("admin.clientrep.err.load", "Failed to load data."));
     } finally {
       setLoading(false);
     }
@@ -395,9 +454,9 @@ export default function AdminClientReportsPage() {
 
   // Pies
   const pieNewReturning: PieRow[] = useMemo(() => [
-    { label: "New", value: newCustomers.length },
-    { label: "Returning", value: returningCustomers.length },
-  ], [newCustomers, returningCustomers]);
+    { label: tt("admin.clientrep.new", "New"), value: newCustomers.length },
+    { label: tt("admin.clientrep.returning", "Returning"), value: returningCustomers.length },
+  ], [newCustomers, returningCustomers, lang]);
   const pieOrderTypes: PieRow[] = useMemo(() => orderTypeCounts.map(r => ({ label: r.label, value: r.value })), [orderTypeCounts]);
   const pieChannels: PieRow[] = useMemo(() => channelCounts.map(r => ({ label: r.label, value: r.value })), [channelCounts]);
 
@@ -462,48 +521,48 @@ export default function AdminClientReportsPage() {
     <Protected>
       <AdminOnly>
         <main className="container py-4">
-          <h1 className="h4 mb-3">Client Reports</h1>
+          <h1 className="h4 mb-3">{tt("admin.clientrep.title", "Client Reports")}</h1>
 
           {/* Filters */}
           <div className="card border-0 shadow-sm mb-3">
             <div className="card-body">
               <div className="row g-3">
                 <div className="col-12 col-md-3">
-                  <label className="form-label fw-semibold">Range</label>
+                  <label className="form-label fw-semibold">{tt("admin.clientrep.range", "Range")}</label>
                   <select className="form-select" value={preset} onChange={(e) => setPreset(e.target.value as any)}>
-                    <option value="today">Today</option>
-                    <option value="7d">Last 7 days</option>
-                    <option value="30d">Last 30 days</option>
-                    <option value="thisMonth">This month</option>
-                    <option value="custom">Custom</option>
+                    <option value="today">{tt("admin.clientrep.preset.today", "Today")}</option>
+                    <option value="7d">{tt("admin.clientrep.preset.7d", "Last 7 days")}</option>
+                    <option value="30d">{tt("admin.clientrep.preset.30d", "Last 30 days")}</option>
+                    <option value="thisMonth">{tt("admin.clientrep.preset.thisMonth", "This month")}</option>
+                    <option value="custom">{tt("admin.clientrep.preset.custom", "Custom")}</option>
                   </select>
                 </div>
                 <div className="col-6 col-md-3">
-                  <label className="form-label fw-semibold">From</label>
+                  <label className="form-label fw-semibold">{tt("admin.clientrep.from", "From")}</label>
                   <input type="date" className="form-control" value={fromStr} onChange={(e) => { setFromStr(e.target.value); setPreset("custom"); }} />
                 </div>
                 <div className="col-6 col-md-3">
-                  <label className="form-label fw-semibold">To</label>
+                  <label className="form-label fw-semibold">{tt("admin.clientrep.to", "To")}</label>
                   <input type="date" className="form-control" value={toStr} onChange={(e) => { setToStr(e.target.value); setPreset("custom"); }} />
                 </div>
                 <div className="col-12 col-md-3 d-flex align-items-end">
                   <div className="d-flex gap-2 w-100">
                     <button className="btn btn-primary flex-fill" onClick={load} disabled={loading}>
-                      {loading ? "Loading…" : "Refresh"}
+                      {loading ? tt("common.loadingDots", "Loading…") : tt("common.refresh", "Refresh")}
                     </button>
                     <button
                       className="btn btn-outline-success"
                       onClick={onExportExcel}
                       disabled={loading || ordersInRange.length === 0}
                     >
-                      Export to Excel
+                      {tt("admin.clientrep.export", "Export to Excel")}
                     </button>
                   </div>
                 </div>
               </div>
               {error && <div className="text-danger small mt-2">{error}</div>}
               <div className="text-muted small mt-2">
-               {/* Notes: “New” = first-ever order date falls inside the selected range. “Returning” = first order before the range and at least one order in range. Order types from <code>orderInfo.type</code>. If you store <code>orderInfo.orderSource</code> (e.g. <code>app</code>, <code>web</code>, <code>pos</code>), an extra “Order channels” pie will appear. Totals use the same fallbacks as checkout. :contentReference[oaicite:1]{index=1}*/}
+                {/* Notes left as comment (no i18n) */}
               </div>
             </div>
           </div>
@@ -512,25 +571,25 @@ export default function AdminClientReportsPage() {
           <div className="row g-3 mb-3">
             <div className="col-6 col-md-3">
               <div className="card border-0 shadow-sm"><div className="card-body">
-                <div className="text-muted small">Orders</div>
+                <div className="text-muted small">{tt("admin.clientrep.kpi.orders", "Orders")}</div>
                 <div className="h4 mb-0">{totalOrders}</div>
               </div></div>
             </div>
             <div className="col-6 col-md-3">
               <div className="card border-0 shadow-sm"><div className="card-body">
-                <div className="text-muted small">Revenue</div>
+                <div className="text-muted small">{tt("admin.clientrep.kpi.revenue", "Revenue")}</div>
                 <div className="h4 mb-0">{money(totalRevenue)}</div>
               </div></div>
             </div>
             <div className="col-6 col-md-3">
               <div className="card border-0 shadow-sm"><div className="card-body">
-                <div className="text-muted small">New Customers</div>
+                <div className="text-muted small">{tt("admin.clientrep.kpi.newCustomers", "New Customers")}</div>
                 <div className="h4 mb-0">{newCustomers.length}</div>
               </div></div>
             </div>
             <div className="col-6 col-md-3">
               <div className="card border-0 shadow-sm"><div className="card-body">
-                <div className="text-muted small">Returning Customers</div>
+                <div className="text-muted small">{tt("admin.clientrep.kpi.returningCustomers", "Returning Customers")}</div>
                 <div className="h4 mb-0">{returningCustomers.length}</div>
               </div></div>
             </div>
@@ -538,25 +597,25 @@ export default function AdminClientReportsPage() {
 
           {/* Top customers table */}
           <div className="card border-0 shadow-sm mb-3">
-            <div className="card-header fw-semibold">Top Customers by Spend</div>
+            <div className="card-header fw-semibold">{tt("admin.clientrep.table.top.title", "Top Customers by Spend")}</div>
             <div className="card-body p-0">
               <div className="table-responsive">
                 <table className="table mb-0">
                   <thead>
                     <tr>
-                      <th>Customer</th>
-                      <th className="text-end">Orders</th>
-                      <th className="text-end">Revenue</th>
-                      <th className="text-nowrap">First order at (UTC)</th>
+                      <th>{tt("admin.clientrep.table.top.customer", "Customer")}</th>
+                      <th className="text-end">{tt("admin.clientrep.table.top.orders", "Orders")}</th>
+                      <th className="text-end">{tt("admin.clientrep.table.top.revenue", "Revenue")}</th>
+                      <th className="text-nowrap">{tt("admin.clientrep.table.top.firstAt", "First order at (UTC)")}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {customersAgg.length === 0 && (
-                      <tr><td className="text-center text-muted" colSpan={4}>No data</td></tr>
+                      <tr><td className="text-center text-muted" colSpan={4}>{tt("admin.clientrep.nodata", "No data")}</td></tr>
                     )}
                     {customersAgg.map((c) => (
                       <tr key={c.key}>
-                        <td>{c.label}</td>
+                        <td>{c.label === "Guest" ? tt("admin.clientrep.guest", "Guest") : c.label}</td>
                         <td className="text-end">{c.orders}</td>
                         <td className="text-end">{money(c.revenue)}</td>
                         <td className="text-nowrap">
@@ -573,20 +632,21 @@ export default function AdminClientReportsPage() {
           {/* Pies */}
           <div className="row g-3">
             <div className="col-12 col-lg-4">
-              <PieChart rows={pieNewReturning} title="New vs Returning (Customers in range)" />
+              <PieChart rows={pieNewReturning} title={tt("admin.clientrep.pie.newReturning", "New vs Returning (Customers in range)")} />
             </div>
             <div className="col-12 col-lg-4">
-              <PieChart rows={pieOrderTypes} title="Orders by Type (Pie)" />
+              <PieChart rows={pieOrderTypes} title={tt("admin.clientrep.pie.types", "Orders by Type (Pie)")} />
             </div>
             <div className="col-12 col-lg-4">
               {pieChannels.length > 0 ? (
-                <PieChart rows={pieChannels} title="Order Channels (Pie)" />
+                <PieChart rows={pieChannels} title={tt("admin.clientrep.pie.channels", "Order Channels (Pie)")} />
               ) : (
                 <div className="card border-0 shadow-sm h-100">
-                  <div className="card-header fw-semibold">Order Channels (Pie)</div>
+                  <div className="card-header fw-semibold">{tt("admin.clientrep.pie.channels", "Order Channels (Pie)")}</div>
                   <div className="card-body">
                     <div className="text-muted small">
-                      No channel data. Add <code>orderInfo.orderSource</code> (e.g., <code>app</code>, <code>web</code>, <code>pos</code>) to your orders to enable this chart.
+                      {tt("admin.clientrep.noChannelData",
+                        "No channel data. Add <code>orderInfo.orderSource</code> (e.g., <code>app</code>, <code>web</code>, <code>pos</code>) to your orders to enable this chart.")}
                     </div>
                   </div>
                 </div>

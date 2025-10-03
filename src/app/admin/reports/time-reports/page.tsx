@@ -16,6 +16,10 @@ import {
   DocumentData,
 } from "firebase/firestore";
 
+// 🔤 i18n
+import { t as translate } from "@/lib/i18n/t";
+import { useTenantSettings } from "@/lib/settings/hooks";
+
 /** ========= SLA CONFIG (puedes ajustar) ========= */
 const SLA = {
   placed_to_kip: { goodMin: 10, warnMin: 20 },
@@ -193,6 +197,22 @@ function downloadExcelXml(filename: string, xml: string) {
 export default function AdminTimeReportsPage() {
   const db = getFirestore();
 
+  // 🔤 idioma actual + helper
+  const { settings } = useTenantSettings();
+  const lang = useMemo(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const ls = localStorage.getItem("tenant.language");
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language;
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
+
   const [preset, setPreset] = useState<"today" | "7d" | "30d" | "thisMonth" | "custom">("30d");
   const [fromStr, setFromStr] = useState<string>("");
   const [toStr, setToStr] = useState<string>("");
@@ -281,7 +301,7 @@ export default function AdminTimeReportsPage() {
       });
       setOrders(arr);
     } catch (e: any) {
-      setError(e?.message || "Failed to load data.");
+      setError(e?.message || tt("common.loadError", "Failed to load data."));
     } finally {
       setLoading(false);
     }
@@ -373,34 +393,34 @@ export default function AdminTimeReportsPage() {
   /** ========= Export ========= */
   function onExportExcel() {
     const summary: Sheet = {
-      name: "Summary",
-      headers: ["Metric", "Value (hh:mm:ss)"],
+      name: tt("admin.time.xls.summarySheet", "Summary"),
+      headers: [tt("admin.time.xls.metric", "Metric"), tt("admin.time.xls.valueHMS", "Value (hh:mm:ss)")],
       rows: [
-        ["Orders in range", kpi_orders],
-        ["Avg Placed → Kitchen in progress", fmtHMS(kpi_avg_placed_to_kip)],
-        ["Avg Kitchen in progress → Kitchen done", fmtHMS(kpi_avg_kip_to_done)],
-        ["Avg Kitchen done → Inroute", fmtHMS(kpi_avg_done_to_inroute)],
-        ["Avg Inroute → Delivered", fmtHMS(kpi_avg_inroute_to_delivered)],
+        [tt("admin.time.xls.ordersInRange", "Orders in range"), kpi_orders],
+        [tt("admin.time.kpis.placedToKip", "Avg Placed → Kitchen in progress"), fmtHMS(kpi_avg_placed_to_kip)],
+        [tt("admin.time.kpis.kipToDone", "Avg Kitchen in progress → Kitchen done"), fmtHMS(kpi_avg_kip_to_done)],
+        [tt("admin.time.kpis.doneToInroute", "Avg Kitchen done → Inroute"), fmtHMS(kpi_avg_done_to_inroute)],
+        [tt("admin.time.kpis.inrouteToDelivered", "Avg Inroute → Delivered"), fmtHMS(kpi_avg_inroute_to_delivered)],
       ],
     };
 
     const detail: Sheet = {
-      name: "OrderDurations",
+      name: tt("admin.time.xls.detailSheet", "OrderDurations"),
       headers: [
-        "Order",
-        "PlacedAt (UTC)",
-        "K.InProgress (UTC)",
-        "K.Done (UTC)",
-        "Inroute (UTC)",
-        "Delivered (UTC)",
-        "Placed→KIP (min)",
-        "KIP→Done (min)",
-        "Done→Inroute (min)",
-        "Inroute→Delivered (min)",
-        "Placed→KIP (hh:mm:ss)",
-        "KIP→Done (hh:mm:ss)",
-        "Done→Inroute (hh:mm:ss)",
-        "Inroute→Delivered (hh:mm:ss)",
+        tt("admin.time.table.order", "Order"),
+        tt("admin.time.table.placedUtc", "PlacedAt (UTC)"),
+        tt("admin.time.table.kipUtc", "K.InProgress (UTC)"),
+        tt("admin.time.table.doneUtc", "K.Done (UTC)"),
+        tt("admin.time.table.inrouteUtc", "Inroute (UTC)"),
+        tt("admin.time.table.deliveredUtc", "Delivered (UTC)"),
+        tt("admin.time.table.p2kMin", "Placed→KIP (min)"),
+        tt("admin.time.table.k2dMin", "KIP→Done (min)"),
+        tt("admin.time.table.d2iMin", "Done→Inroute (min)"),
+        tt("admin.time.table.i2dMin", "Inroute→Delivered (min)"),
+        tt("admin.time.table.p2kHms", "Placed→KIP (hh:mm:ss)"),
+        tt("admin.time.table.k2dHms", "KIP→Done (hh:mm:ss)"),
+        tt("admin.time.table.d2iHms", "Done→Inroute (hh:mm:ss)"),
+        tt("admin.time.table.i2dHms", "Inroute→Delivered (hh:mm:ss)"),
       ],
       rows: rows.map((r) => {
         const id = r.orderNumber ? `#${r.orderNumber}` : r.id;
@@ -455,10 +475,10 @@ export default function AdminTimeReportsPage() {
 
   function OrderTimeline({ r, minutesMode }: { r: Row; minutesMode: boolean }) {
     const segs = [
-      { key: "Placed→KIP", ms: r.d_placed_to_kip, color: "#198754" },
-      { key: "KIP→Done", ms: r.d_kip_to_done, color: "#0d6efd" },
-      { key: "Done→Inroute", ms: r.d_done_to_inroute, color: "#ffc107" },
-      { key: "Inroute→Delivered", ms: r.d_inroute_to_delivered, color: "#dc3545" },
+      { key: tt("admin.time.seg.p2k", "Placed→KIP"), ms: r.d_placed_to_kip, color: "#198754" },
+      { key: tt("admin.time.seg.k2d", "KIP→Done"), ms: r.d_kip_to_done, color: "#0d6efd" },
+      { key: tt("admin.time.seg.d2i", "Done→Inroute"), ms: r.d_done_to_inroute, color: "#ffc107" },
+      { key: tt("admin.time.seg.i2d", "Inroute→Delivered"), ms: r.d_inroute_to_delivered, color: "#dc3545" },
     ];
     const totalMs = segs.reduce((s, x) => (x.ms ? s + x.ms : s), 0);
     if (!totalMs) {
@@ -471,7 +491,7 @@ export default function AdminTimeReportsPage() {
               "repeating-linear-gradient(90deg,#e9ecef,#e9ecef 8px,#f8f9fa 8px,#f8f9fa 16px)",
             borderRadius: 8,
           }}
-          title="No timeline"
+          title={tt("admin.time.timeline.none", "No timeline")}
         />
       );
     }
@@ -490,7 +510,7 @@ export default function AdminTimeReportsPage() {
         </div>
         <div
           className="text-nowrap small text-muted"
-          title={`Total: ${minutesMode ? fmtMin(msToMin(totalMs)) : fmtHMS(totalMs)}`}
+          title={`${tt("admin.time.timeline.total", "Total")}: ${minutesMode ? fmtMin(msToMin(totalMs)) : fmtHMS(totalMs)}`}
         >
           {minutesMode ? fmtMin(msToMin(totalMs)) : fmtHMS(totalMs)}
         </div>
@@ -503,7 +523,7 @@ export default function AdminTimeReportsPage() {
       <AdminOnly>
         <main className="container py-4">
           <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-            <h1 className="h4 mb-0">Operational Time Reports</h1>
+            <h1 className="h4 mb-0">{tt("admin.time.title", "Operational Time Reports")}</h1>
             <div className="form-check form-switch">
               <input
                 className="form-check-input"
@@ -513,7 +533,7 @@ export default function AdminTimeReportsPage() {
                 onChange={(e) => setShowMinutes(e.target.checked)}
               />
               <label className="form-check-label" htmlFor="toggleMinutes">
-                Show minutes
+                {tt("admin.time.toggle.minutes", "Show minutes")}
               </label>
             </div>
           </div>
@@ -523,21 +543,21 @@ export default function AdminTimeReportsPage() {
             <div className="card-body">
               <div className="row g-3">
                 <div className="col-12 col-md-3">
-                  <label className="form-label fw-semibold">Range</label>
+                  <label className="form-label fw-semibold">{tt("admin.time.filters.range", "Range")}</label>
                   <select
                     className="form-select"
                     value={preset}
                     onChange={(e) => setPreset(e.target.value as any)}
                   >
-                    <option value="today">Today</option>
-                    <option value="7d">Last 7 days</option>
-                    <option value="30d">Last 30 days</option>
-                    <option value="thisMonth">This month</option>
-                    <option value="custom">Custom</option>
+                    <option value="today">{tt("admin.time.filters.today", "Today")}</option>
+                    <option value="7d">{tt("admin.time.filters.last7", "Last 7 days")}</option>
+                    <option value="30d">{tt("admin.time.filters.last30", "Last 30 days")}</option>
+                    <option value="thisMonth">{tt("admin.time.filters.thisMonth", "This month")}</option>
+                    <option value="custom">{tt("admin.time.filters.custom", "Custom")}</option>
                   </select>
                 </div>
                 <div className="col-6 col-md-3">
-                  <label className="form-label fw-semibold">From</label>
+                  <label className="form-label fw-semibold">{tt("admin.time.filters.from", "From")}</label>
                   <input
                     type="date"
                     className="form-control"
@@ -549,7 +569,7 @@ export default function AdminTimeReportsPage() {
                   />
                 </div>
                 <div className="col-6 col-md-3">
-                  <label className="form-label fw-semibold">To</label>
+                  <label className="form-label fw-semibold">{tt("admin.time.filters.to", "To")}</label>
                   <input
                     type="date"
                     className="form-control"
@@ -563,14 +583,14 @@ export default function AdminTimeReportsPage() {
                 <div className="col-12 col-md-3 d-flex align-items-end">
                   <div className="d-flex gap-2 w-100">
                     <button className="btn btn-primary flex-fill" onClick={load} disabled={loading}>
-                      {loading ? "Loading…" : "Refresh"}
+                      {loading ? tt("common.loading", "Loading…") : tt("admin.time.actions.refresh", "Refresh")}
                     </button>
                     <button
                       className="btn btn-outline-success"
                       onClick={onExportExcel}
                       disabled={loading || orders.length === 0}
                     >
-                      Export to Excel
+                      {tt("admin.time.actions.exportExcel", "Export to Excel")}
                     </button>
                   </div>
                 </div>
@@ -579,13 +599,16 @@ export default function AdminTimeReportsPage() {
 
               {/* Leyenda SLA */}
               <div className="mt-3">
-                <div className="small fw-semibold mb-1">Legend (SLA)</div>
+                <div className="small fw-semibold mb-1">{tt("admin.time.legend.title", "Legend (SLA)")}</div>
                 <div className="d-flex flex-wrap align-items-center gap-2 small">
-                  <span className="badge text-bg-success">Good</span>
-                  <span className="badge text-bg-warning">Warning</span>
-                  <span className="badge text-bg-danger">High</span>
+                  <span className="badge text-bg-success">{tt("admin.time.legend.good", "Good")}</span>
+                  <span className="badge text-bg-warning">{tt("admin.time.legend.warn", "Warning")}</span>
+                  <span className="badge text-bg-danger">{tt("admin.time.legend.high", "High")}</span>
                   <span className="text-muted ms-2">
-                    Placed→KIP ≤ {SLA.placed_to_kip.goodMin}m (good), ≤ {SLA.placed_to_kip.warnMin}m (warn), etc.
+                    {tt("admin.time.legend.rule", "Placed→KIP ≤ {good}m (good), ≤ {warn}m (warn), etc.", {
+                      good: SLA.placed_to_kip.goodMin,
+                      warn: SLA.placed_to_kip.warnMin,
+                    })}
                   </span>
                 </div>
               </div>
@@ -597,7 +620,7 @@ export default function AdminTimeReportsPage() {
             <div className="col-12 col-md-6 col-lg-3">
               <div className="card border-0 shadow-sm h-100">
                 <div className="card-body">
-                  <div className="text-muted small">Orders</div>
+                  <div className="text-muted small">{tt("admin.time.kpis.orders", "Orders")}</div>
                   <div className="h4 mb-0">{kpi_orders}</div>
                 </div>
               </div>
@@ -608,7 +631,7 @@ export default function AdminTimeReportsPage() {
               <div className="card border-0 shadow-sm h-100">
                 <div className="card-body">
                   <div className="d-flex justify-content-between align-items-center">
-                    <div className="text-muted small">Avg Placed → K.InProgress</div>
+                    <div className="text-muted small">{tt("admin.time.kpis.placedToKipShort", "Avg Placed → K.InProgress")}</div>
                     <span
                       className={`badge text-bg-${colorBySLA(
                         msToMin(kpi_avg_placed_to_kip),
@@ -618,7 +641,7 @@ export default function AdminTimeReportsPage() {
                       {showMinutes ? fmtMin(msToMin(kpi_avg_placed_to_kip)) : fmtHMS(kpi_avg_placed_to_kip)}
                     </span>
                   </div>
-                  <div className="progress mt-2" role="progressbar" aria-label="Placed to KIP">
+                  <div className="progress mt-2" role="progressbar" aria-label={tt("admin.time.aria.p2k", "Placed to KIP")}>
                     <div
                       className={`progress-bar bg-${colorBySLA(
                         msToMin(kpi_avg_placed_to_kip),
@@ -629,7 +652,7 @@ export default function AdminTimeReportsPage() {
                       }}
                     />
                   </div>
-                  <div className="small text-muted mt-1">Target ≤ {SLA.placed_to_kip.goodMin} min</div>
+                  <div className="small text-muted mt-1">{tt("admin.time.kpis.target", "Target ≤ {min} min", { min: SLA.placed_to_kip.goodMin })}</div>
                 </div>
               </div>
             </div>
@@ -639,7 +662,7 @@ export default function AdminTimeReportsPage() {
               <div className="card border-0 shadow-sm h-100">
                 <div className="card-body">
                   <div className="d-flex justify-content-between align-items-center">
-                    <div className="text-muted small">Avg K.InProgress → K.Done</div>
+                    <div className="text-muted small">{tt("admin.time.kpis.kipToDoneShort", "Avg K.InProgress → K.Done")}</div>
                     <span
                       className={`badge text-bg-${colorBySLA(
                         msToMin(kpi_avg_kip_to_done),
@@ -649,7 +672,7 @@ export default function AdminTimeReportsPage() {
                       {showMinutes ? fmtMin(msToMin(kpi_avg_kip_to_done)) : fmtHMS(kpi_avg_kip_to_done)}
                     </span>
                   </div>
-                  <div className="progress mt-2" role="progressbar" aria-label="KIP to Done">
+                  <div className="progress mt-2" role="progressbar" aria-label={tt("admin.time.aria.k2d", "KIP to Done")}>
                     <div
                       className={`progress-bar bg-${colorBySLA(
                         msToMin(kpi_avg_kip_to_done),
@@ -660,7 +683,7 @@ export default function AdminTimeReportsPage() {
                       }}
                     />
                   </div>
-                  <div className="small text-muted mt-1">Target ≤ {SLA.kip_to_done.goodMin} min</div>
+                  <div className="small text-muted mt-1">{tt("admin.time.kpis.target", "Target ≤ {min} min", { min: SLA.kip_to_done.goodMin })}</div>
                 </div>
               </div>
             </div>
@@ -670,7 +693,7 @@ export default function AdminTimeReportsPage() {
               <div className="card border-0 shadow-sm h-100">
                 <div className="card-body">
                   <div className="d-flex justify-content-between align-items-center">
-                    <div className="text-muted small">Avg K.Done → Inroute</div>
+                    <div className="text-muted small">{tt("admin.time.kpis.doneToInrouteShort", "Avg K.Done → Inroute")}</div>
                     <span
                       className={`badge text-bg-${colorBySLA(
                         msToMin(kpi_avg_done_to_inroute),
@@ -680,7 +703,7 @@ export default function AdminTimeReportsPage() {
                       {showMinutes ? fmtMin(msToMin(kpi_avg_done_to_inroute)) : fmtHMS(kpi_avg_done_to_inroute)}
                     </span>
                   </div>
-                  <div className="progress mt-2" role="progressbar" aria-label="Done to Inroute">
+                  <div className="progress mt-2" role="progressbar" aria-label={tt("admin.time.aria.d2i", "Done to Inroute")}>
                     <div
                       className={`progress-bar bg-${colorBySLA(
                         msToMin(kpi_avg_done_to_inroute),
@@ -691,7 +714,7 @@ export default function AdminTimeReportsPage() {
                       }}
                     />
                   </div>
-                  <div className="small text-muted mt-1">Target ≤ {SLA.done_to_inroute.goodMin} min</div>
+                  <div className="small text-muted mt-1">{tt("admin.time.kpis.target", "Target ≤ {min} min", { min: SLA.done_to_inroute.goodMin })}</div>
                 </div>
               </div>
             </div>
@@ -701,7 +724,7 @@ export default function AdminTimeReportsPage() {
               <div className="card border-0 shadow-sm h-100">
                 <div className="card-body">
                   <div className="d-flex justify-content-between align-items-center">
-                    <div className="text-muted small">Avg Inroute → Delivered</div>
+                    <div className="text-muted small">{tt("admin.time.kpis.inrouteToDeliveredShort", "Avg Inroute → Delivered")}</div>
                     <span
                       className={`badge text-bg-${colorBySLA(
                         msToMin(kpi_avg_inroute_to_delivered),
@@ -711,7 +734,7 @@ export default function AdminTimeReportsPage() {
                       {showMinutes ? fmtMin(msToMin(kpi_avg_inroute_to_delivered)) : fmtHMS(kpi_avg_inroute_to_delivered)}
                     </span>
                   </div>
-                  <div className="progress mt-2" role="progressbar" aria-label="Inroute to Delivered">
+                  <div className="progress mt-2" role="progressbar" aria-label={tt("admin.time.aria.i2d", "Inroute to Delivered")}>
                     <div
                       className={`progress-bar bg-${colorBySLA(
                         msToMin(kpi_avg_inroute_to_delivered),
@@ -722,7 +745,7 @@ export default function AdminTimeReportsPage() {
                       }}
                     />
                   </div>
-                  <div className="small text-muted mt-1">Target ≤ {SLA.inroute_to_delivered.goodMin} min</div>
+                  <div className="small text-muted mt-1">{tt("admin.time.kpis.target", "Target ≤ {min} min", { min: SLA.inroute_to_delivered.goodMin })}</div>
                 </div>
               </div>
             </div>
@@ -731,28 +754,30 @@ export default function AdminTimeReportsPage() {
           {/* Detail table + timeline */}
           <div className="card border-0 shadow-sm">
             <div className="card-header fw-semibold d-flex align-items-center justify-content-between">
-              <span>Per-order timings</span>
-              <span className="small text-muted">Times shown in {LOCAL_TZ}. Hover the bar to see segments</span>
+              <span>{tt("admin.time.detail.title", "Per-order timings")}</span>
+              <span className="small text-muted">
+                {tt("admin.time.detail.subtitle", "Times shown in {tz}. Hover the bar to see segments", { tz: LOCAL_TZ })}
+              </span>
             </div>
             <div className="card-body p-0">
               <div className="table-responsive">
                 <table className="table mb-0 align-middle">
                   <thead>
                     <tr>
-                      <th style={{ minWidth: 100 }}>Order</th>
-                      <th>Placed</th>
-                      <th>K.InProgress</th>
-                      <th>K.Done</th>
-                      <th>Inroute</th>
-                      <th>Delivered</th>
-                      <th className="text-end">Durations</th>
+                      <th style={{ minWidth: 100 }}>{tt("admin.time.table.order", "Order")}</th>
+                      <th>{tt("admin.time.table.placed", "Placed")}</th>
+                      <th>{tt("admin.time.table.kip", "K.InProgress")}</th>
+                      <th>{tt("admin.time.table.done", "K.Done")}</th>
+                      <th>{tt("admin.time.table.inroute", "Inroute")}</th>
+                      <th>{tt("admin.time.table.delivered", "Delivered")}</th>
+                      <th className="text-end">{tt("admin.time.table.durations", "Durations")}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {rows.length === 0 && (
                       <tr>
                         <td colSpan={7} className="text-center text-muted">
-                          No data
+                          {tt("common.nodata", "No data")}
                         </td>
                       </tr>
                     )}
@@ -771,10 +796,10 @@ export default function AdminTimeReportsPage() {
                             <div className="d-flex flex-column gap-2">
                               <OrderTimeline r={r} minutesMode={showMinutes} />
                               <div className="d-flex flex-wrap gap-2 justify-content-end">
-                                <DurationBadge label="Placed→KIP" ms={r.d_placed_to_kip} sla={SLA.placed_to_kip} minutesMode={showMinutes} />
-                                <DurationBadge label="KIP→Done" ms={r.d_kip_to_done} sla={SLA.kip_to_done} minutesMode={showMinutes} />
-                                <DurationBadge label="Done→Inroute" ms={r.d_done_to_inroute} sla={SLA.done_to_inroute} minutesMode={showMinutes} />
-                                <DurationBadge label="Inroute→Delivered" ms={r.d_inroute_to_delivered} sla={SLA.inroute_to_delivered} minutesMode={showMinutes} />
+                                <DurationBadge label={tt("admin.time.seg.p2k", "Placed→KIP")} ms={r.d_placed_to_kip} sla={SLA.placed_to_kip} minutesMode={showMinutes} />
+                                <DurationBadge label={tt("admin.time.seg.k2d", "KIP→Done")} ms={r.d_kip_to_done} sla={SLA.kip_to_done} minutesMode={showMinutes} />
+                                <DurationBadge label={tt("admin.time.seg.d2i", "Done→Inroute")} ms={r.d_done_to_inroute} sla={SLA.done_to_inroute} minutesMode={showMinutes} />
+                                <DurationBadge label={tt("admin.time.seg.i2d", "Inroute→Delivered")} ms={r.d_inroute_to_delivered} sla={SLA.inroute_to_delivered} minutesMode={showMinutes} />
                               </div>
                             </div>
                           </td>

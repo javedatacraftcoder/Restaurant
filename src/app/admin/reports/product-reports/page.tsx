@@ -17,6 +17,10 @@ import {
 } from "firebase/firestore";
 import { useFmtQ /* , fmtCents */ } from "@/lib/settings/money";
 
+// 🔤 i18n
+import { t as translate } from "@/lib/i18n/t";
+import { useTenantSettings } from "@/lib/settings/hooks";
+
 /** ===== Types ===== */
 type OrderItem = {
   menuItemId: string;
@@ -115,6 +119,33 @@ function PieChart({
   title: string;
   formatValue?: (n: number) => string;
 }) {
+  // 🔤 i18n dentro del componente
+  const { settings } = useTenantSettings();
+  const lang = React.useMemo(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const sp = new URLSearchParams(window.location.search);
+        const q = sp.get("lang");
+        if (q) {
+          const v = q.toLowerCase();
+          try { localStorage.setItem("tenant.language", v); } catch {}
+          return v;
+        }
+      }
+    } catch {}
+    try {
+      if (typeof window !== "undefined") {
+        const ls = localStorage.getItem("tenant.language");
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language || "en";
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
+
   const total = rows.reduce((s, r) => s + (Number(r.value) || 0), 0);
   const cx = size / 2;
   const cy = size / 2;
@@ -140,11 +171,13 @@ function PieChart({
     <div className="card border-0 shadow-sm h-100">
       <div className="card-header fw-semibold d-flex justify-content-between align-items-center">
         <span>{title}</span>
-        <span className="small text-muted">{total === 0 ? "No data" : `${rows.length} segments`}</span>
+        <span className="small text-muted">
+          {total === 0 ? tt("admin.prodrep.nodata", "No data") : tt("admin.prodrep.segments", "{n} segments", { n: rows.length })}
+        </span>
       </div>
       <div className="card-body">
         {total === 0 ? (
-          <div className="text-muted small">No data</div>
+          <div className="text-muted small">{tt("admin.prodrep.nodata", "No data")}</div>
         ) : (
           <div className="d-flex flex-column flex-md-row align-items-center gap-3">
             <div style={{ width: "100%", maxWidth: size }}>
@@ -250,6 +283,33 @@ function downloadExcelXml(filename: string, xml: string) {
 export default function AdminProductReportPage() {
   const db = getFirestore();
   const fmtQ = useFmtQ();
+
+  // 🔤 i18n init
+  const { settings } = useTenantSettings();
+  const lang = React.useMemo(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const sp = new URLSearchParams(window.location.search);
+        const q = sp.get("lang");
+        if (q) {
+          const v = q.toLowerCase();
+          try { localStorage.setItem("tenant.language", v); } catch {}
+          return v;
+        }
+      }
+    } catch {}
+    try {
+      if (typeof window !== "undefined") {
+        const ls = localStorage.getItem("tenant.language");
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language || "en";
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
 
   // Filters
   const [preset, setPreset] = useState<"today" | "7d" | "30d" | "thisMonth" | "custom">("30d");
@@ -404,7 +464,7 @@ export default function AdminProductReportPage() {
       }
       setMenuMeta(meta);
     } catch (e: any) {
-      setError(e?.message || "Failed to load data.");
+      setError(e?.message || tt("admin.prodrep.err.load", "Failed to load data."));
     } finally {
       setLoading(false);
     }
@@ -595,10 +655,10 @@ export default function AdminProductReportPage() {
     const addonsTotal = addonsAgg.reduce((s,a)=> s+a.revenue, 0);
     const optionsTotal = optionsAgg.reduce((s,a)=> s+a.revenue, 0);
     return [
-      { label: "Addons", value: addonsTotal },
-      { label: "Option items", value: optionsTotal },
+      { label: translate(lang, "admin.prodrep.extras.addons") || "Addons", value: addonsTotal },
+      { label: translate(lang, "admin.prodrep.extras.optionItems") || "Option items", value: optionsTotal },
     ];
-  }, [addonsAgg, optionsAgg]);
+  }, [addonsAgg, optionsAgg, lang]);
 
   // KPIs
   const totalOrders = orders.length;
@@ -614,54 +674,86 @@ export default function AdminProductReportPage() {
   function onExportExcel() {
     const topGlobalSheet: Sheet = {
       name: "TopGlobal",
-      headers: ["Item", "Category", "Subcategory", "Qty", "Orders", `Revenue (${currency})`],
+      headers: [
+        tt("admin.prodrep.th.item", "Item"),
+        tt("admin.prodrep.th.category", "Category"),
+        tt("admin.prodrep.th.subcategory", "Subcategory"),
+        tt("admin.prodrep.th.qty", "Qty"),
+        tt("admin.prodrep.th.orders", "Orders"),
+        `${tt("admin.prodrep.kpi.revenue", "Revenue")} (${currency})`,
+      ],
       rows: topGlobal.map(t => [t.name, t.category, t.subcategory, t.qty, t.orders, Number(t.revenue.toFixed(2))]),
     };
     const topByCatSheet: Sheet = {
       name: "TopByCategory",
-      headers: ["Category", "Item", "Qty", "Orders", `Revenue (${currency})`],
+      headers: [
+        tt("admin.prodrep.th.category", "Category"),
+        tt("admin.prodrep.th.item", "Item"),
+        tt("admin.prodrep.th.qty", "Qty"),
+        tt("admin.prodrep.th.orders", "Orders"),
+        `${tt("admin.prodrep.kpi.revenue", "Revenue")} (${currency})`,
+      ],
       rows: topByCategory.flatMap(grp =>
         grp.items.map(it => [grp.category, it.name, it.qty, it.orders, Number(it.revenue.toFixed(2))])
       ),
     };
     const leastSheet: Sheet = {
       name: "Least",
-      headers: ["Item", "Category", "Subcategory", "Qty", "Orders", `Revenue (${currency})`],
+      headers: [
+        tt("admin.prodrep.th.item", "Item"),
+        tt("admin.prodrep.th.category", "Category"),
+        tt("admin.prodrep.th.subcategory", "Subcategory"),
+        tt("admin.prodrep.th.qty", "Qty"),
+        tt("admin.prodrep.th.orders", "Orders"),
+        `${tt("admin.prodrep.kpi.revenue", "Revenue")} (${currency})`,
+      ],
       rows: least.map(t => [t.name, t.category, t.subcategory, t.qty, t.orders, Number(t.revenue.toFixed(2))]),
     };
     const revCatSheet: Sheet = {
       name: "RevenueByCategory",
-      headers: ["Category", `Revenue (${currency})`],
+      headers: [tt("admin.prodrep.th.category", "Category"), `${tt("admin.prodrep.kpi.revenue", "Revenue")} (${currency})`],
       rows: revenueByCategory.map(r => [r.category, Number(r.revenue.toFixed(2))]),
     };
     const revSubSheet: Sheet = {
       name: "RevenueBySubcategory",
-      headers: ["Category/Subcategory", `Revenue (${currency})`],
+      headers: ["Category/Subcategory", `${tt("admin.prodrep.kpi.revenue", "Revenue")} (${currency})`],
       rows: revenueBySubcategory.map(r => [r.subset, Number(r.revenue.toFixed(2))]),
     };
     const addonsSheet: Sheet = {
       name: "AddonsImpact",
-      headers: ["Addon", "Count (units)", `Revenue (${currency})`],
+      headers: [
+        tt("admin.prodrep.impact.addons.th.addon", "Addon"),
+        `${tt("admin.prodrep.impact.units", "Units")} (${tt("admin.prodrep.extras.addons", "Addons")})`,
+        `${tt("admin.prodrep.kpi.revenue", "Revenue")} (${currency})`,
+      ],
       rows: addonsAgg.map(a => [a.label, a.count, Number(a.revenue.toFixed(2))]),
     };
     const optionsSheet: Sheet = {
       name: "OptionsImpact",
-      headers: ["Option Item", "Count (units)", `Revenue (${currency})`],
+      headers: [
+        tt("admin.prodrep.impact.options.th.optionItem", "Option Item"),
+        `${tt("admin.prodrep.impact.units", "Units")} (${tt("admin.prodrep.extras.optionItems", "Option items")})`,
+        `${tt("admin.prodrep.kpi.revenue", "Revenue")} (${currency})`,
+      ],
       rows: optionsAgg.map(a => [a.label, a.count, Number(a.revenue.toFixed(2))]),
     };
     const neverOrderedSheet: Sheet = {
       name: "NeverOrderedItems",
-      headers: ["Item", "Category", "Subcategory"],
+      headers: [
+        tt("admin.prodrep.th.item", "Item"),
+        tt("admin.prodrep.th.category", "Category"),
+        tt("admin.prodrep.th.subcategory", "Subcategory"),
+      ],
       rows: neverOrderedItems.map(n => [n.name, n.category, n.subcategory]),
     };
     const neverUsedAddonsSheet: Sheet = {
       name: "NeverUsedAddons",
-      headers: ["Addon (catalog)"],
+      headers: [tt("admin.prodrep.impact.addons.th.addon", "Addon") + " (catalog)"],
       rows: neverUsedAddons.map(lbl => [lbl]),
     };
     const neverUsedOptionsSheet: Sheet = {
       name: "NeverUsedOptions",
-      headers: ["Option Item (catalog)"],
+      headers: [tt("admin.prodrep.impact.options.th.optionItem", "Option Item") + " (catalog)"],
       rows: neverUsedOptions.map(lbl => [lbl]),
     };
 
@@ -684,28 +776,28 @@ export default function AdminProductReportPage() {
     <Protected>
       <AdminOnly>
         <main className="container py-4">
-          <h1 className="h4 mb-3">Product Report</h1>
+          <h1 className="h4 mb-3">{tt("admin.prodrep.title", "Product Report")}</h1>
 
           {/* Filters */}
           <div className="card border-0 shadow-sm mb-3">
             <div className="card-body">
               <div className="row g-3">
                 <div className="col-12 col-md-3">
-                  <label className="form-label fw-semibold">Range</label>
+                  <label className="form-label fw-semibold">{tt("admin.prodrep.range", "Range")}</label>
                   <select
                     className="form-select"
                     value={preset}
                     onChange={(e) => setPreset(e.target.value as any)}
                   >
-                    <option value="today">Today</option>
-                    <option value="7d">Last 7 days</option>
-                    <option value="30d">Last 30 days</option>
-                    <option value="thisMonth">This month</option>
-                    <option value="custom">Custom</option>
+                    <option value="today">{tt("admin.prodrep.preset.today", "Today")}</option>
+                    <option value="7d">{tt("admin.prodrep.preset.7d", "Last 7 days")}</option>
+                    <option value="30d">{tt("admin.prodrep.preset.30d", "Last 30 days")}</option>
+                    <option value="thisMonth">{tt("admin.prodrep.preset.thisMonth", "This month")}</option>
+                    <option value="custom">{tt("admin.prodrep.preset.custom", "Custom")}</option>
                   </select>
                 </div>
                 <div className="col-6 col-md-3">
-                  <label className="form-label fw-semibold">From</label>
+                  <label className="form-label fw-semibold">{tt("admin.prodrep.from", "From")}</label>
                   <input
                     type="date"
                     className="form-control"
@@ -714,7 +806,7 @@ export default function AdminProductReportPage() {
                   />
                 </div>
                 <div className="col-6 col-md-3">
-                  <label className="form-label fw-semibold">To</label>
+                  <label className="form-label fw-semibold">{tt("admin.prodrep.to", "To")}</label>
                   <input
                     type="date"
                     className="form-control"
@@ -725,15 +817,15 @@ export default function AdminProductReportPage() {
                 <div className="col-12 col-md-3 d-flex align-items-end">
                   <div className="d-flex gap-2 w-100">
                     <button className="btn btn-primary flex-fill" onClick={load} disabled={loading}>
-                      {loading ? "Loading…" : "Refresh"}
+                      {loading ? tt("common.loadingDots", "Loading…") : tt("common.refresh", "Refresh")}
                     </button>
                     <button
                       className="btn btn-outline-success"
                       onClick={onExportExcel}
                       disabled={loading || orders.length === 0}
-                      title="Export Excel with multiple tabs"
+                      title={tt("admin.prodrep.export.hint", "Export Excel with multiple tabs")}
                     >
-                      Export to Excel
+                      {tt("admin.prodrep.export", "Export to Excel")}
                     </button>
                   </div>
                 </div>
@@ -746,13 +838,13 @@ export default function AdminProductReportPage() {
           <div className="row g-3 mb-3">
             <div className="col-12 col-md-3">
               <div className="card border-0 shadow-sm"><div className="card-body">
-                <div className="text-muted small">Orders</div>
+                <div className="text-muted small">{tt("admin.prodrep.kpi.orders", "Orders")}</div>
                 <div className="h4 mb-0">{totalOrders}</div>
               </div></div>
             </div>
             <div className="col-12 col-md-3">
               <div className="card border-0 shadow-sm"><div className="card-body">
-                <div className="text-muted small">Revenue</div>
+                <div className="text-muted small">{tt("admin.prodrep.kpi.revenue", "Revenue")}</div>
                 <div className="h4 mb-0">{fmtQ(totalRevenue)}</div>
               </div></div>
             </div>
@@ -764,17 +856,19 @@ export default function AdminProductReportPage() {
           <div className="row g-3">
             <div className="col-12 col-lg-6">
               <div className="card border-0 shadow-sm h-100">
-                <div className="card-header fw-semibold">Top 10 — Best Sellers (Global)</div>
+                <div className="card-header fw-semibold">{tt("admin.prodrep.table.topGlobal.title", "Top 10 — Best Sellers (Global)")}</div>
                 <div className="card-body p-0">
                   <table className="table mb-0">
                     <thead><tr>
-                      <th>Item</th><th>Category</th><th>Subcategory</th>
-                      <th className="text-end">Qty</th>
-                      <th className="text-end">Orders</th>
-                      <th className="text-end">Revenue</th>
+                      <th>{tt("admin.prodrep.th.item", "Item")}</th>
+                      <th>{tt("admin.prodrep.th.category", "Category")}</th>
+                      <th>{tt("admin.prodrep.th.subcategory", "Subcategory")}</th>
+                      <th className="text-end">{tt("admin.prodrep.th.qty", "Qty")}</th>
+                      <th className="text-end">{tt("admin.prodrep.th.orders", "Orders")}</th>
+                      <th className="text-end">{tt("admin.prodrep.th.revenue", "Revenue")}</th>
                     </tr></thead>
                     <tbody>
-                      {topGlobal.length === 0 && <tr><td colSpan={6} className="text-center text-muted">No data</td></tr>}
+                      {topGlobal.length === 0 && <tr><td colSpan={6} className="text-center text-muted">{tt("admin.prodrep.nodata", "No data")}</td></tr>}
                       {topGlobal.map((r) => (
                         <tr key={r.id}>
                           <td>{r.name}</td>
@@ -793,17 +887,19 @@ export default function AdminProductReportPage() {
 
             <div className="col-12 col-lg-6">
               <div className="card border-0 shadow-sm h-100">
-                <div className="card-header fw-semibold">Top 10 — Least Sellers</div>
+                <div className="card-header fw-semibold">{tt("admin.prodrep.table.least.title", "Top 10 — Least Sellers")}</div>
                 <div className="card-body p-0">
                   <table className="table mb-0">
                     <thead><tr>
-                      <th>Item</th><th>Category</th><th>Subcategory</th>
-                      <th className="text-end">Qty</th>
-                      <th className="text-end">Orders</th>
-                      <th className="text-end">Revenue</th>
+                      <th>{tt("admin.prodrep.th.item", "Item")}</th>
+                      <th>{tt("admin.prodrep.th.category", "Category")}</th>
+                      <th>{tt("admin.prodrep.th.subcategory", "Subcategory")}</th>
+                      <th className="text-end">{tt("admin.prodrep.th.qty", "Qty")}</th>
+                      <th className="text-end">{tt("admin.prodrep.th.orders", "Orders")}</th>
+                      <th className="text-end">{tt("admin.prodrep.th.revenue", "Revenue")}</th>
                     </tr></thead>
                     <tbody>
-                      {least.length === 0 && <tr><td colSpan={6} className="text-center text-muted">No data</td></tr>}
+                      {least.length === 0 && <tr><td colSpan={6} className="text-center text-muted">{tt("admin.prodrep.nodata", "No data")}</td></tr>}
                       {least.map((r) => (
                         <tr key={r.id}>
                           <td>{r.name}</td>
@@ -823,18 +919,19 @@ export default function AdminProductReportPage() {
 
           {/* Top by Category */}
           <div className="card border-0 shadow-sm mt-3">
-            <div className="card-header fw-semibold">Top 10 by Category</div>
+            <div className="card-header fw-semibold">{tt("admin.prodrep.table.byCat.title", "Top 10 by Category")}</div>
             <div className="card-body p-0">
               <div className="table-responsive">
                 <table className="table mb-0">
                   <thead><tr>
-                    <th>Category</th><th>Item</th>
-                    <th className="text-end">Qty</th>
-                    <th className="text-end">Orders</th>
-                    <th className="text-end">Revenue</th>
+                    <th>{tt("admin.prodrep.th.category", "Category")}</th>
+                    <th>{tt("admin.prodrep.th.item", "Item")}</th>
+                    <th className="text-end">{tt("admin.prodrep.th.qty", "Qty")}</th>
+                    <th className="text-end">{tt("admin.prodrep.th.orders", "Orders")}</th>
+                    <th className="text-end">{tt("admin.prodrep.th.revenue", "Revenue")}</th>
                   </tr></thead>
                   <tbody>
-                    {topByCategory.length === 0 && <tr><td colSpan={5} className="text-center text-muted">No data</td></tr>}
+                    {topByCategory.length === 0 && <tr><td colSpan={5} className="text-center text-muted">{tt("admin.prodrep.nodata", "No data")}</td></tr>}
                     {topByCategory.flatMap((grp) =>
                       grp.items.map((it) => (
                         <tr key={`${grp.category}-${it.id}`}>
@@ -855,13 +952,13 @@ export default function AdminProductReportPage() {
           {/* Revenue by Category/Subcategory + Extras Pie */}
           <div className="row g-3 mt-3">
             <div className="col-12 col-lg-4">
-              <PieChart rows={pieByCategory} title="Revenue by Category (Pie)" formatValue={fmtQ} />
+              <PieChart rows={pieByCategory} title={tt("admin.prodrep.pie.byCategory", "Revenue by Category (Pie)")} formatValue={fmtQ} />
             </div>
             <div className="col-12 col-lg-4">
-              <PieChart rows={pieBySubcategory} title="Revenue by Subcategory (Pie)" formatValue={fmtQ} />
+              <PieChart rows={pieBySubcategory} title={tt("admin.prodrep.pie.bySubcategory", "Revenue by Subcategory (Pie)")} formatValue={fmtQ} />
             </div>
             <div className="col-12 col-lg-4">
-              <PieChart rows={pieExtras} title="Extras Revenue (Pie: Addons vs Option items)" formatValue={fmtQ} />
+              <PieChart rows={pieExtras} title={tt("admin.prodrep.pie.extras", "Extras Revenue (Pie: Addons vs Option items)")} formatValue={fmtQ} />
             </div>
           </div>
 
@@ -869,16 +966,16 @@ export default function AdminProductReportPage() {
           <div className="row g-3 mt-3">
             <div className="col-12 col-lg-6">
               <div className="card border-0 shadow-sm h-100">
-                <div className="card-header fw-semibold">Addons Impact (Top)</div>
+                <div className="card-header fw-semibold">{tt("admin.prodrep.impact.addons.title", "Addons Impact (Top)")}</div>
                 <div className="card-body p-0">
                   <table className="table mb-0">
                     <thead><tr>
-                      <th>Addon</th>
-                      <th className="text-end">Units</th>
-                      <th className="text-end">Revenue</th>
+                      <th>{tt("admin.prodrep.impact.addons.th.addon", "Addon")}</th>
+                      <th className="text-end">{tt("admin.prodrep.impact.units", "Units")}</th>
+                      <th className="text-end">{tt("admin.prodrep.th.revenue", "Revenue")}</th>
                     </tr></thead>
                     <tbody>
-                      {addonsAgg.length === 0 && <tr><td colSpan={3} className="text-center text-muted">No data</td></tr>}
+                      {addonsAgg.length === 0 && <tr><td colSpan={3} className="text-center text-muted">{tt("admin.prodrep.nodata", "No data")}</td></tr>}
                       {addonsAgg.map((a) => (
                         <tr key={a.label}>
                           <td>{a.label}</td>
@@ -894,16 +991,16 @@ export default function AdminProductReportPage() {
 
             <div className="col-12 col-lg-6">
               <div className="card border-0 shadow-sm h-100">
-                <div className="card-header fw-semibold">Option-Groups Impact (Top)</div>
+                <div className="card-header fw-semibold">{tt("admin.prodrep.impact.options.title", "Option-Groups Impact (Top)")}</div>
                 <div className="card-body p-0">
                   <table className="table mb-0">
                     <thead><tr>
-                      <th>Option Item</th>
-                      <th className="text-end">Units</th>
-                      <th className="text-end">Revenue</th>
+                      <th>{tt("admin.prodrep.impact.options.th.optionItem", "Option Item")}</th>
+                      <th className="text-end">{tt("admin.prodrep.impact.units", "Units")}</th>
+                      <th className="text-end">{tt("admin.prodrep.th.revenue", "Revenue")}</th>
                     </tr></thead>
                     <tbody>
-                      {optionsAgg.length === 0 && <tr><td colSpan={3} className="text-center text-muted">No data</td></tr>}
+                      {optionsAgg.length === 0 && <tr><td colSpan={3} className="text-center text-muted">{tt("admin.prodrep.nodata", "No data")}</td></tr>}
                       {optionsAgg.map((a) => (
                         <tr key={a.label}>
                           <td>{a.label}</td>
@@ -922,16 +1019,18 @@ export default function AdminProductReportPage() {
           <div className="row g-3 mt-3">
             <div className="col-12">
               <div className="card border-0 shadow-sm">
-                <div className="card-header fw-semibold">Menu Items — Never Ordered (in selected range)</div>
+                <div className="card-header fw-semibold">{tt("admin.prodrep.neverOrdered.title", "Menu Items — Never Ordered (in selected range)")}</div>
                 <div className="card-body p-0">
                   <div className="table-responsive">
                     <table className="table mb-0">
                       <thead><tr>
-                        <th>Item</th><th>Category</th><th>Subcategory</th>
+                        <th>{tt("admin.prodrep.th.item", "Item")}</th>
+                        <th>{tt("admin.prodrep.th.category", "Category")}</th>
+                        <th>{tt("admin.prodrep.th.subcategory", "Subcategory")}</th>
                       </tr></thead>
                       <tbody>
                         {neverOrderedItems.length === 0 && (
-                          <tr><td colSpan={3} className="text-center text-muted">No data</td></tr>
+                          <tr><td colSpan={3} className="text-center text-muted">{tt("admin.prodrep.nodata", "No data")}</td></tr>
                         )}
                         {neverOrderedItems.map(mi => (
                           <tr key={mi.id}>
@@ -949,13 +1048,13 @@ export default function AdminProductReportPage() {
 
             <div className="col-12 col-lg-6">
               <div className="card border-0 shadow-sm h-100">
-                <div className="card-header fw-semibold">Catalog — Never Used Addons</div>
+                <div className="card-header fw-semibold">{tt("admin.prodrep.catalog.neverUsedAddons.title", "Catalog — Never Used Addons")}</div>
                 <div className="card-body p-0">
                   <table className="table mb-0">
-                    <thead><tr><th>Addon (name)</th></tr></thead>
+                    <thead><tr><th>{tt("admin.prodrep.impact.addons.th.addon", "Addon")} (name)</th></tr></thead>
                     <tbody>
                       {neverUsedAddons.length === 0 && (
-                        <tr><td className="text-center text-muted">No data</td></tr>
+                        <tr><td className="text-center text-muted">{tt("admin.prodrep.nodata", "No data")}</td></tr>
                       )}
                       {neverUsedAddons.map((lbl) => (
                         <tr key={lbl}><td>{lbl}</td></tr>
@@ -968,13 +1067,13 @@ export default function AdminProductReportPage() {
 
             <div className="col-12 col-lg-6">
               <div className="card border-0 shadow-sm h-100">
-                <div className="card-header fw-semibold">Catalog — Never Used Option Items</div>
+                <div className="card-header fw-semibold">{tt("admin.prodrep.catalog.neverUsedOptions.title", "Catalog — Never Used Option Items")}</div>
                 <div className="card-body p-0">
                   <table className="table mb-0">
-                    <thead><tr><th>Option Item</th></tr></thead>
+                    <thead><tr><th>{tt("admin.prodrep.impact.options.th.optionItem", "Option Item")}</th></tr></thead>
                     <tbody>
                       {neverUsedOptions.length === 0 && (
-                        <tr><td className="text-center text-muted">No data</td></tr>
+                        <tr><td className="text-center text-muted">{tt("admin.prodrep.nodata", "No data")}</td></tr>
                       )}
                       {neverUsedOptions.map((lbl) => (
                         <tr key={lbl}><td>{lbl}</td></tr>

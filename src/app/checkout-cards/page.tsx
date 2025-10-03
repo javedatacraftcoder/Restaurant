@@ -30,6 +30,10 @@ import { useFmtQ } from '@/lib/settings/money';
 // ✅ NUEVO: mesas disponibles (no cambia tu colección orders)
 import { useAvailableTables } from '@/lib/tables/useAvailableTables';
 
+/* 🔤 i18n */
+import { t as translate } from '@/lib/i18n/t';
+import { useTenantSettings } from '@/lib/settings/hooks';
+
 type PickupInfo = { type: 'pickup'; phone: string; notes?: string };
 type DeliveryOption = { id: string; title: string; description?: string; price: number; isActive?: boolean; sortOrder?: number; };
 type Addr = { line1?: string; city?: string; country?: string; zip?: string; notes?: string };
@@ -44,6 +48,27 @@ type AppliedPromo = {
 };
 
 // CurrencyUpdate: eliminada la función local fmtQ con "USD/es-GT" hardcodeado
+
+/* --------------------------------------------
+   🔤 Helper i18n (igual al de Kitchen)
+--------------------------------------------- */
+function useLangTT() {
+  const { settings } = useTenantSettings();
+  const lang = React.useMemo(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const ls = localStorage.getItem('tenant.language');
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language;
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
+  return { lang, tt } as const;
+}
 
 /** Convierte undefined -> null (solo para `orderInfo`) */
 function undefToNullDeep<T>(value: T): T {
@@ -762,6 +787,8 @@ function CheckoutUI(props: {
     onChangeAddressLabel, setPromoCode, applyPromo, clearPromo,
   } = actions;
 
+  const { tt } = useLangTT();
+
   // CurrencyUpdate: obtener formateador por tenant
   const fmtQ = useFmtQ();
 
@@ -774,36 +801,45 @@ function CheckoutUI(props: {
   const showTaxLine = !!taxUI && !taxUI.pricesIncludeTax && taxUI.taxQ > 0;
   const grandToShow = (taxUI?.grandPayableQ ?? grandTotal);
 
+  // 🔁 Helper para mapear errores conocidos de promo a i18n sin tocar lógica
+  const promoErrorText = promoError === 'Enter the coupon.'
+    ? tt('checkout.promo.error.enter', 'Enter the coupon.')
+    : promoError === 'Invalid coupon.'
+    ? tt('checkout.promo.error.invalid', 'Invalid coupon.')
+    : promoError === 'The coupon could not be validated.'
+    ? tt('checkout.promo.error.validate', 'The coupon could not be validated.')
+    : (promoError || null);
+
   return (
     <div className="container py-4">
-      <h1 className="h4 mb-3">Checkout</h1>
+      <h1 className="h4 mb-3">{tt('checkout.title', 'Checkout')}</h1>
 
       <div className="row g-4">
         <div className="col-12 col-lg-7">
           <div className="card border-0 shadow-sm">
-            <div className="card-header"><div className="fw-semibold">Details</div></div>
+            <div className="card-header"><div className="fw-semibold">{tt('checkout.details', 'Details')}</div></div>
             <div className="card-body">
               {/* Tipo de pedido */}
               <div className="mb-3">
-                <label className="form-label fw-semibold">Order type</label>
+                <label className="form-label fw-semibold">{tt('checkout.orderType', 'Order type')}</label>
                 <div className="d-flex gap-2">
-                  <button className={`btn ${mode === 'dine-in' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => { setMode('dine-in'); setTipEdited(false); }} disabled={saving}>Dine-in</button>
-                  <button className={`btn ${mode === 'delivery' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => { setMode('delivery'); setTipEdited(false); }} disabled={saving}>Delivery</button>
-                  <button className={`btn ${mode === 'pickup' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => { setMode('pickup'); setTipEdited(false); }} disabled={saving}>Pickup</button>
+                  <button className={`btn ${mode === 'dine-in' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => { setMode('dine-in'); setTipEdited(false); }} disabled={saving}>{tt('checkout.type.dinein', 'Dine-in')}</button>
+                  <button className={`btn ${mode === 'delivery' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => { setMode('delivery'); setTipEdited(false); }} disabled={saving}>{tt('checkout.type.delivery', 'Delivery')}</button>
+                  <button className={`btn ${mode === 'pickup' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => { setMode('pickup'); setTipEdited(false); }} disabled={saving}>{tt('checkout.type.pickup', 'Pickup')}</button>
                 </div>
               </div>
 
               {mode === 'dine-in' && (
                 <>
                   <div className="mb-3">
-                    <label className="form-label">Table</label>
+                    <label className="form-label">{tt('checkout.table.label', 'Table')}</label>
 
                     {/* ✅ Dropdown SOLO con mesas disponibles */}
                     {tablesLoading ? (
-                      <div className="form-text">Loading tables…</div>
+                      <div className="form-text">{tt('checkout.table.loading', 'Loading tables…')}</div>
                     ) : availableTables.length === 0 ? (
                       <div className="alert alert-warning py-2 mb-2">
-                        No tables available right now.
+                        {tt('checkout.table.none', 'No tables available right now.')}
                       </div>
                     ) : (
                       <select
@@ -812,17 +848,19 @@ function CheckoutUI(props: {
                         onChange={(e) => setTable(e.target.value)}
                         disabled={saving}
                       >
-                        <option value="">Select a table…</option>
+                        <option value="">{tt('checkout.table.selectPh', 'Select a table…')}</option>
                         {availableTables.map((t: string) => (
-                          <option key={t} value={t}>Table {t}</option>
+                          <option key={t} value={t}>
+                            {tt('checkout.table.option', 'Table {t}', { t })}
+                          </option>
                         ))}
                       </select>
                     )}
                   </div>
 
                   <div className="mb-3">
-                    <label className="form-label">Notes (optional)</label>
-                    <textarea className="form-control" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Additional instructions" disabled={saving} />
+                    <label className="form-label">{tt('checkout.notes.label', 'Notes (optional)')}</label>
+                    <textarea className="form-control" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={tt('checkout.notes.ph', 'Additional instructions')} disabled={saving} />
                   </div>
                 </>
               )}
@@ -830,45 +868,53 @@ function CheckoutUI(props: {
               {mode === 'delivery' && (
                 <>
                   <div className="mb-3">
-                    <label className="form-label">Address</label>
+                    <label className="form-label">{tt('checkout.address.label', 'Address')}</label>
                     {hasDropdown ? (
                       <>
                         <select className="form-select" value={addressLabel || ''} onChange={(e) => onChangeAddressLabel(e.target.value as 'home' | 'office')} disabled={saving}>
-                          {homeAddr?.line1 && String(homeAddr.line1).trim() !== '' && (<option value="home">Casa — {homeAddr.line1}</option>)}
-                          {officeAddr?.line1 && String(officeAddr.line1).trim() !== '' && (<option value="office">Oficina — {officeAddr.line1}</option>)}
+                          {homeAddr?.line1 && String(homeAddr.line1).trim() !== '' && (
+                            <option value="home">
+                              {tt('checkout.address.home', 'Home — {line1}', { line1: homeAddr.line1 as any })}
+                            </option>
+                          )}
+                          {officeAddr?.line1 && String(officeAddr.line1).trim() !== '' && (
+                            <option value="office">
+                              {tt('checkout.address.office', 'Office — {line1}', { line1: officeAddr.line1 as any })}
+                            </option>
+                          )}
                         </select>
                         {addressLabel && (
                           <div className="form-text">
                             {addressLabel === 'home' ? (
                               <>
-                                {homeAddr?.city ? `City: ${homeAddr.city}. ` : ''}
-                                {homeAddr?.zip ? `ZIP: ${homeAddr.zip}. ` : ''}
-                                {homeAddr?.notes ? `Notes: ${homeAddr.notes}.` : ''}
+                                {homeAddr?.city ? `${tt('checkout.address.city', 'City')}: ${homeAddr.city}. ` : ''}
+                                {homeAddr?.zip ? `${tt('checkout.address.zip', 'ZIP')}: ${homeAddr.zip}. ` : ''}
+                                {homeAddr?.notes ? `${tt('checkout.address.notes', 'Notes')}: ${homeAddr.notes}.` : ''}
                               </>
                             ) : (
                               <>
-                                {officeAddr?.city ? `City: ${officeAddr.city}. ` : ''}
-                                {officeAddr?.zip ? `ZIP: ${officeAddr.zip}. ` : ''}
-                                {officeAddr?.notes ? `Notes: ${officeAddr.notes}.` : ''}
+                                {officeAddr?.city ? `${tt('checkout.address.city', 'City')}: ${officeAddr.city}. ` : ''}
+                                {officeAddr?.zip ? `${tt('checkout.address.zip', 'ZIP')}: ${officeAddr.zip}. ` : ''}
+                                {officeAddr?.notes ? `${tt('checkout.address.notes', 'Notes')}: ${officeAddr.notes}.` : ''}
                               </>
                             )}
                           </div>
                         )}
                       </>
                     ) : (
-                      <input className="form-control" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Ex. 5a avenida 10-11..." disabled={saving} />
+                      <input className="form-control" value={address} onChange={(e) => setAddress(e.target.value)} placeholder={tt('checkout.address.inputPh', 'Ex. 5a avenida 10-11...')} disabled={saving} />
                     )}
                   </div>
 
                   <div className="mb-3">
-                    <label className="form-label">Phone</label>
-                    <input className="form-control" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Ex. 5555-5555" disabled={saving} />
+                    <label className="form-label">{tt('checkout.phone.label', 'Phone')}</label>
+                    <input className="form-control" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder={tt('checkout.phone.ph', 'Ex. 5555-5555')} disabled={saving} />
                   </div>
 
                   <div className="mb-3">
-                    <label className="form-label">Delivery options</label>
+                    <label className="form-label">{tt('checkout.deliveryOptions.label', 'Delivery options')}</label>
                     {deliveryOptions.length === 0 ? (
-                      <div className="form-text">No shipping options available.</div>
+                      <div className="form-text">{tt('checkout.deliveryOptions.none', 'No shipping options available.')}</div>
                     ) : (
                       <div className="d-flex flex-column gap-2">
                         {deliveryOptions.map((opt) => (
@@ -888,8 +934,8 @@ function CheckoutUI(props: {
                   </div>
 
                   <div className="mb-3">
-                    <label className="form-label">Notes (optional)</label>
-                    <textarea className="form-control" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Additional instructions" disabled={saving} />
+                    <label className="form-label">{tt('checkout.notes.label', 'Notes (optional)')}</label>
+                    <textarea className="form-control" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={tt('checkout.notes.ph', 'Additional instructions')} disabled={saving} />
                   </div>
                 </>
               )}
@@ -897,57 +943,57 @@ function CheckoutUI(props: {
               {mode === 'pickup' && (
                 <>
                   <div className="mb-3">
-                    <label className="form-label">Phone</label>
-                    <input className="form-control" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Ex. 5555-5555" disabled={saving} />
+                    <label className="form-label">{tt('checkout.phone.label', 'Phone')}</label>
+                    <input className="form-control" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder={tt('checkout.phone.ph', 'Ex. 5555-5555')} disabled={saving} />
                   </div>
                   <div className="mb-3">
-                    <label className="form-label">Notes (optional)</label>
-                    <textarea className="form-control" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Additional instructions" disabled={saving} />
+                    <label className="form-label">{tt('checkout.notes.label', 'Notes (optional)')}</label>
+                    <textarea className="form-control" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={tt('checkout.notes.ph', 'Additional instructions')} disabled={saving} />
                   </div>
                 </>
               )}
 
               {/* --- NUEVO: Código de promoción --- */}
               <div className="mb-3">
-                <label className="form-label fw-semibold">Promotion coupon</label>
+                <label className="form-label fw-semibold">{tt('checkout.promo.label', 'Promotion coupon')}</label>
                 <div className="d-flex gap-2">
                   <input
                     className="form-control"
-                    placeholder="Ex. DESSERT10"
+                    placeholder={tt('checkout.promo.ph', 'Ex. DESSERT10')}
                     value={promoCode}
                     onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
                     disabled={promoApplying || saving}
                   />
                   {!promo ? (
                     <button className="btn btn-outline-primary" onClick={applyPromo} disabled={promoApplying || saving}>
-                      {promoApplying ? 'Applying...' : 'Apply'}
+                      {promoApplying ? tt('checkout.promo.applying', 'Applying...') : tt('checkout.promo.apply', 'Apply')}
                     </button>
                   ) : (
                     <button className="btn btn-outline-secondary" onClick={clearPromo} disabled={saving}>
-                      Remove
+                      {tt('checkout.promo.remove', 'Remove')}
                     </button>
                   )}
                 </div>
                 {promo && (
-                  <div className="text-success small mt-1">✓ Coupon applied: <strong>{promo.code}</strong></div>
+                  <div className="text-success small mt-1">✓ {tt('checkout.promo.applied', 'Coupon applied: {code}', { code: <strong>{promo.code}</strong> as any })}</div>
                 )}
-                {promoError && (
-                  <div className="text-danger small mt-1">{promoError}</div>
+                {promoErrorText && (
+                  <div className="text-danger small mt-1">{promoErrorText}</div>
                 )}
               </div>
 
               {/* MÉTODO DE PAGO */}
               <div className="mb-3">
-                <label className="form-label fw-semibold">Payment Method</label>
+                <label className="form-label fw-semibold">{tt('checkout.payment.method', 'Payment Method')}</label>
                 <div className="d-flex flex-column gap-2">
                   <label className="d-flex align-items-center gap-2">
                     <input type="radio" name="pm" className="form-check-input" checked={payMethod==='cash'} onChange={() => setPayMethod('cash')} />
-                    <span>Cash</span>
+                    <span>{tt('checkout.payment.cash', 'Cash')}</span>
                   </label>
 
                   <label className="d-flex align-items-center gap-2">
                     <input type="radio" name="pm" className="form-check-input" checked={payMethod==='paypal'} onChange={() => setPayMethod('paypal')} />
-                    <span>PayPal</span>
+                    <span>{tt('checkout.payment.paypal', 'PayPal')}</span>
                     {paypalActiveHint && <span className="small text-muted ms-2">{paypalActiveHint}</span>}
                   </label>
                 </div>
@@ -963,18 +1009,18 @@ function CheckoutUI(props: {
 
             <div className="card-footer">
               <div className="d-flex justify-content-between align-items-center">
-                <div className="text-muted small">It will be charged according to the selected method.</div>
+                <div className="text-muted small">{tt('checkout.submit.note', 'It will be charged according to the selected method.')}</div>
                 <button
                   className="btn btn-primary"
                   disabled={disableSubmit}
                   onClick={() => {
                     if (payMethod === 'cash') return onSubmitCash();
                     if (payMethod === 'paypal') {
-                      alert('Use the PayPal button to continue.');
+                      alert(tt('checkout.payment.paypal.useBtn', 'Use the PayPal button to continue.'));
                     }
                   }}
                 >
-                  {saving ? 'Processing…' : (payMethod === 'cash' ? 'Confirm order' : 'Pay now')}
+                  {saving ? tt('checkout.submit.processing', 'Processing…') : (payMethod === 'cash' ? tt('checkout.submit.confirmCash', 'Confirm order') : tt('checkout.submit.payNow', 'Pay now'))}
                 </button>
               </div>
             </div>
@@ -985,15 +1031,19 @@ function CheckoutUI(props: {
         <div className="col-12 col-lg-5">
           <div className="card border-0 shadow-sm">
             <div className="card-header">
-              <div className="fw-semibold">Summary</div>
+              <div className="fw-semibold">{tt('checkout.summary.title', 'Summary')}</div>
             </div>
             <div className="card-body">
               {/* Resumen de entrega */}
               {mode === 'delivery' && (
                 <div className="border rounded p-2 mb-3 bg-light">
-                  <div className="small text-muted">Deliver</div>
+                  <div className="small text-muted">{tt('checkout.summary.deliver.title', 'Deliver')}</div>
                   <div className="fw-semibold">
-                    {addressLabel === 'home' ? 'Casa' : addressLabel === 'office' ? 'Oficina' : 'Dirección'}
+                    {addressLabel === 'home'
+                      ? tt('checkout.summary.address.home', 'Home')
+                      : addressLabel === 'office'
+                      ? tt('checkout.summary.address.office', 'Office')
+                      : tt('checkout.summary.address.address', 'Address')}
                     {': '}
                     {address || (addressLabel === 'home' ? homeAddr?.line1 : officeAddr?.line1) || '—'}
                   </div>
@@ -1001,21 +1051,21 @@ function CheckoutUI(props: {
                     <div className="small text-muted mt-1">
                       {addressLabel === 'home'
                         ? [
-                            homeAddr?.city ? `Ciudad: ${homeAddr.city}` : null,
-                            homeAddr?.country ? `País: ${homeAddr.country}` : null,
-                            homeAddr?.zip ? `ZIP: ${homeAddr.zip}` : null,
+                            homeAddr?.city ? `${tt('checkout.address.city', 'City')}: ${homeAddr.city}` : null,
+                            homeAddr?.country ? `${tt('checkout.address.country', 'Country')}: ${homeAddr.country}` : null,
+                            homeAddr?.zip ? `${tt('checkout.address.zip', 'ZIP')}: ${homeAddr.zip}` : null,
                           ].filter(Boolean).join(' · ')
                         : [
-                            officeAddr?.city ? `Ciudad: ${officeAddr.city}` : null,
-                            officeAddr?.country ? `País: ${officeAddr.country}` : null,
-                            officeAddr?.zip ? `ZIP: ${officeAddr.zip}` : null,
+                            officeAddr?.city ? `${tt('checkout.address.city', 'City')}: ${officeAddr.city}` : null,
+                            officeAddr?.country ? `${tt('checkout.address.country', 'Country')}: ${officeAddr.country}` : null,
+                            officeAddr?.zip ? `${tt('checkout.address.zip', 'ZIP')}: ${officeAddr.zip}` : null,
                           ].filter(Boolean).join(' · ')
                       }
                     </div>
                   )}
                   <div className="mt-2 small">
-                    <span className="text-muted">Client:</span> {customerName || '—'}
-                    <span className="text-muted ms-2">Phone:</span> {phone || '—'}
+                    <span className="text-muted">{tt('checkout.summary.client', 'Client:')}</span> {customerName || '—'}
+                    <span className="text-muted ms-2">{tt('checkout.summary.phone', 'Phone:')}</span> {phone || '—'}
                   </div>
                 </div>
               )}
@@ -1037,7 +1087,7 @@ function CheckoutUI(props: {
                         <div className="mt-2">
                           {ln.addons.map((ad: any, i: number) => (
                             <div className="d-flex justify-content-between small" key={`ad-${idx}-${i}`}>
-                              <div>— (addons) {ad.name}</div>
+                              <div>{tt('checkout.cart.addon.prefix', '— (addons) {name}', { name: ad.name })}</div>
                               <div>{fmtQ(ad.price)}</div>
                             </div>
                           ))}
@@ -1055,7 +1105,7 @@ function CheckoutUI(props: {
                         </div>
                       )}
                       <div className="text-muted small mt-1">
-                        ({fmtQ(ln.basePrice + unitExtras)} each)
+                        {tt('checkout.cart.each', '({price} each)', { price: fmtQ(ln.basePrice + unitExtras) })}
                       </div>
                     </div>
                   );
@@ -1066,21 +1116,21 @@ function CheckoutUI(props: {
               {/* Totales */}
               <div className="mt-3">
                 <div className="d-flex justify-content-between">
-                  <div>Subtotal</div>
+                  <div>{tt('checkout.totals.subtotal', 'Subtotal')}</div>
                   <div className="fw-semibold">{fmtQ(subtotal)}</div>
                 </div>
 
                 {/* NUEVO: línea de descuento si hay promo */}
                 {promo && (
                   <div className="d-flex justify-content-between text-success">
-                    <div>Discount ({promo.code})</div>
+                    <div>{tt('checkout.totals.discount', 'Discount ({code})', { code: promo.code })}</div>
                     <div className="fw-semibold">- {fmtQ((promo.discountTotalCents||0)/100)}</div>
                   </div>
                 )}
 
                 {mode === 'delivery' && (
                   <div className="d-flex justify-content-between">
-                    <div>Delivery</div>
+                    <div>{tt('checkout.totals.delivery', 'Delivery')}</div>
                     <div className="fw-semibold">{fmtQ(deliveryFee)}</div>
                   </div>
                 )}
@@ -1088,14 +1138,14 @@ function CheckoutUI(props: {
                 {/* NUEVO: Tax SOLO si el perfil es tax-exclusive */}
                 {showTaxLine && (
                   <div className="d-flex justify-content-between">
-                    <div>Tax</div>
+                    <div>{tt('checkout.totals.tax', 'Tax')}</div>
                     <div className="fw-semibold">{fmtQ(taxUI?.taxQ || 0)}</div>
                   </div>
                 )}
 
                 {mode !== 'delivery' && (
                   <div className="d-flex align-items-center justify-content-between gap-2 mt-2">
-                    <label className="mb-0">Tip (suggested 10%)</label>
+                    <label className="mb-0">{tt('checkout.totals.tip.label', 'Tip (suggested 10%)')}</label>
                     <div className="d-flex align-items-center gap-2">
                       <input type="number" min="0" step="0.01" className="form-control form-control-sm" style={{ width: 120 }}
                         value={Number.isFinite(tip) ? tip : 0}
@@ -1106,13 +1156,17 @@ function CheckoutUI(props: {
                 )}
                 <hr />
                 <div className="d-flex justify-content-between">
-                  <div className="fw-semibold">Grand total</div>
+                  <div className="fw-semibold">{tt('checkout.totals.grand', 'Grand total')}</div>
                   <div className="fw-bold">{fmtQ(grandToShow)}</div>
                 </div>
               </div>
             </div>
             <div className="card-footer d-flex justify-content-between">
-              <div className="small text-muted">Total according to selected method{promo ? ` (includes ${promo.code})` : ''}.</div>
+              <div className="small text-muted">
+                {tt('checkout.footer.totalNote', 'Total according to selected method{suffix}.', {
+                  suffix: promo ? tt('checkout.footer.includesPromo', ' (includes {code})', { code: promo.code }) : ''
+                })}
+              </div>
               <div />
             </div>
           </div>
@@ -1126,6 +1180,7 @@ function CheckoutUI(props: {
 function CheckoutCoreNoStripe() {
   const { state, actions, helpers } = useCheckoutState();
   const { cart, db, router, buildOrderPayload } = helpers;
+  const { tt } = useLangTT();
 
   // Efectivo
   const onSubmitCash = async () => {
@@ -1155,10 +1210,10 @@ function CheckoutCoreNoStripe() {
 
       cart.clear();
       router.push('/cart-new');
-      alert('¡Order Created (efectivo)! ID: ' + ref.id);
+      alert(tt('checkout.alert.orderCreatedCash', 'Order created (cash)! ID: {id}', { id: ref.id }));
     } catch (e) {
       console.error(e);
-      alert('The order could not be created.');
+      alert(tt('checkout.alert.orderCreateError', 'The order could not be created.'));
     } finally {
       actions.setSaving(false);
     }
@@ -1250,14 +1305,14 @@ function CheckoutCoreNoStripe() {
 
             helpers.cart.clear();
             helpers.router.push('/cart-new');
-            alert('PayPal payment captured. Order Confirmed');
+            alert(tt('checkout.alert.paypalCaptured', 'PayPal payment captured. Order Confirmed'));
           } catch (e: any) {
-            alert(e?.message || 'Error capturing PayPal.');
+            alert(e?.message || tt('checkout.alert.paypalCaptureError', 'Error capturing PayPal.'));
           }
         },
         onError: (err: any) => {
           console.error('PayPal error:', err);
-          alert('Error in PayPal.');
+          alert(tt('checkout.alert.paypalError', 'Error in PayPal.'));
         },
         style: { layout: 'vertical', shape: 'rect', label: 'paypal' },
       });
@@ -1292,8 +1347,9 @@ function CheckoutCoreNoStripe() {
 /** ------- Export por defecto (solo efectivo + PayPal) ------- */
 export default function CheckoutCardsPage() {
   // ✅ Envolvemos el subtree donde se usa useSearchParams con Suspense
+  const { tt } = useLangTT();
   return (
-    <Suspense fallback={<div className="container py-4">Loading…</div>}>
+    <Suspense fallback={<div className="container py-4">{tt('common.loading', 'Loading…')}</div>}>
       <CheckoutCoreNoStripe />
     </Suspense>
   );

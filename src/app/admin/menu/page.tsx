@@ -7,6 +7,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 /** 🔁 Currency centralizado */
 import { useFmtQ } from '@/lib/settings/money';
 
+/* 🔤 i18n */
+import { t as translate } from "@/lib/i18n/t";
+import { useTenantSettings } from "@/lib/settings/hooks";
+
 /* =========================================================================
    Firebase (cliente): Auth + Firestore + Storage
    ========================================================================= */
@@ -149,8 +153,6 @@ type OptionItem = {
 /* =========================================================================
    Helpers UI / utils
    ========================================================================= */
-// ❌ Eliminado fmtQ local (con GTQ fijo)
-
 function toNumber(v: any): number | undefined {
   const n = Number(v);
   return Number.isFinite(n) ? n : undefined;
@@ -221,6 +223,22 @@ function AdminMenuPage_Inner() {
 
   /** ✅ Formateador global (usa currency/locale del tenant) */
   const fmtQ = useFmtQ();
+
+  /* 🔤 idioma actual (auto) */
+  const { settings } = useTenantSettings();
+  const lang = React.useMemo(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const ls = localStorage.getItem("tenant.language");
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language;
+  }, [settings]);
+  const tt = (key: string, fb: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fb : s;
+  };
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
@@ -818,15 +836,15 @@ function AdminMenuPage_Inner() {
   /* =========================================================================
      Render
      ========================================================================= */
-  if (!authReady) return <div className="container py-3">Initializing session…</div>;
-  if (!user) return <div className="container py-5 text-danger">You must sign in.</div>;
-  if (!isAdmin) return <div className="container py-5 text-danger">Unauthorized (admins only).</div>;
+  if (!authReady) return <div className="container py-3">{tt('admin.menu.init', 'Initializing session…')}</div>;
+  if (!user) return <div className="container py-5 text-danger">{tt('admin.menu.notLogged', 'You must sign in.')}</div>;
+  if (!isAdmin) return <div className="container py-5 text-danger">{tt('admin.menu.unauthorized', 'Unauthorized (admins only).')}</div>;
 
   return (
     <div className="container py-3">
       <div className="d-flex align-items-center justify-content-between mb-3">
-        <h1 className="h4 m-0">Menu — Categories, Subcategories & Dishes</h1>
-        <span className="text-muted small">Real-time updates</span>
+        <h1 className="h4 m-0">{tt('admin.menu.title', 'Menu — Categories, Subcategories & Dishes')}</h1>
+        <span className="text-muted small">{tt('admin.menu.realtime', 'Real-time updates')}</span>
       </div>
       {err && <div className="alert alert-danger">{err}</div>}
 
@@ -834,19 +852,19 @@ function AdminMenuPage_Inner() {
         {/* ===================== Columna 1: Categorías ===================== */}
         <div className="col-12 col-lg-3">
           <div className="card">
-            <div className="card-header">Categories</div>
+            <div className="card-header">{tt('admin.menu.categories.title', 'Categories')}</div>
             <div className="card-body">
               <div className="mb-2">
-                <label className="form-label">Name</label>
+                <label className="form-label">{tt('admin.menu.field.name', 'Name')}</label>
                 <input className="form-control" value={catName} onChange={(e) => setCatName(e.target.value)} />
               </div>
               <div className="d-flex gap-2">
                 <button className="btn btn-primary btn-sm" onClick={onSaveCategory}>
-                  {editingCatId ? 'Save changes' : 'Create'}
+                  {editingCatId ? tt('admin.menu.btn.saveChanges', 'Save changes') : tt('admin.menu.btn.create', 'Create')}
                 </button>
                 {editingCatId && (
                   <button className="btn btn-outline-secondary btn-sm" onClick={() => { setEditingCatId(null); setCatName(''); }}>
-                    Cancel
+                    {tt('admin.menu.btn.cancel', 'Cancel')}
                   </button>
                 )}
               </div>
@@ -859,20 +877,22 @@ function AdminMenuPage_Inner() {
                         {c.imageUrl ? (
                           <img src={c.imageUrl} alt={c.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         ) : (
-                          <div className="d-flex h-100 w-100 align-items-center justify-content-center text-muted" style={{ fontSize: 10 }}>No img</div>
+                          <div className="d-flex h-100 w-100 align-items-center justify-content-center text-muted" style={{ fontSize: 10 }}>
+                            {tt('admin.menu.noImageShort', 'No img')}
+                          </div>
                         )}
                       </div>
                       <div className="text-truncate">
                         <div className="fw-semibold text-truncate">{c.name}</div>
                         <div className="text-muted small text-truncate">
-                          slug: {c.slug || '—'} · order: {c.sortOrder ?? '—'} · active: {String(c.isActive ?? true)}
+                          slug: {c.slug || '—'} · {tt('admin.menu.field.order', 'order')}: {c.sortOrder ?? '—'} · {tt('admin.menu.field.active', 'active')}: {String(c.isActive ?? true)}
                         </div>
                       </div>
                     </div>
                     {/* Botones en columna */}
                     <div className="d-flex flex-column gap-2 align-items-stretch" style={{ minWidth: 140 }}>
                       <label className="btn btn-outline-primary btn-sm w-100 m-0">
-                        Image
+                        {tt('admin.menu.btn.image', 'Image')}
                         <input
                           type="file"
                           accept="image/*"
@@ -884,12 +904,16 @@ function AdminMenuPage_Inner() {
                           }}
                         />
                       </label>
-                      <button className="btn btn-outline-secondary btn-sm w-100" onClick={() => onEditCategory(c)}>Edit</button>
-                      <button className="btn btn-outline-danger btn-sm w-100" onClick={() => onDeleteCategory(c.id)}>Delete</button>
+                      <button className="btn btn-outline-secondary btn-sm w-100" onClick={() => onEditCategory(c)}>
+                        {tt('admin.menu.btn.edit', 'Edit')}
+                      </button>
+                      <button className="btn btn-outline-danger btn-sm w-100" onClick={() => onDeleteCategory(c.id)}>
+                        {tt('admin.menu.btn.delete', 'Delete')}
+                      </button>
                     </div>
                   </div>
                 ))}
-                {categories.length === 0 && <div className="text-muted small">No categories.</div>}
+                {categories.length === 0 && <div className="text-muted small">{tt('admin.menu.empty.categories', 'No categories.')}</div>}
               </div>
             </div>
           </div>
@@ -898,28 +922,28 @@ function AdminMenuPage_Inner() {
         {/* ===================== Columna 2: Subcategorías ===================== */}
         <div className="col-12 col-lg-3">
           <div className="card">
-            <div className="card-header">Subcategories</div>
+            <div className="card-header">{tt('admin.menu.subcategories.title', 'Subcategories')}</div>
             <div className="card-body">
               <div className="mb-2">
-                <label className="form-label">Category</label>
+                <label className="form-label">{tt('admin.menu.field.category', 'Category')}</label>
                 <select className="form-select" value={subCatId} onChange={(e) => setSubCatId(e.target.value)}>
-                  <option value="">Select category…</option>
+                  <option value="">{tt('admin.menu.ph.selectCategory', 'Select category…')}</option>
                   {categories.map((c) => (
                     <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
                 </select>
               </div>
               <div className="mb-2">
-                <label className="form-label">Name</label>
+                <label className="form-label">{tt('admin.menu.field.name', 'Name')}</label>
                 <input className="form-control" value={subName} onChange={(e) => setSubName(e.target.value)} />
               </div>
               <div className="d-flex gap-2">
                 <button className="btn btn-primary btn-sm" onClick={onSaveSubcategory}>
-                  {editingSubId ? 'Save changes' : 'Create'}
+                  {editingSubId ? tt('admin.menu.btn.saveChanges', 'Save changes') : tt('admin.menu.btn.create', 'Create')}
                 </button>
                 {editingSubId && (
                   <button className="btn btn-outline-secondary btn-sm" onClick={() => { setEditingSubId(null); setSubName(''); setSubCatId(''); }}>
-                    Cancel
+                    {tt('admin.menu.btn.cancel', 'Cancel')}
                   </button>
                 )}
               </div>
@@ -934,18 +958,22 @@ function AdminMenuPage_Inner() {
                           {s.imageUrl ? (
                             <img src={s.imageUrl} alt={s.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                           ) : (
-                            <div className="d-flex h-100 w-100 align-items-center justify-content-center text-muted" style={{ fontSize: 10 }}>No img</div>
+                            <div className="d-flex h-100 w-100 align-items-center justify-content-center text-muted" style={{ fontSize: 10 }}>
+                              {tt('admin.menu.noImageShort', 'No img')}
+                            </div>
                           )}
                         </div>
                         <div className="text-truncate">
                           <div className="fw-semibold text-truncate">{s.name}</div>
-                          <div className="text-muted small text-truncate">Category: {catName} · order: {s.sortOrder ?? '—'}</div>
+                          <div className="text-muted small text-truncate">
+                            {tt('admin.menu.field.category', 'Category')}: {catName} · {tt('admin.menu.field.order', 'order')}: {s.sortOrder ?? '—'}
+                          </div>
                         </div>
                       </div>
                       {/* Botones en columna */}
                       <div className="d-flex flex-column gap-2 align-items-stretch" style={{ minWidth: 140 }}>
                         <label className="btn btn-outline-primary btn-sm w-100 m-0">
-                          Image
+                          {tt('admin.menu.btn.image', 'Image')}
                           <input
                             type="file"
                             accept="image/*"
@@ -957,13 +985,17 @@ function AdminMenuPage_Inner() {
                             }}
                           />
                         </label>
-                        <button className="btn btn-outline-secondary btn-sm w-100" onClick={() => onEditSubcategory(s)}>Edit</button>
-                        <button className="btn btn-outline-danger btn-sm w-100" onClick={() => onDeleteSubcategory(s.id)}>Delete</button>
+                        <button className="btn btn-outline-secondary btn-sm w-100" onClick={() => onEditSubcategory(s)}>
+                          {tt('admin.menu.btn.edit', 'Edit')}
+                        </button>
+                        <button className="btn btn-outline-danger btn-sm w-100" onClick={() => onDeleteSubcategory(s.id)}>
+                          {tt('admin.menu.btn.delete', 'Delete')}
+                        </button>
                       </div>
                     </div>
                   );
                 })}
-                {subcategories.length === 0 && <div className="text-muted small">No subcategories.</div>}
+                {subcategories.length === 0 && <div className="text-muted small">{tt('admin.menu.empty.subcategories', 'No subcategories.')}</div>}
               </div>
             </div>
           </div>
@@ -973,35 +1005,36 @@ function AdminMenuPage_Inner() {
         <div className="col-12 col-lg-6">
           <div className="card">
             <div className="card-header d-flex align-items-center justify-content-between">
-              <span>{itemEditingId ? 'Edit dish' : 'Create dish'}</span>
+              <span>{itemEditingId ? tt('admin.menu.item.edit', 'Edit dish') : tt('admin.menu.item.create', 'Create dish')}</span>
               <button type="button" className="btn btn-sm btn-outline-secondary" onClick={scrollToGroups}>
-                Edit groups
+                {tt('admin.menu.groups.edit', 'Edit groups')}
               </button>
             </div>
             <div className="card-body">
               <div className="row g-3">
                 <div className="col-12 col-md-6">
-                  <label className="form-label">Category</label>
+                  <label className="form-label">{tt('admin.menu.field.category', 'Category')}</label>
                   <select className="form-select" value={itemCatId} onChange={(e) => { setItemCatId(e.target.value); setItemSubId(''); }}>
-                    <option value="">Select category…</option>
+                    <option value="">{tt('admin.menu.ph.selectCategory', 'Select category…')}</option>
                     {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                 </div>
                 <div className="col-12 col-md-6">
-                  <label className="form-label">Subcategory</label>
+                  <label className="form-label">{tt('admin.menu.field.subcategory', 'Subcategory')}</label>
                   <select className="form-select" value={itemSubId} onChange={(e) => setItemSubId(e.target.value)} disabled={!itemCatId}>
-                    <option value="">{itemCatId ? 'Select subcategory…' : 'Select a category first'}</option>
+                    <option value="">
+                      {itemCatId ? tt('admin.menu.ph.selectSubcategory', 'Select subcategory…') : tt('admin.menu.ph.selectCategoryFirst', 'Select a category first')}
+                    </option>
                     {subcategories.filter((s) => !itemCatId || s.categoryId === itemCatId).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
                 </div>
 
                 <div className="col-12 col-md-6">
-                  <label className="form-label">Dish name</label>
+                  <label className="form-label">{tt('admin.menu.field.dishName', 'Dish name')}</label>
                   <input className="form-control" value={itemName} onChange={(e) => setItemName(e.target.value)} />
                 </div>
-                {/* 🔁 Antes: Price (Q) → ahora sin símbolo fijo */}
                 <div className="col-12 col-md-3">
-                  <label className="form-label">Price</label>
+                  <label className="form-label">{tt('admin.menu.field.price', 'Price')}</label>
                   <input
                     type="number"
                     step="0.01"
@@ -1013,24 +1046,24 @@ function AdminMenuPage_Inner() {
                 <div className="col-12 col-md-3 d-flex align-items-end">
                   <div className="form-check">
                     <input className="form-check-input" type="checkbox" id="activeCheck" checked={itemActive} onChange={(e) => setItemActive(e.target.checked)} />
-                    <label className="form-check-label" htmlFor="activeCheck">Active</label>
+                    <label className="form-check-label" htmlFor="activeCheck">{tt('admin.menu.field.activeCk', 'Active')}</label>
                   </div>
                 </div>
 
                 <div className="col-12">
-                  <label className="form-label">Option groups </label>
+                  <label className="form-label">{tt('admin.menu.groups.label', 'Option groups')}</label>
                   <div className="d-flex align-items-center justify-content-between mb-2">
-                    <small className="text-muted">Check the groups that apply to this dish.</small>
+                    <small className="text-muted">{tt('admin.menu.groups.hint', 'Check the groups that apply to this dish.')}</small>
                     <button
                       type="button"
                       className="btn btn-sm btn-outline-primary"
                       onClick={() => setShowOGCreator(s => !s)}
                     >
-                      {showOGCreator ? 'Hide' : 'Create new group & options'}
+                      {showOGCreator ? tt('admin.menu.btn.hide', 'Hide') : tt('admin.menu.btn.createGroup', 'Create new group & options')}
                     </button>
                   </div>
                   <div className="border rounded p-2" style={{ maxHeight: 160, overflow: 'auto' }}>
-                    {groups.length === 0 && <div className="text-muted small">No option groups.</div>}
+                    {groups.length === 0 && <div className="text-muted small">{tt('admin.menu.groups.empty', 'No option groups.')}</div>}
                     {groups.map((g) => {
                       const checked = itemOptionGroupIds.includes(g.id);
                       return (
@@ -1047,7 +1080,7 @@ function AdminMenuPage_Inner() {
                           />
                           <label className="form-check-label" htmlFor={`g_${g.id}`}>
                             {g.name}
-                            {g.required ? <span className="badge text-bg-light ms-1">required</span> : null}
+                            {g.required ? <span className="badge text-bg-light ms-1">{tt('admin.menu.badge.required', 'required')}</span> : null}
                             {g.type ? <span className="badge text-bg-secondary ms-1">{g.type}</span> : null}
                           </label>
                         </div>
@@ -1056,15 +1089,13 @@ function AdminMenuPage_Inner() {
                   </div>
                 </div>
 
-                {/* (Creador inline de Option-Group + Option-Items) ... igual que antes */}
-
                 {/* Descripción del plato */}
                 <div className="col-12">
-                  <label className="form-label">Description (visible only in the Menu)</label>
+                  <label className="form-label">{tt('admin.menu.field.description', 'Description (visible only in the Menu)')}</label>
                   <textarea
                     className="form-control"
                     rows={3}
-                    placeholder="Briefly describe the dish (optional)"
+                    placeholder={tt('admin.menu.ph.description', 'Briefly describe the dish (optional)')}
                     value={itemDescription}
                     onChange={(e) => setItemDescription(e.target.value)}
                   />
@@ -1073,27 +1104,31 @@ function AdminMenuPage_Inner() {
                 {/* Addons */}
                 <div className="col-12">
                   <label className="form-label d-flex align-items-center justify-content-between">
-                    <span>Add-ons (paid extras)</span>
-                    <button type="button" className="btn btn-outline-primary btn-sm" onClick={onAddAddon}>+ Add add-on</button>
+                    <span>{tt('admin.menu.addons.title', 'Add-ons (paid extras)')}</span>
+                    <button type="button" className="btn btn-outline-primary btn-sm" onClick={onAddAddon}>
+                      {tt('admin.menu.addons.add', '+ Add add-on')}
+                    </button>
                   </label>
-                  {addons.length === 0 && <div className="text-muted small">No add-ons.</div>}
+                  {addons.length === 0 && <div className="text-muted small">{tt('admin.menu.addons.empty', 'No add-ons.')}</div>}
                   {addons.map((a, idx) => (
                     <div key={idx} className="row g-2 align-items-center mb-1">
                       <div className="col-7">
-                        <input className="form-control" placeholder="Name" value={a.name} onChange={(e) => onChangeAddon(idx, 'name', e.target.value)} />
+                        <input className="form-control" placeholder={tt('admin.menu.field.name', 'Name')} value={a.name} onChange={(e) => onChangeAddon(idx, 'name', e.target.value)} />
                       </div>
                       <div className="col-3">
                         <input
                           type="number"
                           step="0.01"
                           className="form-control"
-                          placeholder="Price"
+                          placeholder={tt('admin.menu.field.price', 'Price')}
                           value={a.price}
                           onChange={(e) => onChangeAddon(idx, 'price', e.target.value)}
                         />
                       </div>
                       <div className="col-2 text-end">
-                        <button type="button" className="btn btn-outline-danger btn-sm" onClick={() => onRemoveAddon(idx)}>Delete</button>
+                        <button type="button" className="btn btn-outline-danger btn-sm" onClick={() => onRemoveAddon(idx)}>
+                          {tt('admin.menu.btn.delete', 'Delete')}
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -1110,7 +1145,7 @@ function AdminMenuPage_Inner() {
                 <div className="col-12 col-md-4 d-flex align-items-end">
                   <div className="d-flex gap-2">
                     <button className="btn btn-primary" onClick={onSaveItem}>
-                      {itemEditingId ? 'Save changes' : 'Create dish'}
+                      {itemEditingId ? tt('admin.menu.btn.saveChanges', 'Save changes') : tt('admin.menu.item.create', 'Create dish')}
                     </button>
                     {itemEditingId && (
                       <button className="btn btn-outline-secondary" onClick={() => {
@@ -1126,7 +1161,7 @@ function AdminMenuPage_Inner() {
                         setImagePreview(null);
                         setImageMeta({});
                         setItemDescription('');
-                      }}>Cancel</button>
+                      }}>{tt('admin.menu.btn.cancel', 'Cancel')}</button>
                     )}
                   </div>
                 </div>
@@ -1137,16 +1172,16 @@ function AdminMenuPage_Inner() {
           {/* ===================== Sección independiente: Option-Groups ===================== */}
           <div id="option-groups-editor" className="card mt-3">
             <div className="card-header d-flex align-items-center justify-content-between">
-              <span>Option Groups — edit items and limits</span>
+              <span>{tt('admin.menu.groups.editor.title', 'Option Groups — edit items and limits')}</span>
               <div className="d-flex align-items-center gap-2">
-                <label className="form-label m-0 small">Select group:</label>
+                <label className="form-label m-0 small">{tt('admin.menu.groups.editor.select', 'Select group:')}</label>
                 <select
                   className="form-select form-select-sm"
                   style={{ minWidth: 260 }}
                   value={editGroupId}
                   onChange={(e) => setEditGroupId(e.target.value)}
                 >
-                  <option value="">— Choose —</option>
+                  <option value="">{tt('admin.menu.groups.editor.choose', '— Choose —')}</option>
                   {groups.map((g) => (
                     <option key={g.id} value={g.id}>{g.name}</option>
                   ))}
@@ -1156,7 +1191,7 @@ function AdminMenuPage_Inner() {
 
             <div className="card-body">
               {!editGroupId && (
-                <div className="text-muted small">Select a group to view and edit its options.</div>
+                <div className="text-muted small">{tt('admin.menu.groups.editor.empty', 'Select a group to view and edit its options.')}</div>
               )}
 
               {!!editGroupId && (
@@ -1164,7 +1199,7 @@ function AdminMenuPage_Inner() {
                   {/* Controles de min / max del grupo */}
                   <div className="row g-2 align-items-end mb-3">
                     <div className="col-6 col-md-2">
-                      <label className="form-label">Min</label>
+                      <label className="form-label">{tt('admin.menu.groups.editor.min', 'Min')}</label>
                       <input
                         type="number"
                         className="form-control form-control-sm"
@@ -1176,7 +1211,7 @@ function AdminMenuPage_Inner() {
                       />
                     </div>
                     <div className="col-6 col-md-2">
-                      <label className="form-label">Max</label>
+                      <label className="form-label">{tt('admin.menu.groups.editor.max', 'Max')}</label>
                       <input
                         type="number"
                         className="form-control form-control-sm"
@@ -1189,23 +1224,25 @@ function AdminMenuPage_Inner() {
                     </div>
                     <div className="col-12 col-md-3">
                       <button type="button" className="btn btn-sm btn-primary w-100" onClick={saveGroupConstraints}>
-                        Save limits
+                        {tt('admin.menu.groups.editor.saveLimits', 'Save limits')}
                       </button>
                     </div>
                   </div>
 
                   {/* Editor de Option-Items del grupo seleccionado */}
                   <div className="d-flex align-items-center justify-content-between mb-2">
-                    <small className="text-muted">Add, edit or delete options. Changes are saved per row.</small>
-                    <button className="btn btn-sm btn-outline-primary" onClick={addNewEditRow}>+ Add option</button>
+                    <small className="text-muted">{tt('admin.menu.groups.editor.hint', 'Add, edit or delete options. Changes are saved per row.')}</small>
+                    <button className="btn btn-sm btn-outline-primary" onClick={addNewEditRow}>
+                      {tt('admin.menu.groups.editor.addOption', '+ Add option')}
+                    </button>
                   </div>
 
-                  {editRows.length === 0 && <div className="text-muted small">This group has no options.</div>}
+                  {editRows.length === 0 && <div className="text-muted small">{tt('admin.menu.groups.editor.noOptions', 'This group has no options.')}</div>}
 
                   {editRows.map((r, idx) => (
                     <div key={r.id || `new_${idx}`} className="row g-2 align-items-end mb-2">
                       <div className="col-12 col-md-4">
-                        <label className="form-label">Name</label>
+                        <label className="form-label">{tt('admin.menu.field.name', 'Name')}</label>
                         <input
                           className="form-control form-control-sm"
                           value={r.name}
@@ -1213,7 +1250,7 @@ function AdminMenuPage_Inner() {
                         />
                       </div>
                       <div className="col-6 col-md-2">
-                        <label className="form-label">Δ Price</label>
+                        <label className="form-label">{tt('admin.menu.field.deltaPrice', 'Δ Price')}</label>
                         <input
                           type="number"
                           step="0.01"
@@ -1223,7 +1260,7 @@ function AdminMenuPage_Inner() {
                         />
                       </div>
                       <div className="col-6 col-md-2">
-                        <label className="form-label">Order</label>
+                        <label className="form-label">{tt('admin.menu.field.order', 'Order')}</label>
                         <input
                           type="number"
                           className="form-control form-control-sm"
@@ -1243,7 +1280,7 @@ function AdminMenuPage_Inner() {
                             checked={!!r.isDefault}
                             onChange={(e) => markRow(idx, { isDefault: e.target.checked })}
                           />
-                          <label className="form-check-label" htmlFor={`edDef_${r.id || idx}`}>Default</label>
+                          <label className="form-check-label" htmlFor={`edDef_${r.id || idx}`}>{tt('admin.menu.field.default', 'Default')}</label>
                         </div>
                       </div>
                       <div className="col-6 col-md-2">
@@ -1255,13 +1292,17 @@ function AdminMenuPage_Inner() {
                             checked={r.active !== false}
                             onChange={(e) => markRow(idx, { active: e.target.checked })}
                           />
-                          <label className="form-check-label" htmlFor={`edAct_${r.id || idx}`}>Active</label>
+                          <label className="form-check-label" htmlFor={`edAct_${r.id || idx}`}>{tt('admin.menu.field.activeCk', 'Active')}</label>
                         </div>
                       </div>
 
                       <div className="col-12 d-flex justify-content-end gap-2">
-                        <button className="btn btn-outline-danger btn-sm" onClick={() => deleteEditRow(idx)}>Delete</button>
-                        <button className="btn btn-primary btn-sm" disabled={!r._dirty} onClick={() => saveEditRow(idx)}>Save</button>
+                        <button className="btn btn-outline-danger btn-sm" onClick={() => deleteEditRow(idx)}>
+                          {tt('admin.menu.btn.delete', 'Delete')}
+                        </button>
+                        <button className="btn btn-primary btn-sm" disabled={!r._dirty} onClick={() => saveEditRow(idx)}>
+                          {tt('admin.menu.btn.save', 'Save')}
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -1273,14 +1314,14 @@ function AdminMenuPage_Inner() {
           {/* ===================== Listado de Platos ===================== */}
           <div className="card mt-3">
             <div className="card-header">
-              Dishes
+              {tt('admin.menu.dishes.title', 'Dishes')}
               <div className="float-end">
                 <select className="form-select form-select-sm d-inline-block me-2" style={{ width: 200 }} value={filterCat} onChange={(e) => { setFilterCat(e.target.value); setFilterSub(''); }}>
-                  <option value="">(All categories)</option>
+                  <option value="">{tt('admin.menu.filter.allCats', '(All categories)')}</option>
                   {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
                 <select className="form-select form-select-sm d-inline-block" style={{ width: 200 }} value={filterSub} onChange={(e) => setFilterSub(e.target.value)}>
-                  <option value="">(All Subcategories)</option>
+                  <option value="">{tt('admin.menu.filter.allSubs', '(All Subcategories)')}</option>
                   {subcategories
                     .filter((s) => !filterCat || s.categoryId === filterCat)
                     .map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -1288,7 +1329,7 @@ function AdminMenuPage_Inner() {
               </div>
             </div>
             <div className="card-body">
-              {itemsFiltered.length === 0 && <div className="text-muted small">No results.</div>}
+              {itemsFiltered.length === 0 && <div className="text-muted small">{tt('admin.menu.empty.results', 'No results.')}</div>}
               <div className="row g-3">
                 {itemsFiltered.map((mi) => {
                   const cName = categories.find((c) => c.id === mi.categoryId)?.name || '—';
@@ -1303,7 +1344,9 @@ function AdminMenuPage_Inner() {
                               {mi.imageUrl ? (
                                 <img src={mi.imageUrl} alt={mi.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                               ) : (
-                                <div className="d-flex h-100 w-100 align-items-center justify-content-center text-muted small">No image</div>
+                                <div className="d-flex h-100 w-100 align-items-center justify-content-center text-muted small">
+                                  {tt('admin.menu.noImage', 'No image')}
+                                </div>
                               )}
                             </div>
                             <div className="flex-fill">
@@ -1312,22 +1355,26 @@ function AdminMenuPage_Inner() {
                                 <div className="fw-semibold">{fmtQ(mi.price)}</div>
                               </div>
                               <div className="text-muted small">
-                                {cName} · {sName} {mi.active === false ? <span className="badge text-bg-warning ms-1">Inactive</span> : null}
+                                {cName} · {sName} {mi.active === false ? <span className="badge text-bg-warning ms-1">{tt('admin.menu.badge.inactive', 'Inactive')}</span> : null}
                               </div>
                               {!!gNames.length && (
-                                <div className="text-muted small mt-1">Groups: {gNames.join(', ')}</div>
+                                <div className="text-muted small mt-1">{tt('admin.menu.groups.short', 'Groups')}: {gNames.join(', ')}</div>
                               )}
                               {!!mi.addons?.length && (
                                 <div className="text-muted small mt-1">
-                                  Addons: {mi.addons.map(a => `${a.name} (${fmtQ(a.price)})`).join(', ')}
+                                  {tt('admin.menu.addons.short', 'Addons')}: {mi.addons.map(a => `${a.name} (${fmtQ(a.price)})`).join(', ')}
                                 </div>
                               )}
                             </div>
                           </div>
                         </div>
                         <div className="card-footer d-flex justify-content-end gap-2">
-                          <button className="btn btn-outline-secondary btn-sm" onClick={() => onEditItem(mi)}>Edit</button>
-                          <button className="btn btn-outline-danger btn-sm" onClick={() => onDeleteItem(mi.id, mi.imagePath)}>Delete</button>
+                          <button className="btn btn-outline-secondary btn-sm" onClick={() => onEditItem(mi)}>
+                            {tt('admin.menu.btn.edit', 'Edit')}
+                          </button>
+                          <button className="btn btn-outline-danger btn-sm" onClick={() => onDeleteItem(mi.id, mi.imagePath)}>
+                            {tt('admin.menu.btn.delete', 'Delete')}
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -1353,9 +1400,25 @@ function ImagePicker({
   imageMetaUrl: string | null;
   onPick: (f: File | null) => void;
 }) {
+  /* 🔤 no cambiar lógica; solo etiquetas visibles */
+  const { settings } = useTenantSettings();
+  const lang = React.useMemo(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const ls = localStorage.getItem("tenant.language");
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language;
+  }, [settings]);
+  const tt = (key: string, fb: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fb : s;
+  };
+
   return (
     <>
-      <label className="form-label">Image (Storage)</label>
+      <label className="form-label">{tt('admin.menu.image.label', 'Image (Storage)')}</label>
       <input
         type="file"
         accept="image/*"
@@ -1374,7 +1437,7 @@ function ImagePicker({
       )}
       {imageMetaUrl && (
         <div className="text-muted small mt-1">
-          Current image: <a href={imageMetaUrl} target="_blank" rel="noopener noreferrer">view</a>
+          {tt('admin.menu.image.current', 'Current image')}: <a href={imageMetaUrl} target="_blank" rel="noopener noreferrer">{tt('admin.menu.image.view', 'view')}</a>
         </div>
       )}
     </>

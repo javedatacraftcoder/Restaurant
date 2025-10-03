@@ -7,6 +7,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { getActiveTaxProfile } from '@/lib/tax/profile'; // ✅ NUEVO
 import { useFmtQ } from '@/lib/settings/money'; // ✅ usar formateador global (sin fmtCents)
 
+// 🔤 i18n
+import { t as translate } from "@/lib/i18n/t";
+import { useTenantSettings } from "@/lib/settings/hooks";
+
 /* ===================================================
    Firebase (client) — igual que en OPS, sin tocar nada
 =================================================== */
@@ -236,18 +240,22 @@ type OrderDoc = {
   customer?: OrderCustomer;
 };
 
-const TitleMap: Record<StatusSnake, string> = {
-  cart: 'Cart',
-  placed: 'Received',
-  kitchen_in_progress: 'In kitchen',
-  kitchen_done: 'Kitchen done',
-  ready_to_close: 'Ready to close',
-  assigned_to_courier: 'Assigned to delivery',
-  on_the_way: 'In route',
-  delivered: 'Delivered',
-  closed: 'Closed',
-  cancelled: 'Cancelled',
-};
+// 🔤 i18n: claves de estado (Cashier)
+function statusKey(s: StatusSnake): string {
+  const map: Record<StatusSnake, string> = {
+    cart: 'admin.cashier.status.cart',
+    placed: 'admin.cashier.status.received',
+    kitchen_in_progress: 'admin.cashier.status.inKitchen',
+    kitchen_done: 'admin.cashier.status.kitchenReady',
+    ready_to_close: 'admin.cashier.status.readyToClose',
+    assigned_to_courier: 'admin.cashier.status.assigned',
+    on_the_way: 'admin.cashier.status.onTheWay',
+    delivered: 'admin.cashier.status.delivered',
+    closed: 'admin.cashier.status.closed',
+    cancelled: 'admin.cashier.status.cancelled',
+  };
+  return map[s] || 'admin.cashier.status.unknown';
+}
 
 function toDate(x: any): Date {
   if (x?.toDate?.() instanceof Date) return x.toDate();
@@ -548,6 +556,22 @@ function useCashierOrders(enabled: boolean, pollMs = 5000) {
    Tarjeta (estilo OPS) + botones de Caja
 =================================================== */
 function BadgeStatus({ s }: { s: StatusSnake }) {
+  // Lang + tt local
+  const { settings } = useTenantSettings();
+  const lang = React.useMemo(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const ls = localStorage.getItem("tenant.language");
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language;
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const str = translate(lang, key, vars);
+    return str === key ? fallback : str;
+  };
+
   const map: Record<StatusSnake, string> = {
     placed: 'bg-primary',
     kitchen_in_progress: 'bg-warning text-dark',
@@ -561,7 +585,7 @@ function BadgeStatus({ s }: { s: StatusSnake }) {
     cart: 'bg-light text-dark',
   };
   const cls = `badge ${map[s] || 'bg-light text-dark'}`;
-  return <span className={cls}>{TitleMap[s] || s}</span>;
+  return <span className={cls}>{tt(statusKey(s), s)}</span>;
 }
 
 /* 🆕 Prop para abrir el editor de datos fiscales */
@@ -576,6 +600,22 @@ function OrderCard({
   busy: boolean;
   onEditTax: (o: OrderDoc) => void; // 🆕
 }) {
+  // Lang + tt local al componente
+  const { settings } = useTenantSettings();
+  const lang = React.useMemo(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const ls = localStorage.getItem("tenant.language");
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language;
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const str = translate(lang, key, vars);
+    return str === key ? fallback : str;
+  };
+
   const fmtQ = useFmtQ(); // ✅ formateador global
   const created = toDate(o.createdAt ?? new Date());
   const totals = computeOrderTotalsQ(o);
@@ -585,7 +625,9 @@ function OrderCard({
   const lines = preferredLines(o);
 
   const rawType = o.orderInfo?.type?.toLowerCase?.();
-  const uiType = rawType === 'pickup' ? 'pickup' : type;
+  const uiType = rawType === 'pickup'
+    ? tt('admin.cashier.badge.pickup', 'Pickup')
+    : (type === 'delivery' ? tt('admin.cashier.badge.delivery', 'delivery') : tt('admin.cashier.badge.dinein', 'dine_in'));
 
   const deliveryFeeShown =
     type === 'delivery'
@@ -631,7 +673,9 @@ function OrderCard({
         <div className="d-flex flex-column">
           <div className="fw-semibold">#{o.orderNumber || o.id}</div>
           {(type !== 'delivery' && (o.orderInfo?.table || o.tableNumber)) && (
-            <div className="fw-semibold">Table {o.orderInfo?.table || o.tableNumber}</div>
+            <div className="fw-semibold">
+              {tt('common.table', 'Table')} {o.orderInfo?.table || o.tableNumber}
+            </div>
           )}
           <small className="text-muted">
             {created.toLocaleString()}
@@ -645,10 +689,10 @@ function OrderCard({
       </div>
       <div className="card-body">
         {type === 'delivery' && (o.orderInfo?.address || o.deliveryAddress) ? (
-          <div className="mb-1"><strong>Deliver:</strong> {o.orderInfo?.address || o.deliveryAddress}</div>
+          <div className="mb-1"><strong>{tt('admin.cashier.deliver', 'Deliver')}:</strong> {o.orderInfo?.address || o.deliveryAddress}</div>
         ) : null}
-        {o.orderInfo?.phone ? <div className="mb-1"><strong>Phone:</strong> {o.orderInfo.phone}</div> : null}
-        {(o.orderInfo?.notes || o.notes) ? <div className="mb-2"><em>Note: {o.orderInfo?.notes || o.notes}</em></div> : null}
+        {o.orderInfo?.phone ? <div className="mb-1"><strong>{tt('admin.cashier.phone', 'Phone')}:</strong> {o.orderInfo.phone}</div> : null}
+        {(o.orderInfo?.notes || o.notes) ? <div className="mb-2"><em>{tt('admin.cashier.note', 'Note')}: {o.orderInfo?.notes || o.notes}</em></div> : null}
 
         {/* Ítems y addons (con precios por línea) */}
         <div className="mb-2">
@@ -669,7 +713,7 @@ function OrderCard({
                 });
                 groupRows.push(
                   <div className="ms-3 text-muted" key={`og-${idx}-${g.groupId || g.groupName}`}>
-                    <span className="fw-semibold">{g?.groupName ?? 'Options'}:</span> {rows}
+                    <span className="fw-semibold">{g?.groupName ?? tt('common.options', 'Options')}:</span> {rows}
                   </div>
                 );
               }
@@ -686,7 +730,7 @@ function OrderCard({
                 });
                 groupRows.push(
                   <div className="ms-3 text-muted" key={`op-${idx}-${g.groupName}`}>
-                    <span className="fw-semibold">{g?.groupName ?? 'Options'}:</span> {rows}
+                    <span className="fw-semibold">{g?.groupName ?? tt('common.options', 'Options')}:</span> {rows}
                   </div>
                 );
               }
@@ -703,7 +747,7 @@ function OrderCard({
                 });
                 groupRows.push(
                   <div className="ms-3 text-muted" key={`bk-${idx}-${key}`}>
-                    <span className="fw-semibold">{key}:</span> {rows}
+                    <span className="fw-semibold">{tt(`common.${key}`, key[0].toUpperCase() + key.slice(1))}:</span> {rows}
                   </div>
                 );
               }
@@ -713,12 +757,12 @@ function OrderCard({
               <div key={idx} className="small mb-2">
                 <div className="d-flex justify-content-between">
                   <div>• {qty} × {name}</div>
-                  <div className="text-muted">({fmtQ(baseUnit)} c/u)</div>
+                  <div className="text-muted">({fmtQ(baseUnit)} {tt('admin.cashier.each', 'each')})</div>
                 </div>
                 {groupRows}
                 {lineTotal > 0 && (
                   <div className="d-flex justify-content-between">
-                    <span className="text-muted">Subtotal line</span>
+                    <span className="text-muted">{tt('admin.cashier.lineSubtotal', 'Subtotal line')}</span>
                     <span className="text-muted">{fmtQ(lineTotal)}</span>
                   </div>
                 )}
@@ -730,13 +774,13 @@ function OrderCard({
         {/* ➕ Desglose (nuevo) — se conserva */}
         <div className="mt-2">
           <div className="d-flex justify-content-between">
-            <div>Subtotal</div>
+            <div>{tt('common.subtotal', 'Subtotal')}</div>
             <div className="fw-semibold">{fmtQ(totals.subtotal)}</div>
           </div>
 
           {discountShown > 0 && (
             <div className="d-flex justify-content-between text-success">
-              <div>Discount{promoLabel ? ` (${promoLabel})` : ''}</div>
+              <div>{tt('common.discount', 'Discount')}{promoLabel ? ` (${promoLabel})` : ''}</div>
               <div className="fw-semibold">- {fmtQ(discountShown)}</div>
             </div>
           )}
@@ -744,7 +788,7 @@ function OrderCard({
           {type === 'delivery' && (
             <div className="d-flex justify-content-between">
               <div>
-                Delivery{ o.orderInfo?.deliveryOption?.title ? ` — ${o.orderInfo.deliveryOption.title}` : '' }
+                {tt('common.delivery', 'Delivery')}{ o.orderInfo?.deliveryOption?.title ? ` — ${o.orderInfo.deliveryOption.title}` : '' }
               </div>
               <div className="fw-semibold">{fmtQ(deliveryFeeShown)}</div>
             </div>
@@ -752,14 +796,14 @@ function OrderCard({
 
           {type !== 'delivery' && Number(totals.tip || 0) > 0 && (
             <div className="d-flex justify-content-between">
-              <div>Tip</div>
+              <div>{tt('common.tip', 'Tip')}</div>
               <div className="fw-semibold">{fmtQ(totals.tip)}</div>
             </div>
           )}
 
           <hr />
           <div className="d-flex justify-content-between">
-            <div className="fw-semibold">Grand total</div>
+            <div className="fw-semibold">{tt('common.grandTotal', 'Grand total')}</div>
             <div className="fw-bold">{fmtQ(grandTotalShown)}</div>
           </div>
         </div>
@@ -768,34 +812,34 @@ function OrderCard({
           const s = (o as any).taxSnapshot as TaxSnapshot;
           return s && (
             <div className="small mt-2">
-              <div>Subtotal: {fmtQ(s.totals.subTotalCents / 100)}</div>
+              <div>{tt('common.subtotal', 'Subtotal')}: {fmtQ(s.totals.subTotalCents / 100)}</div>
               {Array.isArray(s.summaryByRate) && s.summaryByRate.map((r, idx) => (
                 <div key={r?.code || idx}>
-                  Tax {(r.rateBps/100).toFixed(2)}%: {fmtQ(r.taxCents / 100)}
+                  {tt('common.tax', 'Tax')} {(r.rateBps/100).toFixed(2)}%: {fmtQ(r.taxCents / 100)}
                 </div>
               ))}
               {Array.isArray(s.surcharges) && s.surcharges.map((x, i) => (
                 <div key={i}>
-                  Service charge: {fmtQ(x.baseCents / 100)}
-                  {x.taxCents>0 && <> (tax {fmtQ(x.taxCents / 100)})</>}
+                  {tt('common.serviceCharge', 'Service charge')}: {fmtQ(x.baseCents / 100)}
+                  {x.taxCents>0 && <> ({tt('common.tax', 'Tax')} {fmtQ(x.taxCents / 100)})</>}
                 </div>
               ))}
-              <div className="fw-semibold">Total: {fmtQ(s.totals.grandTotalCents / 100)}</div>
-              {s.customer?.taxId && <div>Customer Tax ID: {s.customer.taxId}</div>}
+              <div className="fw-semibold">{tt('common.total', 'Total')}: {fmtQ(s.totals.grandTotalCents / 100)}</div>
+              {s.customer?.taxId && <div>{tt('admin.cashier.customerTaxId', 'Customer Tax ID')}: {s.customer.taxId}</div>}
             </div>
           );
         })()}
 
         <div className="d-flex justify-content-between align-items-center mt-2">
           <div className="small">
-            Total: <span className="fw-semibold">{fmtQ(grandTotalShown)}</span>
-            {totals.tip ? <span className="text-muted"> · tip {fmtQ(totals.tip)}</span> : null}
+            {tt('common.total', 'Total')}: <span className="fw-semibold">{fmtQ(grandTotalShown)}</span>
+            {totals.tip ? <span className="text-muted"> · {tt('common.tip', 'Tip')} {fmtQ(totals.tip)}</span> : null}
           </div>
 
           <div className="btn-group">
             {/* 🆕 Botón para editar datos fiscales */}
             <button className="btn btn-outline-primary btn-sm" onClick={() => onEditTax(o)}>
-              Edit tax
+              {tt('admin.cashier.editTax', 'Edit tax')}
             </button>
             <a
               className="btn btn-outline-secondary btn-sm"
@@ -803,10 +847,10 @@ function OrderCard({
               target="_blank"
               rel="noopener noreferrer"
             >
-              Print receipt
+              {tt('admin.cashier.printReceipt', 'Print receipt')}
             </a>
             <button className="btn btn-success btn-sm" onClick={() => onClose(o)} disabled={busy}>
-              Close
+              {tt('common.close', 'Close')}
             </button>
           </div>
         </div>
@@ -819,6 +863,22 @@ function OrderCard({
    Página /admin/cashier
 =================================================== */
 function CashierPage_Inner() {
+  // Lang + tt en la página
+  const { settings } = useTenantSettings();
+  const lang = React.useMemo(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const ls = localStorage.getItem("tenant.language");
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language;
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const str = translate(lang, key, vars);
+    return str === key ? fallback : str;
+  };
+
   const { authReady, user } = useAuthClaims();
   const { orders, loading, error, refresh } = useCashierOrders(!!user, 4000);
 
@@ -870,7 +930,7 @@ function CashierPage_Inner() {
       setEditOrderId(null);
       await refresh(); // ver cambios inmediatamente
     } catch (e: any) {
-      setSaveErr(e?.message || 'Could not save billing data.');
+      setSaveErr(e?.message || tt('admin.cashier.err.saveBilling', 'Could not save billing data.'));
     } finally {
       setSavingTax(false);
     }
@@ -906,7 +966,7 @@ function CashierPage_Inner() {
         await refresh();
       }
     } catch (e: any) {
-      alert(e?.message || 'The order could not be closed.');
+      alert(e?.message || tt('admin.cashier.err.close', 'The order could not be closed.'));
     } finally {
       setBusyId(null);
     }
@@ -926,31 +986,33 @@ function CashierPage_Inner() {
     <div className="container py-3">
       <div className="d-flex align-items-center justify-content-between gap-3 mb-3 sticky-top bg-white py-2" style={{ top: 0, zIndex: 5, borderBottom: '1px solid #eee' }}>
         <div className="d-flex align-items-center gap-3">
-          <h1 className="h4 m-0">Cashier</h1>
+          <h1 className="h4 m-0">{tt('admin.cashier.title', 'Cashier')}</h1>
           <span className="text-muted small d-none d-md-inline">
-            Orders from <strong>Kitchen ready status</strong> onwards. From here you can print and close.
+            {tt('admin.cashier.subtitle', 'Orders from {a} onwards. From here you can print and close.', {
+              a: translate(lang, 'admin.cashier.status.kitchenReady', {})
+            })}
           </span>
         </div>
         <div className="d-flex align-items-center gap-2">
-          <button className="btn btn-outline-secondary btn-sm" onClick={() => refresh()}>Refresh</button>
+          <button className="btn btn-outline-secondary btn-sm" onClick={() => refresh()}>{tt('common.refresh', 'Refresh')}</button>
         </div>
       </div>
 
-      {!authReady && <div className="text-muted">Initializing session…</div>}
-      {authReady && !user && <div className="text-danger">You are not logged in.</div>}
+      {!authReady && <div className="text-muted">{tt('common.initSession', 'Initializing session…')}</div>}
+      {authReady && !user && <div className="text-danger">{tt('common.notLogged', 'You are not logged in.')}</div>}
       {error && <div className="text-danger">{error}</div>}
-      {user && loading && <div className="text-muted">Loading orders...</div>}
+      {user && loading && <div className="text-muted">{tt('common.loadingOrders', 'Loading orders...')}</div>}
 
       {user && !loading && (
         <>
           {/* Dine-in */}
           <section className="mb-4">
             <div className="d-flex align-items-center justify-content-between mb-2">
-              <h2 className="h5 m-0">Restaurant (Dine-in)</h2>
+              <h2 className="h5 m-0">{tt('admin.cashier.dinein', 'Restaurant (Dine-in)')}</h2>
               <span className="badge bg-secondary">{dineIn.length}</span>
             </div>
             {dineIn.length === 0 ? (
-              <div className="text-muted small">There are no dine-in orders.</div>
+              <div className="text-muted small">{tt('admin.cashier.noDinein', 'There are no dine-in orders.')}</div>
             ) : (
               <div className="row g-3">
                 {dineIn.map(o => (
@@ -965,11 +1027,11 @@ function CashierPage_Inner() {
           {/* Delivery */}
           <section className="mt-4">
             <div className="d-flex align-items-center justify-content-between mb-2">
-              <h2 className="h5 m-0">Delivery</h2>
+              <h2 className="h5 m-0">{tt('admin.cashier.delivery', 'Delivery')}</h2>
               <span className="badge bg-secondary">{delivery.length}</span>
             </div>
             {delivery.length === 0 ? (
-              <div className="text-muted small">There are no delivery orders.</div>
+              <div className="text-muted small">{tt('admin.cashier.noDelivery', 'There are no delivery orders.')}</div>
             ) : (
               <div className="row g-3">
                 {delivery.map(o => (
@@ -998,38 +1060,38 @@ function CashierPage_Inner() {
           <div className="position-absolute top-50 start-50 translate-middle" style={{ minWidth: 320, width: 'min(92vw, 520px)' }}>
             <div className="card shadow">
               <div className="card-header d-flex justify-content-between align-items-center">
-                <span className="fw-semibold">Edit tax details</span>
-                <button className="btn btn-sm btn-outline-secondary" onClick={() => setShowEdit(false)} aria-label="Close">✕</button>
+                <span className="fw-semibold">{tt('admin.cashier.editTaxDetails', 'Edit tax details')}</span>
+                <button className="btn btn-sm btn-outline-secondary" onClick={() => setShowEdit(false)} aria-label={tt('common.close', 'Close')}>✕</button>
               </div>
               <div className="card-body">
                 <div className="mb-3">
-                  <label className="form-label">Billing name</label>
+                  <label className="form-label">{tt('admin.cashier.billingName', 'Billing name')}</label>
                   <input
                     type="text"
                     className="form-control"
                     value={editBillingName}
                     onChange={(e) => setEditBillingName(e.target.value)}
-                    placeholder="Full name or company"
+                    placeholder={tt('admin.cashier.billingPh', 'Full name or company')}
                   />
                 </div>
                 <div className="mb-2">
-                  <label className="form-label">Tax ID</label>
+                  <label className="form-label">{tt('admin.cashier.taxId', 'Tax ID')}</label>
                   <input
                     type="text"
                     className="form-control"
                     value={editTaxId}
                     onChange={(e) => setEditTaxId(e.target.value)}
-                    placeholder="e.g. NIT / VAT"
+                    placeholder={tt('admin.cashier.taxIdPh', 'e.g. NIT / VAT')}
                   />
                 </div>
                 {saveErr && <div className="text-danger small mb-2">{saveErr}</div>}
               </div>
               <div className="card-footer d-flex justify-content-end gap-2">
                 <button className="btn btn-outline-secondary" onClick={() => setShowEdit(false)} disabled={savingTax}>
-                  Cancel
+                  {tt('common.cancel', 'Cancel')}
                 </button>
                 <button className="btn btn-primary" onClick={saveTaxOverride} disabled={savingTax || !editOrderId}>
-                  {savingTax ? 'Saving…' : 'Save'}
+                  {savingTax ? tt('common.saving', 'Saving…') : tt('common.save', 'Save')}
                 </button>
               </div>
             </div>

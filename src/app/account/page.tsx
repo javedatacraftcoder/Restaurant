@@ -1,15 +1,35 @@
 // src/app/account/page.tsx
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 import { auth } from "@/lib/firebase/client";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/app/providers";
 
+// 🔤 i18n
+import { t as translate } from "@/lib/i18n/t";
+import { useTenantSettings } from "@/lib/settings/hooks";
+
 export default function AccountsRegisterPage() {
   const router = useRouter();
   const { user, loading } = useAuth();
+
+  // idioma actual + helper
+  const { settings } = useTenantSettings();
+  const lang = useMemo(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const ls = localStorage.getItem("tenant.language");
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language;
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
 
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -32,23 +52,23 @@ export default function AccountsRegisterPage() {
     setErr(null);
 
     if (!ackMarketing) {
-      setErr("Please acknowledge the marketing notice to continue.");
+      setErr(tt("account.err.ack", "Please acknowledge the marketing notice to continue."));
       return;
     }
     if (fullName.trim().length < 2) {
-      setErr("Please enter your full name.");
+      setErr(tt("account.err.name", "Please enter your full name."));
       return;
     }
     if (!email.trim() || !email.includes("@")) {
-      setErr("Please enter a valid email address.");
+      setErr(tt("account.err.email", "Please enter a valid email address."));
       return;
     }
     if (pass1 !== pass2) {
-      setErr("Passwords do not match.");
+      setErr(tt("account.err.pass.match", "Passwords do not match."));
       return;
     }
     if (pass1.length < 6) {
-      setErr("Password must be at least 6 characters long.");
+      setErr(tt("account.err.pass.min", "Password must be at least 6 characters long."));
       return;
     }
 
@@ -101,7 +121,7 @@ export default function AccountsRegisterPage() {
       // 7) Redirect
       router.replace("/");
     } catch (e: any) {
-      setErr(e?.message || "The account could not be created. Please try again.");
+      setErr(tt("account.err.createFail", "The account could not be created. Please try again."));
     } finally {
       setBusy(false);
     }
@@ -109,15 +129,15 @@ export default function AccountsRegisterPage() {
 
   return (
     <main className="container py-4" style={{ maxWidth: 520 }}>
-      <h1 className="h3 mb-3 text-center">Create account</h1>
+      <h1 className="h3 mb-3 text-center">{tt("account.title", "Create account")}</h1>
 
       <form onSubmit={onSubmit} className="card p-3 border-0 shadow-sm">
         <div className="mb-3">
-          <label className="form-label">Full name</label>
+          <label className="form-label">{tt("account.fullName.label", "Full name")}</label>
           <input
             className="form-control"
             type="text"
-            placeholder="John Doe"
+            placeholder={tt("account.fullName.placeholder", "John Doe")}
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
             required
@@ -126,12 +146,12 @@ export default function AccountsRegisterPage() {
         </div>
 
         <div className="mb-3">
-          <label className="form-label">Email</label>
+          <label className="form-label">{tt("account.email.label", "Email")}</label>
           <input
             className="form-control"
             type="email"
             autoComplete="email"
-            placeholder="you@example.com"
+            placeholder={tt("account.email.placeholder", "you@example.com")}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
@@ -140,12 +160,12 @@ export default function AccountsRegisterPage() {
         </div>
 
         <div className="mb-3">
-          <label className="form-label">Password</label>
+          <label className="form-label">{tt("account.password.label", "Password")}</label>
           <input
             className="form-control"
             type="password"
             autoComplete="new-password"
-            placeholder="Minimum 6 characters"
+            placeholder={tt("account.password.placeholder", "Minimum 6 characters")}
             value={pass1}
             onChange={(e) => setPass1(e.target.value)}
             required
@@ -155,12 +175,12 @@ export default function AccountsRegisterPage() {
         </div>
 
         <div className="mb-3">
-          <label className="form-label">Confirm password</label>
+          <label className="form-label">{tt("account.confirm.label", "Confirm password")}</label>
           <input
             className="form-control"
             type="password"
             autoComplete="new-password"
-            placeholder="Re-enter your password"
+            placeholder={tt("account.confirm.placeholder", "Re-enter your password")}
             value={pass2}
             onChange={(e) => setPass2(e.target.value)}
             required
@@ -181,7 +201,10 @@ export default function AccountsRegisterPage() {
             required
           />
           <label className="form-check-label" htmlFor="ackMarketing">
-            I understand that my email may be used for marketing communications if I opt in.
+            {tt(
+              "account.ack.label",
+              "I understand that my email may be used for marketing communications if I opt in."
+            )}
           </label>
         </div>
 
@@ -196,23 +219,23 @@ export default function AccountsRegisterPage() {
             disabled={busy}
           />
           <label className="form-check-label" htmlFor="optInSwitch">
-            Send me promotions and special offers.
+            {tt("account.optin.label", "Send me promotions and special offers.")}
           </label>
         </div>
         <p className="text-muted small mb-3">
-          You can unsubscribe at any time using the links in our emails.
+          {tt("account.optin.note", "You can unsubscribe at any time using the links in our emails.")}
         </p>
 
         <button className="btn btn-success w-100" disabled={busy}>
-          {busy ? "Creating..." : "Create account"}
+          {busy ? tt("account.submit.creating", "Creating...") : tt("account.submit.create", "Create account")}
         </button>
 
         {err && <p className="text-danger mt-3 mb-0">{err}</p>}
       </form>
 
       <p className="text-center mt-3 mb-0">
-        Already have an account?{" "}
-        <a href="/login" className="link-primary">Sign in</a>
+        {tt("account.footer.have", "Already have an account?")}{" "}
+        <a href="/login" className="link-primary">{tt("account.footer.signin", "Sign in")}</a>
       </p>
     </main>
   );

@@ -5,6 +5,10 @@ import { OnlyAdmin } from "@/components/Only";
 
 import React, { useEffect, useMemo, useState } from 'react';
 
+// 🔤 i18n
+import { t as translate } from "@/lib/i18n/t";
+import { useTenantSettings } from "@/lib/settings/hooks";
+
 /* ---- Firebase Auth (cliente) ---- */
 function getFirebaseClientConfig() {
   return {
@@ -106,6 +110,22 @@ const ROLES: Array<{ key: 'admin' | 'kitchen' | 'waiter' | 'delivery' | 'cashier
 function RolesPage_Inner() {
   const { authReady, user, isAdmin } = useAuthClaims();
 
+  // idioma del tenant
+  const { settings } = useTenantSettings();
+  const lang = React.useMemo(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const ls = localStorage.getItem("tenant.language");
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language;
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
+
   const [rows, setRows] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -142,22 +162,22 @@ function RolesPage_Inner() {
         throw new Error(data?.error || `PATCH ${res.status}`);
       }
       await load();
-      alert('Roles updated. The user must refresh their session to obtain new permissions.');
+      alert(tt('admin.roles.alert.updated', 'Roles updated. The user must refresh their session to obtain new permissions.'));
     } catch (e: any) {
-      alert(e?.message || 'Could not update roles');
+      alert(e?.message || tt('admin.roles.alert.updateError', 'Could not update roles'));
     }
   };
 
-  if (!authReady) return <div className="container py-3">Initializing…</div>;
-  if (!user) return <div className="container py-3 text-danger">You must sign in.</div>;
-  if (!isAdmin) return <div className="container py-3 text-danger">Unauthorized (admins only).</div>;
+  if (!authReady) return <div className="container py-3">{tt('admin.roles.init', 'Initializing…')}</div>;
+  if (!user) return <div className="container py-3 text-danger">{tt('admin.common.mustSignIn', 'You must sign in.')}</div>;
+  if (!isAdmin) return <div className="container py-3 text-danger">{tt('admin.common.unauthorized', 'Unauthorized (admins only).')}</div>;
 
   return (
     <div className="container py-3">
       <div className="d-flex align-items-center justify-content-between mb-3">
-        <h1 className="h4 m-0">Manage roles</h1>
+        <h1 className="h4 m-0">{tt('admin.roles.title', 'Manage roles')}</h1>
         <button className="btn btn-outline-secondary btn-sm" onClick={load} disabled={loading}>
-          {loading ? 'Loading…' : 'Refresh'}
+          {loading ? tt('common.loading', 'Loading…') : tt('common.refresh', 'Refresh')}
         </button>
       </div>
 
@@ -167,9 +187,9 @@ function RolesPage_Inner() {
         <table className="table align-middle">
           <thead>
             <tr>
-              <th>User</th>
+              <th>{tt('admin.roles.col.user', 'User')}</th>
               {ROLES.map((r) => (
-                <th key={r.key}>{r.label}</th>
+                <th key={r.key}>{tt(`admin.roles.role.${r.key}`, r.label)}</th>
               ))}
             </tr>
           </thead>
@@ -177,9 +197,9 @@ function RolesPage_Inner() {
             {rows.map((u) => (
               <tr key={u.uid}>
                 <td>
-                  <div className="fw-semibold">{u.displayName || u.email || '(no name)'}</div>
+                  <div className="fw-semibold">{u.displayName || u.email || tt('admin.roles.noName', '(no name)')}</div>
                   <div className="text-muted small">{u.email}</div>
-                  {u.disabled && <span className="badge bg-warning text-dark">Disabled</span>}
+                  {u.disabled && <span className="badge bg-warning text-dark">{tt('admin.roles.badge.disabled', 'Disabled')}</span>}
                 </td>
                 
                 {ROLES.map((r) => {
@@ -200,7 +220,7 @@ function RolesPage_Inner() {
             {rows.length === 0 && (
               <tr>
                 <td colSpan={2 + ROLES.length} className="text-muted">
-                  No results
+                  {tt('admin.roles.noResults', 'No results')}
                 </td>
               </tr>
             )}
@@ -209,7 +229,7 @@ function RolesPage_Inner() {
       </div>
 
       <div className="text-muted small mt-2">
-        * The user must sign out and sign back in (or refresh their ID token) to receive the new permissions.
+        * {tt('admin.roles.note.refreshNeeded', 'The user must sign out and sign back in (or refresh their ID token) to receive the new permissions.')}
       </div>
     </div>
   );

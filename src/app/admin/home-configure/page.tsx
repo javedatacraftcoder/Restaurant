@@ -6,6 +6,10 @@ import Protected from '@/components/Protected';
 import { OnlyAdmin } from '@/components/Only';
 import '@/lib/firebase/client';
 
+// 🔤 i18n
+import { t as translate } from '@/lib/i18n/t';
+import { useTenantSettings } from '@/lib/settings/hooks';
+
 import {
   getFirestore,
   doc,
@@ -193,7 +197,7 @@ function buildYtEmbedUrl(id: string, opts: { autoplay?: boolean; muted?: boolean
     autoplay: String(ap),
     mute: String(mu),
   });
-    return `https://www.youtube-nocookie.com/embed/${id}?${params.toString()}`;
+  return `https://www.youtube-nocookie.com/embed/${id}?${params.toString()}`;
 }
 
 function maybeNormalizeYouTubeUrl(raw: string, opts: { autoplay?: boolean; muted?: boolean; loop?: boolean }) {
@@ -257,13 +261,29 @@ async function fetchCoupons(): Promise<Coupon[]> {
    =========================================================== */
 
 export default function AdminHomeConfigurePage() {
+  // 🔤 detectar idioma como en kitchen
+  const { settings } = useTenantSettings();
+  const lang = React.useMemo(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const ls = localStorage.getItem('tenant.language');
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language;
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const [cfg, setCfg] = useState<HomeConfig>({
     hero: { variant: 'image', slides: [] },
     promos: [],
-    featuredMenu: { title: 'Featured', categoryIds: [], subcategoryIds: [], itemIds: [], items: [] },
+    featuredMenu: { title: tt('admin.home.featured.titleDefault', 'Featured'), categoryIds: [], subcategoryIds: [], itemIds: [], items: [] },
     gallery: { images: [] },
     seo: { title: '', description: '', ogImage: '', keywords: [] },
 
@@ -272,16 +292,16 @@ export default function AdminHomeConfigurePage() {
 
     /* 👇 NUEVO: Newsletter & Contact */
     newsletter: {
-      title: 'Join our newsletter',
-      text: 'News, promos & seasonal dishes — no spam.',
-      placeholderEmail: 'Your email',
-      buttonLabel: 'Subscribe',
-      successMsg: 'Thanks! Check your inbox.',
-      errorMsg: 'Sorry, something went wrong. Try again.',
+      title: tt('admin.home.newsletter.titleDefault', 'Join our newsletter'),
+      text: tt('admin.home.newsletter.textDefault', 'News, promos & seasonal dishes — no spam.'),
+      placeholderEmail: tt('admin.home.newsletter.emailPh', 'Your email'),
+      buttonLabel: tt('admin.home.newsletter.btn', 'Subscribe'),
+      successMsg: tt('admin.home.newsletter.ok', 'Thanks! Check your inbox.'),
+      errorMsg: tt('admin.home.newsletter.err', 'Sorry, something went wrong. Try again.'),
     },
     contact: {
-      title: 'Contact us',
-      text: 'Find us or reach out by phone/email.',
+      title: tt('admin.home.contact.titleDefault', 'Contact us'),
+      text: tt('admin.home.contact.textDefault', 'Find us or reach out by phone/email.'),
       branches: [],
     },
 
@@ -319,7 +339,7 @@ export default function AdminHomeConfigurePage() {
           const data = snap.data() as HomeConfig;
           // Ensure new arrays exist
           data.featuredMenu = {
-            title: data.featuredMenu?.title ?? 'Featured',
+            title: data.featuredMenu?.title ?? tt('admin.home.featured.titleDefault', 'Featured'),
             categoryIds: data.featuredMenu?.categoryIds ?? [],
             subcategoryIds: data.featuredMenu?.subcategoryIds ?? [],
             itemIds: data.featuredMenu?.itemIds ?? [],
@@ -335,12 +355,12 @@ export default function AdminHomeConfigurePage() {
 
           /* 👇 NUEVO: asegurar Newsletter & Contact */
           data.newsletter = {
-            title: data.newsletter?.title ?? 'Join our newsletter',
-            text: data.newsletter?.text ?? 'News, promos & seasonal dishes — no spam.',
-            placeholderEmail: data.newsletter?.placeholderEmail ?? 'Your email',
-            buttonLabel: data.newsletter?.buttonLabel ?? 'Subscribe',
-            successMsg: data.newsletter?.successMsg ?? 'Thanks! Check your inbox.',
-            errorMsg: data.newsletter?.errorMsg ?? 'Sorry, something went wrong. Try again.',
+            title: data.newsletter?.title ?? tt('admin.home.newsletter.titleDefault', 'Join our newsletter'),
+            text: data.newsletter?.text ?? tt('admin.home.newsletter.textDefault', 'News, promos & seasonal dishes — no spam.'),
+            placeholderEmail: data.newsletter?.placeholderEmail ?? tt('admin.home.newsletter.emailPh', 'Your email'),
+            buttonLabel: data.newsletter?.buttonLabel ?? tt('admin.home.newsletter.btn', 'Subscribe'),
+            successMsg: data.newsletter?.successMsg ?? tt('admin.home.newsletter.ok', 'Thanks! Check your inbox.'),
+            errorMsg: data.newsletter?.errorMsg ?? tt('admin.home.newsletter.err', 'Sorry, something went wrong. Try again.'),
           };
 
           // ContactUpdate: normalizar branches a {phone,email,webpage,address}
@@ -360,8 +380,8 @@ export default function AdminHomeConfigurePage() {
               })
             : [];
           data.contact = {
-            title: (data as any)?.contact?.title ?? 'Contact us',
-            text: (data as any)?.contact?.text ?? 'Find us or reach out by phone/email.',
+            title: (data as any)?.contact?.title ?? tt('admin.home.contact.titleDefault', 'Contact us'),
+            text: (data as any)?.contact?.text ?? tt('admin.home.contact.textDefault', 'Find us or reach out by phone/email.'),
             branches: normalizedBranches,
           };
 
@@ -373,7 +393,7 @@ export default function AdminHomeConfigurePage() {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [tt]);
 
   /* ===========================
      Helpers de actualización segura
@@ -415,7 +435,7 @@ export default function AdminHomeConfigurePage() {
       setCfg(next);
     } catch (e) {
       console.error('[home-configure] saveDraft error', e);
-      alert('Error saving draft');
+      alert(tt('admin.home.err.saveDraft', 'Error saving draft'));
     } finally {
       setSaving(false);
     }
@@ -435,7 +455,7 @@ export default function AdminHomeConfigurePage() {
       setCfg(next);
     } catch (e) {
       console.error('[home-configure] publish error', e);
-      alert('Error publishing');
+      alert(tt('admin.home.err.publish', 'Error publishing'));
     } finally {
       setSaving(false);
     }
@@ -457,8 +477,8 @@ export default function AdminHomeConfigurePage() {
 
     const newSlide: HeroSlide = {
       imageUrl: url,
-      headline: 'Delicious moments',
-      sub: 'Your favorite dishes, fast & fresh.',
+      headline: tt('admin.home.hero.defaultHeadline', 'Delicious moments'),
+      sub: tt('admin.home.hero.defaultSub', 'Your favorite dishes, fast & fresh.'),
       overlay: 'dark',
     };
     setHeroSlides((slides) => [...slides, newSlide]);
@@ -478,7 +498,7 @@ export default function AdminHomeConfigurePage() {
 
     setCfg((prev) => ({
       ...prev,
-      gallery: { images: [...(prev.gallery.images || []), { url, alt: 'Gallery image' }] },
+      gallery: { images: [...(prev.gallery.images || []), { url, alt: tt('admin.home.gallery.imgAlt', 'Gallery image') }] },
     }));
 
     input.value = '';
@@ -508,11 +528,11 @@ export default function AdminHomeConfigurePage() {
     if (!input || !input.files?.length) return;
     const raw = input.files[0];
     if (!/^video\/mp4$/i.test(raw.type)) {
-      alert('Solo se permite MP4');
+      alert(tt('admin.home.video.onlyMp4', 'Only MP4 is allowed'));
       return;
     }
     if (raw.size > 300 * 1024 * 1024) {
-      alert('El video excede 300MB. Por favor, comprímelo.');
+      alert(tt('admin.home.video.tooBig', 'The video exceeds 300MB. Please compress it.'));
       return;
     }
     const path = `home/hero/video/${Date.now()}-${raw.name}`;
@@ -584,7 +604,7 @@ export default function AdminHomeConfigurePage() {
   function addEmptyPromo() {
     const p: PromoEntry = {
       id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : String(Date.now()),
-      title: 'New Promo',
+      title: tt('admin.home.promos.newTitle', 'New Promo'),
       active: true,
       badge: 'warning',
       discountPct: 10,
@@ -628,7 +648,7 @@ export default function AdminHomeConfigurePage() {
         <OnlyAdmin>
           <div className="container py-5 text-center">
             <div className="spinner-border" role="status" />
-            <div className="mt-2">Loading…</div>
+            <div className="mt-2">{tt('common.loading', 'Loading…')}</div>
           </div>
         </OnlyAdmin>
       </Protected>
@@ -640,13 +660,13 @@ export default function AdminHomeConfigurePage() {
       <OnlyAdmin>
         <div className="container py-4">
           <div className="d-flex align-items-center justify-content-between mb-3">
-            <h1 className="h4 m-0">Home Configure</h1>
+            <h1 className="h4 m-0">{tt('admin.home.title', 'Home Configure')}</h1>
             <div className="d-flex gap-2">
               <button className="btn btn-outline-secondary" disabled={saving} onClick={saveDraft}>
-                {saving ? 'Saving…' : 'Save draft'}
+                {saving ? tt('admin.home.btn.saving', 'Saving…') : tt('admin.home.btn.saveDraft', 'Save draft')}
               </button>
               <button className="btn btn-primary" disabled={saving} onClick={publishNow}>
-                {saving ? 'Publishing…' : 'Publish'}
+                {saving ? tt('admin.home.btn.publishing', 'Publishing…') : tt('admin.home.btn.publish', 'Publish')}
               </button>
             </div>
           </div>
@@ -654,15 +674,15 @@ export default function AdminHomeConfigurePage() {
           {/* Tabs */}
           <ul className="nav nav-tabs mb-3">
             {[
-              { k: 'hero', label: 'Hero' },
-              { k: 'promos', label: 'Promotions' },
-              { k: 'featured', label: 'Featured Menu' },
-              { k: 'gallery', label: 'Gallery' },
-              { k: 'about', label: 'About Us' }, // 👈 NUEVO
-              { k: 'newsletter', label: 'Newsletter' }, // 👈 NUEVO
-              { k: 'contact', label: 'Contact' }, // 👈 NUEVO
-              { k: 'seo', label: 'SEO' },
-              { k: 'publish', label: 'Publish' },
+              { k: 'hero', label: tt('admin.home.tab.hero', 'Hero') },
+              { k: 'promos', label: tt('admin.home.tab.promos', 'Promotions') },
+              { k: 'featured', label: tt('admin.home.tab.featured', 'Featured Menu') },
+              { k: 'gallery', label: tt('admin.home.tab.gallery', 'Gallery') },
+              { k: 'about', label: tt('admin.home.tab.about', 'About Us') }, // 👈 NUEVO
+              { k: 'newsletter', label: tt('admin.home.tab.newsletter', 'Newsletter') }, // 👈 NUEVO
+              { k: 'contact', label: tt('admin.home.tab.contact', 'Contact') }, // 👈 NUEVO
+              { k: 'seo', label: tt('admin.home.tab.seo', 'SEO') },
+              { k: 'publish', label: tt('admin.home.tab.publish', 'Publish') },
             ].map((t) => (
               <li className="nav-item" key={t.k}>
                 <button
@@ -681,7 +701,7 @@ export default function AdminHomeConfigurePage() {
               <div className="card-body">
                 <div className="row g-3">
                   <div className="col-md-4">
-                    <label className="form-label">Variant</label>
+                    <label className="form-label">{tt('admin.home.hero.variant', 'Variant')}</label>
                     <select
                       className="form-select"
                       value={cfg.hero.variant}
@@ -689,9 +709,9 @@ export default function AdminHomeConfigurePage() {
                         onHeroVariantChange(e.target.value as 'image' | 'carousel' | 'video')
                       }
                     >
-                      <option value="image">Single image</option>
-                      <option value="carousel">Carousel</option>
-                      <option value="video">Video</option>
+                      <option value="image">{tt('admin.home.hero.variant.image', 'Single image')}</option>
+                      <option value="carousel">{tt('admin.home.hero.variant.carousel', 'Carousel')}</option>
+                      <option value="video">{tt('admin.home.hero.variant.video', 'Video')}</option>
                     </select>
                   </div>
                 </div>
@@ -703,7 +723,7 @@ export default function AdminHomeConfigurePage() {
                     <div className="d-flex align-items-center gap-2 mb-2">
                       <input ref={imgInputRef} type="file" accept="image/*" className="form-control" />
                       <button className="btn btn-outline-primary" onClick={handleAddHeroImage}>
-                        Add slide (auto-compress)
+                        {tt('admin.home.hero.addSlide', 'Add slide (auto-compress)')}
                       </button>
                     </div>
 
@@ -714,7 +734,7 @@ export default function AdminHomeConfigurePage() {
                             <img src={s.imageUrl} className="card-img-top" alt={s.imageAlt || 'slide'} />
                             <div className="card-body">
                               <div className="mb-2">
-                                <label className="form-label">Headline</label>
+                                <label className="form-label">{tt('admin.home.hero.headline', 'Headline')}</label>
                                 <input
                                   className="form-control"
                                   value={s.headline}
@@ -728,7 +748,7 @@ export default function AdminHomeConfigurePage() {
                                 />
                               </div>
                               <div className="mb-2">
-                                <label className="form-label">Subheadline</label>
+                                <label className="form-label">{tt('admin.home.hero.subheadline', 'Subheadline')}</label>
                                 <input
                                   className="form-control"
                                   value={s.sub || ''}
@@ -743,7 +763,7 @@ export default function AdminHomeConfigurePage() {
                               </div>
                               <div className="row g-2">
                                 <div className="col-6">
-                                  <label className="form-label">CTA label</label>
+                                  <label className="form-label">{tt('admin.home.hero.ctaLabel', 'CTA label')}</label>
                                   <input
                                     className="form-control"
                                     value={s.cta?.label || ''}
@@ -759,7 +779,7 @@ export default function AdminHomeConfigurePage() {
                                   />
                                 </div>
                                 <div className="col-6">
-                                  <label className="form-label">CTA href</label>
+                                  <label className="form-label">{tt('admin.home.hero.ctaHref', 'CTA href')}</label>
                                   <input
                                     className="form-control"
                                     value={s.cta?.href || ''}
@@ -776,7 +796,7 @@ export default function AdminHomeConfigurePage() {
                                 </div>
                               </div>
                               <div className="mt-2">
-                                <label className="form-label">Overlay</label>
+                                <label className="form-label">{tt('admin.home.hero.overlay', 'Overlay')}</label>
                                 <select
                                   className="form-select"
                                   value={s.overlay || 'dark'}
@@ -788,9 +808,9 @@ export default function AdminHomeConfigurePage() {
                                     })
                                   }
                                 >
-                                  <option value="dark">Dark</option>
-                                  <option value="light">Light</option>
-                                  <option value="none">None</option>
+                                  <option value="dark">{tt('admin.home.hero.overlay.dark', 'Dark')}</option>
+                                  <option value="light">{tt('admin.home.hero.overlay.light', 'Light')}</option>
+                                  <option value="none">{tt('admin.home.hero.overlay.none', 'None')}</option>
                                 </select>
                               </div>
                             </div>
@@ -806,16 +826,17 @@ export default function AdminHomeConfigurePage() {
                   <>
                     <hr />
                     <div className="alert alert-info">
-                      Puedes usar URL (YouTube/Vimeo/MP4) o subir un MP4 (máx 300MB). Recomiendo subir un
-                      <strong> poster</strong> para el primer render.
+                      {tt('admin.home.video.notice',
+                        'You can use a URL (YouTube/Vimeo/MP4) or upload an MP4 (max 300MB). I recommend adding a poster for the first render.'
+                      )}
                     </div>
 
                     <div className="row g-3">
                       <div className="col-md-6">
-                        <label className="form-label">Video URL</label>
+                        <label className="form-label">{tt('admin.home.video.url', 'Video URL')}</label>
                         <input
                           className="form-control"
-                          placeholder="https://... (mp4, youtube, vimeo)"
+                          placeholder={tt('admin.home.video.urlPh', 'https://... (mp4, youtube, vimeo)')}
                           value={cfg.hero.video?.url || ''}
                           onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                             const urlRaw = e.target.value;
@@ -829,27 +850,33 @@ export default function AdminHomeConfigurePage() {
                           }}
                         />
                         <div className="small text-muted mt-1">
-                          Si es YouTube/Vimeo, renderizaremos el embed; si es MP4, usaremos &lt;video&gt; HTML5.
+                          {tt('admin.home.video.embedInfo',
+                            'If it is YouTube/Vimeo, we will render the embed; if it is MP4, we will use HTML5 <video>.'
+                          )}
                         </div>
                       </div>
                       <div className="col-md-6">
-                        <label className="form-label">Subir MP4 (máx 300MB)</label>
+                        <label className="form-label">{tt('admin.home.video.upload', 'Upload MP4 (max 300MB)')}</label>
                         <div className="d-flex gap-2">
                           <input ref={videoInputRef} type="file" accept="video/mp4" className="form-control" />
-                          <button className="btn btn-outline-primary" onClick={handleUploadVideo}>Upload</button>
+                          <button className="btn btn-outline-primary" onClick={handleUploadVideo}>
+                            {tt('admin.home.btn.upload', 'Upload')}
+                          </button>
                         </div>
                       </div>
 
                       <div className="col-md-6">
-                        <label className="form-label">Poster (imagen)</label>
+                        <label className="form-label">{tt('admin.home.video.poster', 'Poster (image)')}</label>
                         <div className="d-flex gap-2">
                           <input ref={posterInputRef} type="file" accept="image/*" className="form-control" />
-                          <button className="btn btn-outline-primary" onClick={handleUploadPoster}>Upload poster</button>
+                          <button className="btn btn-outline-primary" onClick={handleUploadPoster}>
+                            {tt('admin.home.video.uploadPoster', 'Upload poster')}
+                          </button>
                         </div>
                       </div>
 
                       <div className="col-md-6">
-                        <label className="form-label">Playback</label>
+                        <label className="form-label">{tt('admin.home.video.playback', 'Playback')}</label>
                         <div className="row g-2">
                           <div className="col-4">
                             <div className="form-check">
@@ -873,7 +900,9 @@ export default function AdminHomeConfigurePage() {
                                   });
                                 }}
                               />
-                              <label className="form-check-label" htmlFor="autoplay">Autoplay</label>
+                              <label className="form-check-label" htmlFor="autoplay">
+                                {tt('admin.home.video.autoplay', 'Autoplay')}
+                              </label>
                             </div>
                           </div>
                           <div className="col-4">
@@ -894,7 +923,9 @@ export default function AdminHomeConfigurePage() {
                                   setHeroVideo({ loop: checked, url: normalized });
                                 }}
                               />
-                              <label className="form-check-label" htmlFor="loop">Loop</label>
+                              <label className="form-check-label" htmlFor="loop">
+                                {tt('admin.home.video.loop', 'Loop')}
+                              </label>
                             </div>
                           </div>
                           <div className="col-4">
@@ -915,7 +946,9 @@ export default function AdminHomeConfigurePage() {
                                   setHeroVideo({ muted: checked, url: normalized });
                                 }}
                               />
-                              <label className="form-check-label" htmlFor="muted">Muted</label>
+                              <label className="form-check-label" htmlFor="muted">
+                                {tt('admin.home.video.muted', 'Muted')}
+                              </label>
                             </div>
                           </div>
                         </div>
@@ -933,15 +966,19 @@ export default function AdminHomeConfigurePage() {
               <div className="card-body">
                 <div className="d-flex justify-content-between align-items-center mb-3">
                   <div>
-                    <h2 className="h5 m-0">Promotions</h2>
-                    <small className="text-muted">Resalta tus promos con imágenes de los platos seleccionados.</small>
+                    <h2 className="h5 m-0">{tt('admin.home.promos.title', 'Promotions')}</h2>
+                    <small className="text-muted">
+                      {tt('admin.home.promos.subtitle', 'Highlight your promos with images from the selected dishes.')}
+                    </small>
                   </div>
                   <button className="btn btn-primary" onClick={addEmptyPromo}>
-                    + Add promotion
+                    {tt('admin.home.promos.add', '+ Add promotion')}
                   </button>
                 </div>
 
-                {(cfg.promos || []).length === 0 && <div className="text-muted">No promotions yet.</div>}
+                {(cfg.promos || []).length === 0 && (
+                  <div className="text-muted">{tt('admin.home.promos.empty', 'No promotions yet.')}</div>
+                )}
 
                 <div className="row g-3">
                   {cfg.promos.map((p) => {
@@ -966,12 +1003,14 @@ export default function AdminHomeConfigurePage() {
                                 checked={p.active}
                                 onChange={(e) => updatePromo(p.id, { active: e.target.checked })}
                               />
-                              <label className="form-check-label text-dark small" htmlFor={`active-${p.id}`}>Active</label>
+                              <label className="form-check-label text-dark small" htmlFor={`active-${p.id}`}>
+                                {tt('admin.home.promos.active', 'Active')}
+                              </label>
                             </div>
                             <div className="mt-3 text-dark">
                               <div className="row g-2">
                                 <div className="col-8">
-                                  <label className="form-label text-dark-50">Title</label>
+                                  <label className="form-label text-dark-50">{tt('common.title', 'Title')}</label>
                                   <input
                                     className="form-control form-control-lg"
                                     value={p.title}
@@ -979,7 +1018,7 @@ export default function AdminHomeConfigurePage() {
                                   />
                                 </div>
                                 <div className="col-4">
-                                  <label className="form-label text-dark-50">Discount %</label>
+                                  <label className="form-label text-dark-50">{tt('admin.home.promos.discountPct', 'Discount %')}</label>
                                   <input
                                     type="number"
                                     className="form-control"
@@ -989,7 +1028,7 @@ export default function AdminHomeConfigurePage() {
                                 </div>
                               </div>
                               <div className="mt-2">
-                                <label className="form-label text-dark-50">Subtitle</label>
+                                <label className="form-label text-dark-50">{tt('admin.home.promos.subtitleLabel', 'Subtitle')}</label>
                                 <input
                                   className="form-control"
                                   value={p.subtitle || ''}
@@ -1002,7 +1041,7 @@ export default function AdminHomeConfigurePage() {
                           <div className="card-body">
                             {/* Platos en promo */}
                             <div className="mb-3">
-                              <label className="form-label">Dishes in promotion</label>
+                              <label className="form-label">{tt('admin.home.promos.dishes', 'Dishes in promotion')}</label>
                               <select
                                 multiple
                                 className="form-select"
@@ -1017,13 +1056,13 @@ export default function AdminHomeConfigurePage() {
                                   <option key={mi.id} value={mi.id}>{mi.name}</option>
                                 ))}
                               </select>
-                              <div className="form-text">Seleccione uno o más platos.</div>
+                              <div className="form-text">{tt('admin.home.promos.selectDishes', 'Select one or more dishes.')}</div>
                             </div>
 
                             {/* NUEVO: Elegir imagen de portada desde los platos seleccionados */}
                             {dishes.length > 0 && (
                               <div className="mb-3">
-                                <label className="form-label">Cover image (from selected dishes)</label>
+                                <label className="form-label">{tt('admin.home.promos.cover', 'Cover image (from selected dishes)')}</label>
                                 <select
                                   className="form-select"
                                   value={selectedCoverId}
@@ -1032,7 +1071,7 @@ export default function AdminHomeConfigurePage() {
                                     updatePromo(p.id, { imageUrl: chosen?.imageUrl || undefined });
                                   }}
                                 >
-                                  <option value="">— Select a dish image —</option>
+                                  <option value="">{tt('admin.home.promos.cover.choose', '— Select a dish image —')}</option>
                                   {dishes.map((d) => (
                                     <option key={d.id} value={d.id}>
                                       {d.name}
@@ -1040,7 +1079,7 @@ export default function AdminHomeConfigurePage() {
                                   ))}
                                 </select>
                                 <div className="form-text">
-                                  Esta imagen se mostrará en el listado público de promociones.
+                                  {tt('admin.home.promos.cover.help', 'This image will be shown in the public promotions list.')}
                                 </div>
 
                                 {/* preview de la imagen elegida */}
@@ -1083,7 +1122,7 @@ export default function AdminHomeConfigurePage() {
 
                             {/* Cupones asociados */}
                             <div className="mb-2">
-                              <label className="form-label">Coupons to attach</label>
+                              <label className="form-label">{tt('admin.home.promos.coupons', 'Coupons to attach')}</label>
                               <select
                                 multiple
                                 className="form-select"
@@ -1096,17 +1135,19 @@ export default function AdminHomeConfigurePage() {
                               >
                                 {coupons.map((c) => (
                                   <option key={c.id} value={c.id}>
-                                    {(c.label || 'Untitled')} — {c.code}
+                                    {(c.label || tt('admin.home.promos.untitled', 'Untitled'))} — {c.code}
                                     {typeof c.discountPct === 'number' ? ` (${c.discountPct}%)` : ''}
                                   </option>
                                 ))}
                               </select>
-                              <div className="form-text">Asocie cupones existentes a esta promoción.</div>
+                              <div className="form-text">
+                                {tt('admin.home.promos.coupons.help', 'Attach existing coupons to this promotion.')}
+                              </div>
                             </div>
 
                             <div className="d-flex justify-content-end">
                               <button className="btn btn-outline-danger btn-sm" onClick={() => removePromo(p.id)}>
-                                Remove promotion
+                                {tt('admin.home.promos.remove', 'Remove promotion')}
                               </button>
                             </div>
                           </div>
@@ -1125,7 +1166,7 @@ export default function AdminHomeConfigurePage() {
               <div className="card-body">
                 <div className="row g-3">
                   <div className="col-md-6">
-                    <label className="form-label">Title</label>
+                    <label className="form-label">{tt('common.title', 'Title')}</label>
                     <input
                       className="form-control"
                       value={cfg.featuredMenu.title || ''}
@@ -1137,7 +1178,7 @@ export default function AdminHomeConfigurePage() {
 
                   {/* Categorías */}
                   <div className="col-12">
-                    <label className="form-label">Categories</label>
+                    <label className="form-label">{tt('admin.home.featured.categories', 'Categories')}</label>
                     <div className="d-flex flex-wrap gap-2">
                       {categories.map((c) => {
                         const active = cfg.featuredMenu.categoryIds?.includes(c.id);
@@ -1153,12 +1194,12 @@ export default function AdminHomeConfigurePage() {
                         );
                       })}
                     </div>
-                    <div className="form-text">Selecciona una o varias categorías.</div>
+                    <div className="form-text">{tt('admin.home.featured.categories.help', 'Select one or more categories.')}</div>
                   </div>
 
                   {/* Subcategorías */}
                   <div className="col-12">
-                    <label className="form-label">Subcategories</label>
+                    <label className="form-label">{tt('admin.home.featured.subcategories', 'Subcategories')}</label>
                     <div className="d-flex flex-wrap gap-2">
                       {subcategories.map((s) => {
                         const active = cfg.featuredMenu.subcategoryIds?.includes(s.id);
@@ -1178,12 +1219,12 @@ export default function AdminHomeConfigurePage() {
                         );
                       })}
                     </div>
-                    <div className="form-text">Refina por subcategorías (opcional).</div>
+                    <div className="form-text">{tt('admin.home.featured.subcategories.help', 'Refine by subcategories (optional).')}</div>
                   </div>
 
                   {/* Items específicos */}
                   <div className="col-12">
-                    <label className="form-label">Specific items (optional)</label>
+                    <label className="form-label">{tt('admin.home.featured.items', 'Specific items (optional)')}</label>
                     <select
                       multiple
                       className="form-select"
@@ -1213,7 +1254,7 @@ export default function AdminHomeConfigurePage() {
                         ))}
                     </select>
                     <div className="form-text">
-                      Si no eliges items, el frontend puede usar top items de las categorías seleccionadas.
+                      {tt('admin.home.featured.items.help', 'If you do not select items, the frontend may use top items from the selected categories.')}
                     </div>
                   </div>
 
@@ -1240,7 +1281,7 @@ export default function AdminHomeConfigurePage() {
                               <button
                                 className="btn sm btn-outline-danger ms-auto"
                                 onClick={() => toggleItem(id)}
-                                title="Remove"
+                                title={tt('common.remove', 'Remove')}
                               >
                                 ×
                               </button>
@@ -1253,7 +1294,7 @@ export default function AdminHomeConfigurePage() {
 
                   <div className="col-12">
                     <div className="alert alert-secondary mb-0">
-                      Tip: puedes combinar categorías/subcategorías y, opcionalmente, fijar items exactos.
+                      {tt('admin.home.featured.tip', 'Tip: you can combine categories/subcategories and optionally pin exact items.')}
                     </div>
                   </div>
                 </div>
@@ -1268,12 +1309,12 @@ export default function AdminHomeConfigurePage() {
                 <div className="d-flex align-items-center gap-2 mb-3">
                   <input ref={galleryInputRef} type="file" accept="image/*" className="form-control" />
                   <button className="btn btn-outline-primary" onClick={handleAddGalleryImage}>
-                    Add image (auto-compress)
+                    {tt('admin.home.gallery.add', 'Add image (auto-compress)')}
                   </button>
                 </div>
 
                 {(cfg.gallery.images || []).length === 0 && (
-                  <div className="text-muted">No images yet.</div>
+                  <div className="text-muted">{tt('admin.home.gallery.empty', 'No images yet.')}</div>
                 )}
 
                 {(cfg.gallery.images || []).length > 0 && (
@@ -1295,7 +1336,7 @@ export default function AdminHomeConfigurePage() {
                           className={`btn btn-sm mx-1 ${i === galleryIdx ? 'btn-primary' : 'btn-outline-primary'}`}
                           style={{ width: 10, height: 10, borderRadius: '50%', padding: 0 }}
                           onClick={() => setGalleryIdx(i)}
-                          aria-label={`Go to slide ${i + 1}`}
+                          aria-label={tt('admin.home.gallery.goto', 'Go to slide {n}', { n: String(i + 1) })}
                         />
                       ))}
                     </div>
@@ -1316,10 +1357,10 @@ export default function AdminHomeConfigurePage() {
                               </div>
                               <div className="col-8">
                                 <div className="card-body">
-                                  <label className="form-label">Alt text</label>
+                                  <label className="form-label">{tt('admin.home.gallery.alt', 'Alt text')}</label>
                                   <input
                                     className="form-control"
-                                    placeholder="Alt text"
+                                    placeholder={tt('admin.home.gallery.altPh', 'Alt text')}
                                     value={g.alt || ''}
                                     onChange={(e) => {
                                       setCfg((prev) => {
@@ -1348,10 +1389,10 @@ export default function AdminHomeConfigurePage() {
               <div className="card-body">
                 <div className="row g-4">
                   <div className="col-md-6">
-                    <label className="form-label">Title</label>
+                    <label className="form-label">{tt('common.title', 'Title')}</label>
                     <input
                       className="form-control"
-                      placeholder="About us"
+                      placeholder={tt('admin.home.about.titlePh', 'About us')}
                       value={cfg.aboutUs?.title || ''}
                       onChange={(e) =>
                         setCfg((prev) => ({ ...prev, aboutUs: { ...(prev.aboutUs || {}), title: e.target.value } }))
@@ -1360,11 +1401,11 @@ export default function AdminHomeConfigurePage() {
                   </div>
 
                   <div className="col-12">
-                    <label className="form-label">Text</label>
+                    <label className="form-label">{tt('common.text', 'Text')}</label>
                     <textarea
                       className="form-control"
                       rows={6}
-                      placeholder="Tell your story, mission, values…"
+                      placeholder={tt('admin.home.about.textPh', 'Tell your story, mission, values…')}
                       value={cfg.aboutUs?.text || ''}
                       onChange={(e) =>
                         setCfg((prev) => ({ ...prev, aboutUs: { ...(prev.aboutUs || {}), text: e.target.value } }))
@@ -1373,22 +1414,24 @@ export default function AdminHomeConfigurePage() {
                   </div>
 
                   <div className="col-md-6">
-                    <label className="form-label">Image</label>
+                    <label className="form-label">{tt('admin.home.about.image', 'Image')}</label>
                     <div className="d-flex gap-2">
                       <input ref={aboutImageInputRef} type="file" accept="image/*" className="form-control" />
                       <button className="btn btn-outline-primary" onClick={handleUploadAboutImage}>
-                        Upload
+                        {tt('common.upload', 'Upload')}
                       </button>
                       {cfg.aboutUs?.imageUrl && (
                         <button
                           className="btn btn-outline-danger"
                           onClick={() => setCfg((prev) => ({ ...prev, aboutUs: { ...(prev.aboutUs || {}), imageUrl: '' } }))}
                         >
-                          Remove
+                          {tt('common.remove', 'Remove')}
                         </button>
                       )}
                     </div>
-                    <div className="form-text">Se recomienda 1600×1200 aprox. (se comprime automáticamente).</div>
+                    <div className="form-text">
+                      {tt('admin.home.about.tip', 'Recommended ~1600×1200 (auto-compressed).')}
+                    </div>
                   </div>
 
                   {cfg.aboutUs?.imageUrl && (
@@ -1413,19 +1456,20 @@ export default function AdminHomeConfigurePage() {
               <div className="card-body">
                 <div className="d-flex justify-content-between align-items-center mb-3">
                   <div>
-                    <h2 className="h5 m-0">Newsletter</h2>
+                    <h2 className="h5 m-0">{tt('admin.home.newsletter.title', 'Newsletter')}</h2>
                     <small className="text-muted">
-                      Configura textos del bloque (UI/UX) y mensajes de estado del formulario.
+                      {tt('admin.home.newsletter.subtitle', 'Configure UI copy and form status messages.')}
                     </small>
                   </div>
                 </div>
 
                 <div className="row g-3">
                   <div className="col-md-6">
-                    <label className="form-label">Title</label>
+                    <label className="form-label">{tt('common.title', 'Title')}</label>
                     <input
-                      className="form-control"
-                      placeholder="Join our newsletter"
+                      className="form-control'
+                      "
+                      placeholder={tt('admin.home.newsletter.titlePh', 'Join our newsletter')}
                       value={cfg?.newsletter?.title || ''}
                       onChange={(e) =>
                         setCfg((prev) => ({ ...prev, newsletter: { ...(prev as any).newsletter, title: e.target.value } as any }))
@@ -1433,10 +1477,10 @@ export default function AdminHomeConfigurePage() {
                     />
                   </div>
                   <div className="col-md-6">
-                    <label className="form-label">Subtext</label>
+                    <label className="form-label">{tt('admin.home.newsletter.subtext', 'Subtext')}</label>
                     <input
                       className="form-control"
-                      placeholder="News, promos & seasonal dishes — no spam."
+                      placeholder={tt('admin.home.newsletter.textDefault', 'News, promos & seasonal dishes — no spam.')}
                       value={cfg?.newsletter?.text || ''}
                       onChange={(e) =>
                         setCfg((prev) => ({ ...prev, newsletter: { ...(prev as any).newsletter, text: e.target.value } as any }))
@@ -1445,10 +1489,10 @@ export default function AdminHomeConfigurePage() {
                   </div>
 
                   <div className="col-md-4">
-                    <label className="form-label">Email placeholder</label>
+                    <label className="form-label">{tt('admin.home.newsletter.emailPhLabel', 'Email placeholder')}</label>
                     <input
                       className="form-control"
-                      placeholder="Your email"
+                      placeholder={tt('admin.home.newsletter.emailPh', 'Your email')}
                       value={cfg?.newsletter?.placeholderEmail || ''}
                       onChange={(e) =>
                         setCfg((prev) => ({
@@ -1459,10 +1503,10 @@ export default function AdminHomeConfigurePage() {
                     />
                   </div>
                   <div className="col-md-4">
-                    <label className="form-label">Button label</label>
+                    <label className="form-label">{tt('admin.home.newsletter.buttonLabel', 'Button label')}</label>
                     <input
                       className="form-control"
-                      placeholder="Subscribe"
+                      placeholder={tt('admin.home.newsletter.btn', 'Subscribe')}
                       value={cfg?.newsletter?.buttonLabel || ''}
                       onChange={(e) =>
                         setCfg((prev) => ({
@@ -1475,15 +1519,17 @@ export default function AdminHomeConfigurePage() {
 
                   <div className="col-md-4">
                     <div className="alert alert-info mb-0">
-                      El formulario hace POST a <code>/api/newsletter/subscribe</code> con validación de email y honeypot.
+                      {tt('admin.home.newsletter.postInfo', 'The form posts to ')}
+                      <code>/api/newsletter/subscribe</code>{' '}
+                      {tt('admin.home.newsletter.postInfo2', 'with email validation and honeypot.')}
                     </div>
                   </div>
 
                   <div className="col-md-6">
-                    <label className="form-label">Success message</label>
+                    <label className="form-label">{tt('admin.home.newsletter.success', 'Success message')}</label>
                     <input
                       className="form-control"
-                      placeholder="Thanks! Check your inbox."
+                      placeholder={tt('admin.home.newsletter.ok', 'Thanks! Check your inbox.')}
                       value={cfg?.newsletter?.successMsg || ''}
                       onChange={(e) =>
                         setCfg((prev) => ({
@@ -1494,10 +1540,10 @@ export default function AdminHomeConfigurePage() {
                     />
                   </div>
                   <div className="col-md-6">
-                    <label className="form-label">Error message</label>
+                    <label className="form-label">{tt('admin.home.newsletter.error', 'Error message')}</label>
                     <input
                       className="form-control"
-                      placeholder="Sorry, something went wrong. Try again."
+                      placeholder={tt('admin.home.newsletter.err', 'Sorry, something went wrong. Try again.')}
                       value={cfg?.newsletter?.errorMsg || ''}
                       onChange={(e) =>
                         setCfg((prev) => ({
@@ -1518,9 +1564,9 @@ export default function AdminHomeConfigurePage() {
               <div className="card-body">
                 <div className="d-flex justify-content-between align-items-center mb-3">
                   <div>
-                    <h2 className="h5 m-0">Contact</h2>
+                    <h2 className="h5 m-0">{tt('admin.home.contact.title', 'Contact')}</h2>
                     <small className="text-muted">
-                      Renderiza tarjetas de sucursales (sin formulario). Tel/Email/Web como enlaces clicables.
+                      {tt('admin.home.contact.subtitle', 'Renders branch cards (no form). Phone/Email/Web as clickable links.')}
                     </small>
                   </div>
                   <button
@@ -1529,7 +1575,7 @@ export default function AdminHomeConfigurePage() {
                       const newBranch: ContactBranch = {
                         branchId:
                           typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : String(Date.now()),
-                        branchName: 'New branch',
+                        branchName: tt('admin.home.contact.newBranch', 'New branch'),
                         address: '',
                         phone: '',
                         email: '',
@@ -1540,24 +1586,24 @@ export default function AdminHomeConfigurePage() {
                         return {
                           ...prev,
                           contact: {
-                            title: (prev as any)?.contact?.title || 'Contact us',
-                            text: (prev as any)?.contact?.text || 'Find us or reach out by phone/email.',
+                            title: (prev as any)?.contact?.title || tt('admin.home.contact.titleDefault', 'Contact us'),
+                            text: (prev as any)?.contact?.text || tt('admin.home.contact.textDefault', 'Find us or reach out by phone/email.'),
                             branches: [...prevList, newBranch],
                           } as any,
                         };
                       });
                     }}
                   >
-                    + Add branch
+                    {tt('admin.home.contact.addBranch', '+ Add branch')}
                   </button>
                 </div>
 
                 <div className="row g-3 mb-3">
                   <div className="col-md-6">
-                    <label className="form-label">Section title</label>
+                    <label className="form-label">{tt('admin.home.contact.sectionTitle', 'Section title')}</label>
                     <input
                       className="form-control"
-                      placeholder="Contact us"
+                      placeholder={tt('admin.home.contact.titleDefault', 'Contact us')}
                       value={(cfg as any)?.contact?.title || ''}
                       onChange={(e) =>
                         setCfg((prev) => ({
@@ -1568,10 +1614,10 @@ export default function AdminHomeConfigurePage() {
                     />
                   </div>
                   <div className="col-md-6">
-                    <label className="form-label">Intro text</label>
+                    <label className="form-label">{tt('admin.home.contact.intro', 'Intro text')}</label>
                     <input
                       className="form-control"
-                      placeholder="We’d love to hear from you."
+                      placeholder={tt('admin.home.contact.introPh', 'We’d love to hear from you.')}
                       value={(cfg as any)?.contact?.text || ''}
                       onChange={(e) =>
                         setCfg((prev) => ({
@@ -1585,7 +1631,7 @@ export default function AdminHomeConfigurePage() {
 
                 {/* Branches */}
                 {(((cfg as any)?.contact?.branches || []) as Array<ContactBranch>).length === 0 && (
-                  <div className="text-muted">No branches yet. Usa “Add branch”.</div>
+                  <div className="text-muted">{tt('admin.home.contact.noBranches', 'No branches yet. Use “Add branch”.')}</div>
                 )}
 
                 <div className="row g-3">
@@ -1594,7 +1640,7 @@ export default function AdminHomeConfigurePage() {
                       <div className="card shadow-sm">
                         <div className="card-body">
                           <div className="d-flex justify-content-between align-items-start mb-2">
-                            <span className="badge bg-secondary">Branch</span>
+                            <span className="badge bg-secondary">{tt('admin.home.contact.branch', 'Branch')}</span>
                             <button
                               className="btn btn-outline-danger btn-sm"
                               onClick={() =>
@@ -1608,13 +1654,13 @@ export default function AdminHomeConfigurePage() {
                                 })
                               }
                             >
-                              Remove
+                              {tt('common.remove', 'Remove')}
                             </button>
                           </div>
 
                           <div className="row g-3">
                             <div className="col-md-4">
-                              <label className="form-label">Branch name</label>
+                              <label className="form-label">{tt('admin.home.contact.branchName', 'Branch name')}</label>
                               <input
                                 className="form-control"
                                 value={b.branchName || ''}
@@ -1628,7 +1674,7 @@ export default function AdminHomeConfigurePage() {
                               />
                             </div>
                             <div className="col-md-8">
-                              <label className="form-label">Address</label>
+                              <label className="form-label">{tt('common.address', 'Address')}</label>
                               <input
                                 className="form-control"
                                 value={b.address || ''}
@@ -1643,7 +1689,7 @@ export default function AdminHomeConfigurePage() {
                             </div>
 
                             <div className="col-md-4">
-                              <label className="form-label">Phone</label>
+                              <label className="form-label">{tt('common.phone', 'Phone')}</label>
                               <input
                                 className="form-control"
                                 placeholder="+502 1234 5678"
@@ -1674,7 +1720,7 @@ export default function AdminHomeConfigurePage() {
                               />
                             </div>
                             <div className="col-md-4">
-                              <label className="form-label">Webpage</label>
+                              <label className="form-label">{tt('admin.home.contact.web', 'Webpage')}</label>
                               <input
                                 type="url"
                                 className="form-control"
@@ -1705,7 +1751,7 @@ export default function AdminHomeConfigurePage() {
               <div className="card-body">
                 <div className="row g-3">
                   <div className="col-md-6">
-                    <label className="form-label">SEO Title</label>
+                    <label className="form-label">{tt('admin.home.seo.title', 'SEO Title')}</label>
                     <input
                       className="form-control"
                       value={cfg.seo?.title || ''}
@@ -1715,7 +1761,7 @@ export default function AdminHomeConfigurePage() {
                     />
                   </div>
                   <div className="col-md-6">
-                    <label className="form-label">OG Image URL</label>
+                    <label className="form-label">{tt('admin.home.seo.og', 'OG Image URL')}</label>
                     <input
                       className="form-control"
                       value={cfg.seo?.ogImage || ''}
@@ -1725,7 +1771,7 @@ export default function AdminHomeConfigurePage() {
                     />
                   </div>
                   <div className="col-12">
-                    <label className="form-label">Description</label>
+                    <label className="form-label">{tt('admin.home.seo.desc', 'Description')}</label>
                     <textarea
                       className="form-control"
                       rows={3}
@@ -1736,7 +1782,7 @@ export default function AdminHomeConfigurePage() {
                     />
                   </div>
                   <div className="col-12">
-                    <label className="form-label">Keywords (comma separated)</label>
+                    <label className="form-label">{tt('admin.home.seo.keywords', 'Keywords (comma separated)')}</label>
                     <input
                       className="form-control"
                       value={(cfg.seo?.keywords || []).join(', ')}
@@ -1765,30 +1811,35 @@ export default function AdminHomeConfigurePage() {
               <div className="card-body">
                 <div className="d-flex justify-content-between align-items-start">
                   <div>
-                    <div className="fw-semibold">Current status: {cfg.publish?.status || 'draft'}</div>
-                    <div className="text-muted">Version: {cfg.publish?.version ?? 0}</div>
+                    <div className="fw-semibold">
+                      {tt('admin.home.publish.current', 'Current status:')} {cfg.publish?.status || 'draft'}
+                    </div>
+                    <div className="text-muted">
+                      {tt('admin.home.publish.version', 'Version:')} {cfg.publish?.version ?? 0}
+                    </div>
                     <div className="small text-muted mt-2">
-                      <strong>¿Qué hace Publish?</strong> <br />
+                      <strong>{tt('admin.home.publish.what', 'What does Publish do?')}</strong> <br />
                       <span>
-                        <em>Save draft</em> guarda la configuración como <code>draft</code> (no afecta la página pública).
+                        <em>{tt('admin.home.btn.saveDraft', 'Save draft')}</em>{' '}
+                        {tt('admin.home.publish.draftInfo', 'saves the configuration as draft (does not affect the public page).')}
                         <br />
-                        <em>Publish</em> incrementa la versión y marca como <code>published</code>.
-                        La home pública (<code>/</code>) debe leer la versión publicada.
+                        <em>{tt('admin.home.btn.publish', 'Publish')}</em>{' '}
+                        {tt('admin.home.publish.publishInfo', 'increments the version and marks it as published. The public home (/) should read the published version.')}
                       </span>
                     </div>
                   </div>
                   <div className="d-flex gap-2">
                     <button className="btn btn-outline-secondary" disabled={saving} onClick={saveDraft}>
-                      Save draft
+                      {tt('admin.home.btn.saveDraft', 'Save draft')}
                     </button>
                     <button className="btn btn-primary" disabled={saving} onClick={publishNow}>
-                      Publish
+                      {tt('admin.home.btn.publish', 'Publish')}
                     </button>
                   </div>
                 </div>
                 <hr />
                 <div className="small text-muted">
-                  Al publicar, la home pública usará esta configuración marcada como <em>published</em>.
+                  {tt('admin.home.publish.footer', 'When published, the public home will use this configuration marked as published.')}
                 </div>
               </div>
             </div>

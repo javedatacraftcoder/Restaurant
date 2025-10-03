@@ -20,6 +20,10 @@ import { saveAs } from 'file-saver';
 // Perfil activo para el panel lateral
 import { getActiveTaxProfile, type TaxProfile } from '@/lib/tax/profile';
 
+// 🔤 i18n
+import { t as translate } from '@/lib/i18n/t';
+import { useTenantSettings } from '@/lib/settings/hooks';
+
 /* =========================
    Tipos y utilidades base
    ========================= */
@@ -95,6 +99,22 @@ function safeStr(v: any) { return (v ?? '').toString(); }
    Componente principal
    ========================= */
 export default function TaxesReportPage() {
+  // 🔤 idioma actual
+  const { settings } = useTenantSettings();
+  const lang = useMemo(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const ls = localStorage.getItem('tenant.language');
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language;
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
+
   // --------- Estado existente (conservado) ---------
   const [from, setFrom] = useState<string>('');
   const [to, setTo] = useState<string>('');
@@ -134,10 +154,10 @@ export default function TaxesReportPage() {
      RUN (conserva tu lógica)
      ========================= */
   const run = async () => {
-    if (!from || !to) return alert('Pick a date range.');
+    if (!from || !to) return alert(tt('admin.taxes.alert.pickRange', 'Pick a date range.'));
     const fromD = parseInputDate(from);
     const toD = parseInputDate(to);
-    if (!fromD || !toD) return alert('Invalid dates.');
+    if (!fromD || !toD) return alert(tt('admin.taxes.alert.invalidDates', 'Invalid dates.'));
 
     setLoading(true);
     setError(null);
@@ -272,7 +292,7 @@ export default function TaxesReportPage() {
       setRows(out);
       setOrdersData(enriched);
     } catch (e: any) {
-      const msg = e?.message || 'Error loading report.';
+      const msg = e?.message || tt('common.loadError', 'Could not load data.');
       setError(msg);
       console.error('[TaxesReport] error:', e);
     } finally {
@@ -497,7 +517,14 @@ export default function TaxesReportPage() {
      CSV exports (por pestaña actual)
      ========================= */
   const exportCsvLines = () => {
-    const header = ['date','orderId','rate','base','tax','currency'];
+    const header = [
+      tt('admin.taxes.csv.date', 'Date'),
+      tt('admin.taxes.csv.orderId', 'Order ID'),
+      tt('admin.taxes.csv.rate', 'Rate'),
+      tt('admin.taxes.csv.base', 'Base'),
+      tt('admin.taxes.csv.tax', 'Tax'),
+      tt('admin.taxes.csv.currency', 'Currency'),
+    ];
     const lines = rows.map(r =>
       [
         r.date,
@@ -514,9 +541,17 @@ export default function TaxesReportPage() {
 
   const exportCsvSummary = () => {
     const header = [
-      'Jurisdiction','Order Type','Rate Code','Rate %',
-      'Taxable Base','VAT','Zero-Rated Base','Exempt Base',
-      'Service Base','Service VAT','Currency'
+      tt('admin.taxes.csv.jurisdiction', 'Jurisdiction'),
+      tt('admin.taxes.csv.orderType', 'Order Type'),
+      tt('admin.taxes.csv.rateCode', 'Rate Code'),
+      tt('admin.taxes.csv.ratePct', 'Rate %'),
+      tt('admin.taxes.csv.taxableBase', 'Taxable Base'),
+      tt('admin.taxes.csv.vat', 'VAT'),
+      tt('admin.taxes.csv.zeroBase', 'Zero-Rated Base'),
+      tt('admin.taxes.csv.exemptBase', 'Exempt Base'),
+      tt('admin.taxes.csv.serviceBase', 'Service Base'),
+      tt('admin.taxes.csv.serviceVat', 'Service VAT'),
+      tt('admin.taxes.csv.currency', 'Currency'),
     ];
     const lines = byRateSummary.map(r => [
       r.jurisdictionApplied,
@@ -537,7 +572,14 @@ export default function TaxesReportPage() {
 
   const exportCsvVatBook = () => {
     const header = [
-      'Jurisdiction','Rate Code','Rate %','Taxable Base','VAT','Zero-Rated Base','Exempt Base','Currency'
+      tt('admin.taxes.csv.jurisdiction', 'Jurisdiction'),
+      tt('admin.taxes.csv.rateCode', 'Rate Code'),
+      tt('admin.taxes.csv.ratePct', 'Rate %'),
+      tt('admin.taxes.csv.taxableBase', 'Taxable Base'),
+      tt('admin.taxes.csv.vat', 'VAT'),
+      tt('admin.taxes.csv.zeroBase', 'Zero-Rated Base'),
+      tt('admin.taxes.csv.exemptBase', 'Exempt Base'),
+      tt('admin.taxes.csv.currency', 'Currency'),
     ];
     const lines = vatBook.map(r => [
       r.jurisdictionApplied,
@@ -555,7 +597,17 @@ export default function TaxesReportPage() {
 
   const exportCsvB2B = () => {
     const header = [
-      'Date','Invoice #','Order ID','Customer','Tax ID','Jurisdiction','Order Type','Taxable Base','VAT','Total','Currency'
+      tt('admin.taxes.csv.date', 'Date'),
+      tt('admin.taxes.csv.invoice', 'Invoice #'),
+      tt('admin.taxes.csv.orderId', 'Order ID'),
+      tt('admin.taxes.csv.customer', 'Customer'),
+      tt('admin.taxes.csv.taxId', 'Tax ID'),
+      tt('admin.taxes.csv.jurisdiction', 'Jurisdiction'),
+      tt('admin.taxes.csv.orderType', 'Order Type'),
+      tt('admin.taxes.csv.taxableBase', 'Taxable Base'),
+      tt('admin.taxes.csv.vat', 'VAT'),
+      tt('admin.taxes.csv.total', 'Total'),
+      tt('admin.taxes.csv.currency', 'Currency'),
     ];
     const lines = b2bRows.map(r => [
       r.date,
@@ -586,7 +638,7 @@ export default function TaxesReportPage() {
      ========================= */
   const exportExcelAll = async () => {
     if (!rows.length && !byRateSummary.length && !vatBook.length && !b2bRows.length && !activeProfile) {
-      alert('Run the report first.');
+      alert(tt('admin.taxes.alert.runFirst', 'Run the report first.'));
       return;
     }
 
@@ -628,7 +680,7 @@ export default function TaxesReportPage() {
         ws.addRow(row);
       });
 
-      // Aplicar numFmt a valores numéricos si procede (una pasada extra garantiza formato)
+      // Aplicar numFmt a valores numéricos si procede
       headers.forEach((h, idx) => {
         if (!h.numFmt) return;
         const col = ws.getColumn(idx + 1);
@@ -646,19 +698,19 @@ export default function TaxesReportPage() {
     // 1) Summary_By_Rate
     if (byRateSummary.length) {
       addSheet(
-        'Summary_By_Rate',
+        tt('admin.taxes.xls.sheet.summary', 'Summary_By_Rate'),
         [
-          { key: 'jurisdictionApplied', header: 'Jurisdiction', width: 20 },
-          { key: 'orderType', header: 'OrderType', width: 12 },
-          { key: 'rateCode', header: 'RateCode', width: 14 },
-          { key: 'ratePct', header: 'Rate%', width: 8, numFmt: PERCENT_FMT },
-          { key: 'taxableBase', header: 'TaxableBase', numFmt: MONEY_FMT },
-          { key: 'vat', header: 'VAT', numFmt: MONEY_FMT },
-          { key: 'zeroBase', header: 'ZeroRatedBase', numFmt: MONEY_FMT },
-          { key: 'exemptBase', header: 'ExemptBase', numFmt: MONEY_FMT },
-          { key: 'serviceBase', header: 'ServiceBase', numFmt: MONEY_FMT },
-          { key: 'serviceVat', header: 'ServiceVAT', numFmt: MONEY_FMT },
-          { key: 'currency', header: 'Currency', width: 10 },
+          { key: 'jurisdictionApplied', header: tt('admin.taxes.xls.jurisdiction', 'Jurisdiction'), width: 20 },
+          { key: 'orderType', header: tt('admin.taxes.xls.orderType', 'OrderType'), width: 12 },
+          { key: 'rateCode', header: tt('admin.taxes.xls.rateCode', 'RateCode'), width: 14 },
+          { key: 'ratePct', header: tt('admin.taxes.xls.ratePct', 'Rate%'), width: 8, numFmt: PERCENT_FMT },
+          { key: 'taxableBase', header: tt('admin.taxes.xls.taxableBase', 'TaxableBase'), numFmt: MONEY_FMT },
+          { key: 'vat', header: tt('admin.taxes.xls.vat', 'VAT'), numFmt: MONEY_FMT },
+          { key: 'zeroBase', header: tt('admin.taxes.xls.zeroBase', 'ZeroRatedBase'), numFmt: MONEY_FMT },
+          { key: 'exemptBase', header: tt('admin.taxes.xls.exemptBase', 'ExemptBase'), numFmt: MONEY_FMT },
+          { key: 'serviceBase', header: tt('admin.taxes.xls.serviceBase', 'ServiceBase'), numFmt: MONEY_FMT },
+          { key: 'serviceVat', header: tt('admin.taxes.xls.serviceVat', 'ServiceVAT'), numFmt: MONEY_FMT },
+          { key: 'currency', header: tt('admin.taxes.xls.currency', 'Currency'), width: 10 },
         ],
         byRateSummary.map(r => ({
           jurisdictionApplied: r.jurisdictionApplied || '—',
@@ -679,16 +731,16 @@ export default function TaxesReportPage() {
     // 2) VAT_Book_Sales
     if (vatBook.length) {
       addSheet(
-        'VAT_Book_Sales',
+        tt('admin.taxes.xls.sheet.vatbook', 'VAT_Book_Sales'),
         [
-          { key: 'jurisdictionApplied', header: 'Jurisdiction', width: 20 },
-          { key: 'rateCode', header: 'RateCode', width: 14 },
-          { key: 'ratePct', header: 'Rate%', width: 8, numFmt: PERCENT_FMT },
-          { key: 'taxableBase', header: 'TaxableBase', numFmt: MONEY_FMT },
-          { key: 'vat', header: 'VAT', numFmt: MONEY_FMT },
-          { key: 'zeroBase', header: 'ZeroRatedBase', numFmt: MONEY_FMT },
-          { key: 'exemptBase', header: 'ExemptBase', numFmt: MONEY_FMT },
-          { key: 'currency', header: 'Currency', width: 10 },
+          { key: 'jurisdictionApplied', header: tt('admin.taxes.xls.jurisdiction', 'Jurisdiction'), width: 20 },
+          { key: 'rateCode', header: tt('admin.taxes.xls.rateCode', 'RateCode'), width: 14 },
+          { key: 'ratePct', header: tt('admin.taxes.xls.ratePct', 'Rate%'), width: 8, numFmt: PERCENT_FMT },
+          { key: 'taxableBase', header: tt('admin.taxes.xls.taxableBase', 'TaxableBase'), numFmt: MONEY_FMT },
+          { key: 'vat', header: tt('admin.taxes.xls.vat', 'VAT'), numFmt: MONEY_FMT },
+          { key: 'zeroBase', header: tt('admin.taxes.xls.zeroBase', 'ZeroRatedBase'), numFmt: MONEY_FMT },
+          { key: 'exemptBase', header: tt('admin.taxes.xls.exemptBase', 'ExemptBase'), numFmt: MONEY_FMT },
+          { key: 'currency', header: tt('admin.taxes.xls.currency', 'Currency'), width: 10 },
         ],
         vatBook.map(r => ({
           jurisdictionApplied: r.jurisdictionApplied || '—',
@@ -706,19 +758,19 @@ export default function TaxesReportPage() {
     // 3) B2B_Register
     if (b2bRows.length) {
       addSheet(
-        'B2B_Register',
+        tt('admin.taxes.xls.sheet.b2b', 'B2B_Register'),
         [
-          { key: 'date', header: 'Date', width: 12 },
-          { key: 'invoiceNumber', header: 'Invoice', width: 16 },
-          { key: 'orderId', header: 'OrderId', width: 18 },
-          { key: 'customerName', header: 'Customer', width: 24 },
-          { key: 'customerTaxId', header: 'TaxID', width: 18 },
-          { key: 'jurisdictionApplied', header: 'Jurisdiction', width: 20 },
-          { key: 'orderType', header: 'OrderType', width: 12 },
-          { key: 'taxableBase', header: 'TaxableBase', numFmt: MONEY_FMT },
-          { key: 'vat', header: 'VAT', numFmt: MONEY_FMT },
-          { key: 'total', header: 'Total', numFmt: MONEY_FMT },
-          { key: 'currency', header: 'Currency', width: 10 },
+          { key: 'date', header: tt('admin.taxes.xls.date', 'Date'), width: 12 },
+          { key: 'invoiceNumber', header: tt('admin.taxes.xls.invoice', 'Invoice'), width: 16 },
+          { key: 'orderId', header: tt('admin.taxes.xls.orderId', 'OrderId'), width: 18 },
+          { key: 'customerName', header: tt('admin.taxes.xls.customer', 'Customer'), width: 24 },
+          { key: 'customerTaxId', header: tt('admin.taxes.xls.taxId', 'TaxID'), width: 18 },
+          { key: 'jurisdictionApplied', header: tt('admin.taxes.xls.jurisdiction', 'Jurisdiction'), width: 20 },
+          { key: 'orderType', header: tt('admin.taxes.xls.orderType', 'OrderType'), width: 12 },
+          { key: 'taxableBase', header: tt('admin.taxes.xls.taxableBase', 'TaxableBase'), numFmt: MONEY_FMT },
+          { key: 'vat', header: tt('admin.taxes.xls.vat', 'VAT'), numFmt: MONEY_FMT },
+          { key: 'total', header: tt('admin.taxes.xls.total', 'Total'), numFmt: MONEY_FMT },
+          { key: 'currency', header: tt('admin.taxes.xls.currency', 'Currency'), width: 10 },
         ],
         b2bRows.map(r => ({
           date: r.date,
@@ -739,14 +791,14 @@ export default function TaxesReportPage() {
     // 4) Legacy_Simple (tu reporte original)
     if (rows.length) {
       addSheet(
-        'Legacy_Simple',
+        tt('admin.taxes.xls.sheet.legacy', 'Legacy_Simple'),
         [
-          { key: 'date', header: 'Date', width: 12 },
-          { key: 'orderId', header: 'OrderId', width: 18 },
-          { key: 'rateLabel', header: 'Rate', width: 10 },
-          { key: 'base', header: 'Base', numFmt: MONEY_FMT },
-          { key: 'tax', header: 'Tax', numFmt: MONEY_FMT },
-          { key: 'currency', header: 'Currency', width: 10 },
+          { key: 'date', header: tt('admin.taxes.xls.date', 'Date'), width: 12 },
+          { key: 'orderId', header: tt('admin.taxes.xls.orderId', 'OrderId'), width: 18 },
+          { key: 'rateLabel', header: tt('admin.taxes.xls.rate', 'Rate'), width: 10 },
+          { key: 'base', header: tt('admin.taxes.xls.base', 'Base'), numFmt: MONEY_FMT },
+          { key: 'tax', header: tt('admin.taxes.xls.tax', 'Tax'), numFmt: MONEY_FMT },
+          { key: 'currency', header: tt('admin.taxes.xls.currency', 'Currency'), width: 10 },
         ],
         rows.map(r => ({
           date: r.date,
@@ -763,22 +815,22 @@ export default function TaxesReportPage() {
     if (activeProfile) {
       const p = activeProfile;
       const service = Array.isArray(p.surcharges) ? p.surcharges[0] : null;
-      const ws = wb.addWorksheet('Tax_Profile');
-      ws.addRow(['Key', 'Value']).font = { bold: true };
+      const ws = wb.addWorksheet(tt('admin.taxes.xls.sheet.profile', 'Tax_Profile'));
+      ws.addRow([tt('admin.taxes.xls.kv.key', 'Key'), tt('admin.taxes.xls.kv.value', 'Value')]).font = { bold: true };
       const kv: Array<[string, any]> = [
-        ['Country', String(p.country || 'GT')],
-        ['Currency', String(p.currency || 'USD')],
-        ['PricesIncludeTax', String(!!p.pricesIncludeTax)],
-        ['Rounding', String(p.rounding || 'half_up')],
+        [tt('admin.taxes.profile.country', 'Country'), String(p.country || 'GT')],
+        [tt('admin.taxes.profile.currency', 'Currency'), String(p.currency || 'USD')],
+        [tt('admin.taxes.profile.pricesIncl', 'Prices include tax'), String(!!p.pricesIncludeTax)],
+        [tt('admin.taxes.profile.rounding', 'Rounding'), String(p.rounding || 'half_up')],
         ['Delivery.mode', p?.delivery?.mode || 'out_of_scope'],
         ['Delivery.taxable', String(!!p?.delivery?.taxable)],
         ['Delivery.taxCode', p?.delivery?.taxCode || ''],
-        ['Service.percent%', service ? (service.percentBps || 0)/100 : 0],
-        ['Service.taxable', service ? String(!!service.taxable) : 'false'],
-        ['Service.taxCode', service?.taxCode || ''],
-        ['Rates.count', Array.isArray(p.rates) ? p.rates.length : 0],
+        [tt('admin.taxes.profile.servicePct', 'Service percent%'), service ? (service.percentBps || 0)/100 : 0],
+        [tt('admin.taxes.profile.serviceTaxable', 'Service taxable'), service ? String(!!service.taxable) : 'false'],
+        [tt('admin.taxes.profile.serviceCode', 'Service tax code'), service?.taxCode || ''],
+        [tt('admin.taxes.profile.ratesCount', 'Rates.count'), Array.isArray(p.rates) ? p.rates.length : 0],
       ];
-      for (const [k,v] of kv) ws.addRow([sanitizeCell(k), sanitizeCell(v)]);
+      for (const [k,v] of kv) ws.addRow([k, v]);
       ws.getColumn(1).width = 24;
       ws.getColumn(2).width = 28;
     }
@@ -791,12 +843,12 @@ export default function TaxesReportPage() {
         summaryTaxable: byRateSummary.reduce((a,r)=>a+(r.taxableBaseCents||0),0),
         summaryTax: byRateSummary.reduce((a,r)=>a+(r.taxCents||0),0),
       };
-      const ws = wb.addWorksheet('Report_Params');
-      ws.addRow(['Param', 'Value']).font = { bold: true };
+      const ws = wb.addWorksheet(tt('admin.taxes.xls.sheet.params', 'Report_Params'));
+      ws.addRow([tt('admin.taxes.xls.kv.param', 'Param'), tt('admin.taxes.xls.kv.value', 'Value')]).font = { bold: true };
       const params: Array<[string, any]> = [
-        ['From', from || ''],
-        ['To', to || ''],
-        ['GeneratedAt', new Date().toISOString()],
+        [tt('admin.taxes.params.from', 'From'), from || ''],
+        [tt('admin.taxes.params.to', 'To'), to || ''],
+        [tt('admin.taxes.params.generatedAt', 'GeneratedAt'), new Date().toISOString()],
         ['Legacy.TotalBase', (totals.legacyBase/100)],
         ['Legacy.TotalTax', (totals.legacyTax/100)],
         ['Summary.TotalTaxableBase', (totals.summaryTaxable/100)],
@@ -806,10 +858,9 @@ export default function TaxesReportPage() {
         ['Filters.rateCode', filters.rateCode || ''],
         ['Filters.b2bOnly', String(!!filters.b2bOnly)],
       ];
-      for (const [k,v] of params) ws.addRow([sanitizeCell(k), typeof v === 'number' ? v : sanitizeCell(v)]);
+      for (const [k,v] of params) ws.addRow([k, typeof v === 'number' ? v : v]);
       ws.getColumn(1).width = 22;
       ws.getColumn(2).width = 42;
-      // Formato numérico a las filas monetarias detectadas (heurística simple)
       ws.getColumn(2).eachCell((cell, rowNumber) => {
         if (rowNumber === 1) return;
         if (typeof cell.value === 'number') cell.numFmt = MONEY_FMT;
@@ -827,7 +878,7 @@ export default function TaxesReportPage() {
       <AdminOnly>
         <main className="container py-4">
           <div className="d-flex align-items-center justify-content-between mb-3">
-            <h1 className="h4 m-0">Tax reports</h1>
+            <h1 className="h4 m-0">{tt('admin.taxes.title', 'Tax reports')}</h1>
 
             {/* Panel de filtros y acciones */}
             <div className="d-flex flex-wrap gap-2 align-items-center">
@@ -838,31 +889,31 @@ export default function TaxesReportPage() {
               {/* NUEVOS filtros */}
               <input
                 className="form-control"
-                placeholder="Jurisdiction"
+                placeholder={tt('admin.taxes.filters.jurisdictionPh', 'Jurisdiction')}
                 value={filters.jurisdiction}
                 onChange={(e) => setFilters((f) => ({ ...f, jurisdiction: e.target.value }))}
                 style={{ minWidth: 160 }}
-                title="jurisdictionApplied exacta"
+                title={tt('admin.taxes.filters.jurisdictionTitle', 'Exact jurisdictionApplied')}
               />
               <select
                 className="form-select"
                 value={filters.orderType}
                 onChange={(e) => setFilters((f) => ({ ...f, orderType: e.target.value as Filters['orderType'] }))}
                 style={{ minWidth: 140 }}
-                title="Order type"
+                title={tt('admin.taxes.filters.orderTypeTitle', 'Order type')}
               >
-                <option value="">All types</option>
-                <option value="dine-in">Dine-in</option>
-                <option value="pickup">Pickup</option>
-                <option value="delivery">Delivery</option>
+                <option value="">{tt('admin.taxes.filters.allTypes', 'All types')}</option>
+                <option value="dine-in">{tt('admin.taxes.filters.dinein', 'Dine-in')}</option>
+                <option value="pickup">{tt('admin.taxes.filters.pickup', 'Pickup')}</option>
+                <option value="delivery">{tt('admin.taxes.filters.delivery', 'Delivery')}</option>
               </select>
               <input
                 className="form-control"
-                placeholder="Rate code (e.g., std)"
+                placeholder={tt('admin.taxes.filters.rateCodePh', 'Rate code (e.g., std)')}
                 value={filters.rateCode}
                 onChange={(e) => setFilters((f) => ({ ...f, rateCode: e.target.value }))}
                 style={{ minWidth: 160 }}
-                title="rateCode"
+                title={tt('admin.taxes.filters.rateCodeTitle', 'rateCode')}
               />
               <label className="d-flex align-items-center gap-2 ms-1">
                 <input
@@ -871,23 +922,23 @@ export default function TaxesReportPage() {
                   checked={filters.b2bOnly}
                   onChange={(e) => setFilters((f) => ({ ...f, b2bOnly: e.target.checked }))}
                 />
-                <span className="small">Only B2B</span>
+                <span className="small">{tt('admin.taxes.filters.onlyB2B', 'Only B2B')}</span>
               </label>
 
               {/* Acciones */}
               <button className="btn btn-outline-primary" onClick={run} disabled={loading}>
-                {loading ? 'Loading…' : 'Run'}
+                {loading ? tt('common.loading', 'Loading…') : tt('admin.taxes.actions.run', 'Run')}
               </button>
               <button className="btn btn-primary" onClick={exportCurrent} disabled={loading}>
-                Export CSV
+                {tt('admin.taxes.actions.exportCsv', 'Export CSV')}
               </button>
               <button
                 className="btn btn-success"
                 onClick={exportExcelAll}
                 disabled={loading || (!rows.length && !byRateSummary.length && !vatBook.length && !b2bRows.length && !activeProfile)}
-                title="Export multi-sheet Excel (Summary, VAT Book, B2B, Legacy, Tax Profile, Params)"
+                title={tt('admin.taxes.actions.exportExcelTitle', 'Export multi-sheet Excel (Summary, VAT Book, B2B, Legacy, Tax Profile, Params)')}
               >
-                Export Excel
+                {tt('admin.taxes.actions.exportExcel', 'Export Excel')}
               </button>
             </div>
           </div>
@@ -897,7 +948,7 @@ export default function TaxesReportPage() {
             <div className="alert alert-warning">
               {error}
               <div className="small text-muted mt-1">
-                Si Firestore indica crear un índice, usa el enlace de la consola (status==closed + createdAt asc).
+                {tt('admin.taxes.alert.indexTip', 'If Firestore asks for an index, use the console link (status==closed + createdAt asc).')}
               </div>
             </div>
           )}
@@ -909,22 +960,22 @@ export default function TaxesReportPage() {
               <ul className="nav nav-tabs mb-3">
                 <li className="nav-item">
                   <button className={`nav-link ${tab==='lines'?'active':''}`} onClick={() => setTab('lines')}>
-                    Lines (as-is)
+                    {tt('admin.taxes.tabs.lines', 'Lines (as-is)')}
                   </button>
                 </li>
                 <li className="nav-item">
                   <button className={`nav-link ${tab==='summary'?'active':''}`} onClick={() => setTab('summary')}>
-                    By Rate Summary
+                    {tt('admin.taxes.tabs.summary', 'By Rate Summary')}
                   </button>
                 </li>
                 <li className="nav-item">
                   <button className={`nav-link ${tab==='vatbook'?'active':''}`} onClick={() => setTab('vatbook')}>
-                    VAT Book (Sales)
+                    {tt('admin.taxes.tabs.vatbook', 'VAT Book (Sales)')}
                   </button>
                 </li>
                 <li className="nav-item">
                   <button className={`nav-link ${tab==='b2b'?'active':''}`} onClick={() => setTab('b2b')}>
-                    B2B Register
+                    {tt('admin.taxes.tabs.b2b', 'B2B Register')}
                   </button>
                 </li>
               </ul>
@@ -937,12 +988,12 @@ export default function TaxesReportPage() {
                       <table className="table table-sm align-middle">
                         <thead>
                           <tr>
-                            <th>Date</th>
-                            <th>Order</th>
-                            <th>Rate</th>
-                            <th className="text-end">Base</th>
-                            <th className="text-end">Tax</th>
-                            <th>Currency</th>
+                            <th>{tt('admin.taxes.lines.th.date', 'Date')}</th>
+                            <th>{tt('admin.taxes.lines.th.order', 'Order')}</th>
+                            <th>{tt('admin.taxes.lines.th.rate', 'Rate')}</th>
+                            <th className="text-end">{tt('admin.taxes.lines.th.base', 'Base')}</th>
+                            <th className="text-end">{tt('admin.taxes.lines.th.tax', 'Tax')}</th>
+                            <th>{tt('admin.taxes.lines.th.currency', 'Currency')}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -958,14 +1009,14 @@ export default function TaxesReportPage() {
                           ))}
                           {!rows.length && !loading && (
                             <tr>
-                              <td colSpan={6} className="text-center text-muted py-4">No data</td>
+                              <td colSpan={6} className="text-center text-muted py-4">{tt('common.nodata', 'No data')}</td>
                             </tr>
                           )}
                         </tbody>
                         {rows.length > 0 && (
                           <tfoot>
                             <tr className="fw-semibold">
-                              <td colSpan={3} className="text-end">Totals</td>
+                              <td colSpan={3} className="text-end">{tt('admin.taxes.lines.totals', 'Totals')}</td>
                               <td className="text-end">{fmtMoneyCents(totalBase, currency)}</td>
                               <td className="text-end">{fmtMoneyCents(totalTax, currency)}</td>
                               <td>{currency}</td>
@@ -986,16 +1037,16 @@ export default function TaxesReportPage() {
                       <table className="table table-sm table-striped align-middle">
                         <thead>
                           <tr>
-                            <th>Jurisdiction</th>
-                            <th>Order Type</th>
-                            <th>Rate Code</th>
-                            <th className="text-end">Rate %</th>
-                            <th className="text-end">Taxable Base</th>
-                            <th className="text-end">VAT</th>
-                            <th className="text-end">Zero-Rated Base</th>
-                            <th className="text-end">Exempt Base</th>
-                            <th className="text-end">Service Base</th>
-                            <th className="text-end">Service VAT</th>
+                            <th>{tt('admin.taxes.summary.th.jurisdiction', 'Jurisdiction')}</th>
+                            <th>{tt('admin.taxes.summary.th.orderType', 'Order Type')}</th>
+                            <th>{tt('admin.taxes.summary.th.rateCode', 'Rate Code')}</th>
+                            <th className="text-end">{tt('admin.taxes.summary.th.ratePct', 'Rate %')}</th>
+                            <th className="text-end">{tt('admin.taxes.summary.th.taxableBase', 'Taxable Base')}</th>
+                            <th className="text-end">{tt('admin.taxes.summary.th.vat', 'VAT')}</th>
+                            <th className="text-end">{tt('admin.taxes.summary.th.zeroBase', 'Zero-Rated Base')}</th>
+                            <th className="text-end">{tt('admin.taxes.summary.th.exemptBase', 'Exempt Base')}</th>
+                            <th className="text-end">{tt('admin.taxes.summary.th.serviceBase', 'Service Base')}</th>
+                            <th className="text-end">{tt('admin.taxes.summary.th.serviceVat', 'Service VAT')}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1015,7 +1066,7 @@ export default function TaxesReportPage() {
                           ))}
                           {!byRateSummary.length && !loading && (
                             <tr>
-                              <td colSpan={10} className="text-center text-muted py-4">No data</td>
+                              <td colSpan={10} className="text-center text-muted py-4">{tt('common.nodata', 'No data')}</td>
                             </tr>
                           )}
                         </tbody>
@@ -1033,13 +1084,13 @@ export default function TaxesReportPage() {
                       <table className="table table-sm table-striped align-middle">
                         <thead>
                           <tr>
-                            <th>Jurisdiction</th>
-                            <th>Rate Code</th>
-                            <th className="text-end">Rate %</th>
-                            <th className="text-end">Taxable Base</th>
-                            <th className="text-end">VAT</th>
-                            <th className="text-end">Zero-Rated Base</th>
-                            <th className="text-end">Exempt Base</th>
+                            <th>{tt('admin.taxes.vatbook.th.jurisdiction', 'Jurisdiction')}</th>
+                            <th>{tt('admin.taxes.vatbook.th.rateCode', 'Rate Code')}</th>
+                            <th className="text-end">{tt('admin.taxes.vatbook.th.ratePct', 'Rate %')}</th>
+                            <th className="text-end">{tt('admin.taxes.vatbook.th.taxableBase', 'Taxable Base')}</th>
+                            <th className="text-end">{tt('admin.taxes.vatbook.th.vat', 'VAT')}</th>
+                            <th className="text-end">{tt('admin.taxes.vatbook.th.zeroBase', 'Zero-Rated Base')}</th>
+                            <th className="text-end">{tt('admin.taxes.vatbook.th.exemptBase', 'Exempt Base')}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1056,7 +1107,7 @@ export default function TaxesReportPage() {
                           ))}
                           {!vatBook.length && !loading && (
                             <tr>
-                              <td colSpan={7} className="text-center text-muted py-4">No data</td>
+                              <td colSpan={7} className="text-center text-muted py-4">{tt('common.nodata', 'No data')}</td>
                             </tr>
                           )}
                         </tbody>
@@ -1074,16 +1125,16 @@ export default function TaxesReportPage() {
                       <table className="table table-sm table-striped align-middle">
                         <thead>
                           <tr>
-                            <th>Date</th>
-                            <th>Invoice #</th>
-                            <th>Order ID</th>
-                            <th>Customer</th>
-                            <th>Tax ID</th>
-                            <th>Jurisdiction</th>
-                            <th>Order Type</th>
-                            <th className="text-end">Taxable Base</th>
-                            <th className="text-end">VAT</th>
-                            <th className="text-end">Total</th>
+                            <th>{tt('admin.taxes.b2b.th.date', 'Date')}</th>
+                            <th>{tt('admin.taxes.b2b.th.invoice', 'Invoice #')}</th>
+                            <th>{tt('admin.taxes.b2b.th.orderId', 'Order ID')}</th>
+                            <th>{tt('admin.taxes.b2b.th.customer', 'Customer')}</th>
+                            <th>{tt('admin.taxes.b2b.th.taxId', 'Tax ID')}</th>
+                            <th>{tt('admin.taxes.b2b.th.jurisdiction', 'Jurisdiction')}</th>
+                            <th>{tt('admin.taxes.b2b.th.orderType', 'Order Type')}</th>
+                            <th className="text-end">{tt('admin.taxes.b2b.th.taxableBase', 'Taxable Base')}</th>
+                            <th className="text-end">{tt('admin.taxes.b2b.th.vat', 'VAT')}</th>
+                            <th className="text-end">{tt('admin.taxes.b2b.th.total', 'Total')}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1103,7 +1154,7 @@ export default function TaxesReportPage() {
                           ))}
                           {!b2bRows.length && !loading && (
                             <tr>
-                              <td colSpan={10} className="text-center text-muted py-4">No data</td>
+                              <td colSpan={10} className="text-center text-muted py-4">{tt('common.nodata', 'No data')}</td>
                             </tr>
                           )}
                         </tbody>
@@ -1117,20 +1168,20 @@ export default function TaxesReportPage() {
             {/* Columna lateral: Perfil activo */}
             <div className="col-12 col-lg-4">
               <div className="card shadow-sm">
-                <div className="card-header"><strong>Active Tax Profile</strong></div>
+                <div className="card-header"><strong>{tt('admin.taxes.profile.title', 'Active Tax Profile')}</strong></div>
                 <div className="card-body">
                   {!activeProfile ? (
-                    <div className="text-muted small">No active profile found.</div>
+                    <div className="text-muted small">{tt('admin.taxes.profile.none', 'No active profile found.')}</div>
                   ) : (
                     <>
                       <div className="mb-2">
-                        <div><strong>Country:</strong> {activeProfile.country}</div>
-                        <div><strong>Currency:</strong> {activeProfile.currency}</div>
-                        <div><strong>Prices include tax:</strong> {String(!!activeProfile.pricesIncludeTax)}</div>
-                        <div><strong>Rounding:</strong> {activeProfile.rounding}</div>
+                        <div><strong>{tt('admin.taxes.profile.country', 'Country')}:</strong> {activeProfile.country}</div>
+                        <div><strong>{tt('admin.taxes.profile.currency', 'Currency')}:</strong> {activeProfile.currency}</div>
+                        <div><strong>{tt('admin.taxes.profile.pricesIncl', 'Prices include tax')}:</strong> {String(!!activeProfile.pricesIncludeTax)}</div>
+                        <div><strong>{tt('admin.taxes.profile.rounding', 'Rounding')}:</strong> {activeProfile.rounding}</div>
                       </div>
                       <div className="mb-2">
-                        <div><strong>Rates:</strong> {(activeProfile.rates || []).length}</div>
+                        <div><strong>{tt('admin.taxes.profile.rates', 'Rates')}:</strong> {(activeProfile.rates || []).length}</div>
                         <ul className="small text-muted mb-2">
                           {(activeProfile.rates || []).slice(0,5).map((r, i) => (
                             <li key={i}>
@@ -1142,18 +1193,18 @@ export default function TaxesReportPage() {
                         </ul>
                       </div>
                       <div className="mb-2">
-                        <div><strong>Service charge:</strong> {(activeProfile.surcharges || [])[0]?.percentBps ? ((activeProfile.surcharges![0].percentBps!/100).toFixed(2)+'%') : 'disabled'}</div>
-                        <div><strong>Service taxable:</strong> {String(!!(activeProfile.surcharges || [])[0]?.taxable)}</div>
+                        <div><strong>{tt('admin.taxes.profile.serviceCharge', 'Service charge')}:</strong> {(activeProfile.surcharges || [])[0]?.percentBps ? ((activeProfile.surcharges![0].percentBps!/100).toFixed(2)+'%') : tt('admin.taxes.profile.disabled', 'disabled')}</div>
+                        <div><strong>{tt('admin.taxes.profile.serviceTaxable', 'Service taxable')}:</strong> {String(!!(activeProfile.surcharges || [])[0]?.taxable)}</div>
                       </div>
                       <div className="mb-2">
-                        <div><strong>Delivery mode:</strong> {activeProfile.delivery?.mode || 'out_of_scope'}</div>
-                        <div><strong>Delivery taxable:</strong> {String(!!activeProfile.delivery?.taxable)}</div>
-                        {activeProfile.delivery?.taxCode && <div><strong>Delivery tax code:</strong> {activeProfile.delivery.taxCode}</div>}
+                        <div><strong>{tt('admin.taxes.profile.deliveryMode', 'Delivery mode')}:</strong> {activeProfile.delivery?.mode || 'out_of_scope'}</div>
+                        <div><strong>{tt('admin.taxes.profile.deliveryTaxable', 'Delivery taxable')}:</strong> {String(!!activeProfile.delivery?.taxable)}</div>
+                        {activeProfile.delivery?.taxCode && <div><strong>{tt('admin.taxes.profile.deliveryTaxCode', 'Delivery tax code')}:</strong> {activeProfile.delivery.taxCode}</div>}
                       </div>
                       {Array.isArray(activeProfile.jurisdictions) && activeProfile.jurisdictions.length > 0 && (
                         <div className="mb-2">
-                          <div><strong>Jurisdictions:</strong> {activeProfile.jurisdictions.length}</div>
-                          <div className="small text-muted">Overrides present (rates/surcharges/delivery/inclusive/rounding).</div>
+                          <div><strong>{tt('admin.taxes.profile.jurisdictions', 'Jurisdictions')}:</strong> {activeProfile.jurisdictions.length}</div>
+                          <div className="small text-muted">{tt('admin.taxes.profile.jurisdictionsNote', 'Overrides present (rates/surcharges/delivery/inclusive/rounding).')}</div>
                         </div>
                       )}
                     </>
@@ -1162,7 +1213,7 @@ export default function TaxesReportPage() {
               </div>
 
               <div className="small text-muted mt-2">
-                Snapshot/report uses the same fields as your checkout and tax editor. Adjust filters and press Run.
+                {tt('admin.taxes.note.snapshot', 'Snapshot/report uses the same fields as your checkout and tax editor. Adjust filters and press Run.')}
               </div>
             </div>
           </div>

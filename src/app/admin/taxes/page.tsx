@@ -5,6 +5,11 @@ import { useEffect, useMemo, useState } from 'react';
 import Protected from '@/components/Protected';
 import AdminOnly from '@/components/AdminOnly';
 import '@/lib/firebase/client';
+
+// 🔤 i18n (igual que kitchen)
+import { t as translate } from '@/lib/i18n/t';
+import { useTenantSettings } from '@/lib/settings/hooks';
+
 import {
   getActiveTaxProfile,
   type TaxProfile,
@@ -57,11 +62,7 @@ function deepStripUndefined<T>(value: T): T {
 
 /** Normalize payload for Firestore: drop `id`, clean up and set `active: true` */
 function normalizeProfileForFirestore(form: TaxProfile) {
-  const {
-    id: _drop,
-    ...rest
-  } = form as any;
-
+  const { id: _drop, ...rest } = form as any;
   const cleaned = deepStripUndefined({
     ...rest,
     active: true,
@@ -83,14 +84,31 @@ export default function AdminTaxesPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  // 🔤 obtener idioma como en kitchen
+  const { settings } = useTenantSettings();
+  const lang = useMemo(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const ls = localStorage.getItem('tenant.language');
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language;
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
+
   // Editor state (profile being edited)
   const [form, setForm] = useState<TaxProfile>({
     country: 'GT',
     currency: 'USD',
     pricesIncludeTax: true,
     rounding: 'half_up',
-    rates: [{ code: 'std', label: 'Standard VAT', rateBps: 1200, appliesTo: 'all' }],
-    surcharges: [{ code: 'service', label: 'Service charge', percentBps: 0, taxable: false }],
+    // Nota: estos labels son datos; usamos fallback en inglés por consistencia
+    rates: [{ code: 'std', label: tt('admin.taxes.stdVat', 'Standard VAT'), rateBps: 1200, appliesTo: 'all' }],
+    surcharges: [{ code: 'service', label: tt('admin.taxes.serviceCharge', 'Service charge'), percentBps: 0, taxable: false }],
     delivery: { mode: 'out_of_scope', taxable: false },
   });
 
@@ -114,10 +132,10 @@ export default function AdminTaxesPage() {
             ...active,
             rates: Array.isArray(active.rates) && active.rates.length
               ? active.rates
-              : [{ code: 'std', label: 'Standard VAT', rateBps: 1200, appliesTo: 'all' }],
+              : [{ code: 'std', label: tt('admin.taxes.stdVat', 'Standard VAT'), rateBps: 1200, appliesTo: 'all' }],
             surcharges: Array.isArray(active.surcharges) && active.surcharges.length
               ? active.surcharges
-              : [{ code: 'service', label: 'Service charge', percentBps: 0, taxable: false }],
+              : [{ code: 'service', label: tt('admin.taxes.serviceCharge', 'Service charge'), percentBps: 0, taxable: false }],
             delivery: active.delivery ?? { mode: 'out_of_scope', taxable: false },
           }));
         }
@@ -126,6 +144,7 @@ export default function AdminTaxesPage() {
         setLoading(false);
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function fetchProfilesList() {
@@ -145,7 +164,7 @@ export default function AdminTaxesPage() {
     try {
       const db = getFirestore();
       const snap = await getDoc(doc(db, 'taxProfiles', id));
-      if (!snap.exists()) return alert('Profile not found.');
+      if (!snap.exists()) return alert(tt('admin.taxes.err.profileNotFound', 'Profile not found.'));
       const raw: any = snap.data();
 
       // Map to TaxProfile (similar to getActiveTaxProfile)
@@ -179,8 +198,8 @@ export default function AdminTaxesPage() {
         currency: String(raw.currency || 'USD'),
         pricesIncludeTax: Boolean(raw.pricesIncludeTax ?? true),
         rounding: raw.rounding === 'half_even' ? 'half_even' : 'half_up',
-        rates: toRates.length ? toRates : [{ code: 'std', label: 'Standard VAT', rateBps: 1200, appliesTo: 'all' }],
-        surcharges: toSurch.length ? toSurch : [{ code: 'service', label: 'Service charge', percentBps: 0, taxable: false }],
+        rates: toRates.length ? toRates : [{ code: 'std', label: tt('admin.taxes.stdVat', 'Standard VAT'), rateBps: 1200, appliesTo: 'all' }],
+        surcharges: toSurch.length ? toSurch : [{ code: 'service', label: tt('admin.taxes.serviceCharge', 'Service charge'), percentBps: 0, taxable: false }],
         delivery: raw.delivery
           ? {
               mode: raw.delivery.mode === 'as_line' ? 'as_line' : 'out_of_scope',
@@ -192,9 +211,9 @@ export default function AdminTaxesPage() {
         b2bConfig: raw.b2bConfig || undefined,
       };
       setForm(profile);
-      alert(`Loaded profile "${snap.id}" into the editor. Remember to Save to set it active.`);
+      alert(tt('admin.taxes.msg.loadedProfile', 'Loaded profile "{id}" into the editor. Remember to Save to set it active.', { id: snap.id }));
     } catch (e: any) {
-      alert(e?.message || 'Could not load profile.');
+      alert(e?.message || tt('admin.taxes.err.load', 'Could not load profile.'));
     }
   }
 
@@ -203,7 +222,7 @@ export default function AdminTaxesPage() {
     try {
       const db = getFirestore();
       const snap = await getDoc(doc(db, 'taxProfiles', id));
-      if (!snap.exists()) return alert('Profile not found.');
+      if (!snap.exists()) return alert(tt('admin.taxes.err.profileNotFound', 'Profile not found.'));
       const raw = snap.data() as any;
 
       const payload = normalizeProfileForFirestore({
@@ -222,26 +241,26 @@ export default function AdminTaxesPage() {
       const [active, list] = await Promise.all([getActiveTaxProfile(), fetchProfilesList()]);
       if (active) setForm(active);
       setProfiles(list);
-      alert(`"${id}" is now active.`);
+      alert(tt('admin.taxes.msg.nowActive', '"{id}" is now active.', { id }));
     } catch (e: any) {
-      alert(e?.message || 'Could not set active.');
+      alert(e?.message || tt('admin.taxes.err.setActive', 'Could not set active.'));
     }
   }
 
   // Delete (block if active)
   async function removeProfile(id: string, isActive?: boolean) {
     if (isActive) {
-      return alert('You cannot delete the active profile. Set another profile active first.');
+      return alert(tt('admin.taxes.err.cannotDeleteActive', 'You cannot delete the active profile. Set another profile active first.'));
     }
-    const ok = confirm(`Delete profile "${id}"? This cannot be undone.`);
+    const ok = confirm(tt('admin.taxes.ask.delete', 'Delete profile "{id}"? This cannot be undone.', { id }));
     if (!ok) return;
     try {
       const db = getFirestore();
       await deleteDoc(doc(db, 'taxProfiles', id));
       setProfiles(await fetchProfilesList());
-      alert('Profile deleted.');
+      alert(tt('admin.taxes.msg.deleted', 'Profile deleted.'));
     } catch (e: any) {
-      alert(e?.message || 'Could not delete.');
+      alert(e?.message || tt('admin.taxes.err.delete', 'Could not delete.'));
     }
   }
 
@@ -253,7 +272,7 @@ export default function AdminTaxesPage() {
   const service = form.surcharges?.[0];
   const setService = (patch: Partial<NonNullable<TaxProfile['surcharges']>[number]>) => {
     const next = [...(form.surcharges || [])];
-    if (!next[0]) next[0] = { code: 'service', label: 'Service charge', percentBps: 0, taxable: false };
+    if (!next[0]) next[0] = { code: 'service', label: tt('admin.taxes.serviceCharge', 'Service charge'), percentBps: 0, taxable: false };
     next[0] = { ...next[0], ...patch };
     onChange('surcharges', next);
   };
@@ -279,9 +298,9 @@ export default function AdminTaxesPage() {
       await setDoc(doc(db, 'taxProfiles', 'active'), payload, { merge: false });
 
       setProfiles(await fetchProfilesList());
-      alert('Tax profile saved (and set active).');
+      alert(tt('admin.taxes.msg.saved', 'Tax profile saved (and set active).'));
     } catch (e: any) {
-      alert(e?.message || 'Could not save.');
+      alert(e?.message || tt('admin.taxes.err.save', 'Could not save.'));
     } finally {
       setSaving(false);
     }
@@ -295,10 +314,10 @@ export default function AdminTaxesPage() {
         <AdminOnly>
           <main className="container py-4">
             <div className="d-flex align-items-center justify-content-between mb-3">
-              <h1 className="h3 m-0">Taxes</h1>
+              <h1 className="h3 m-0">{tt('admin.taxes.title', 'Taxes')}</h1>
               <span className="spinner-border spinner-border-sm text-secondary" role="status" aria-hidden="true"></span>
             </div>
-            <p className="text-muted">Loading…</p>
+            <p className="text-muted">{tt('common.loading', 'Loading…')}</p>
           </main>
         </AdminOnly>
       </Protected>
@@ -312,11 +331,13 @@ export default function AdminTaxesPage() {
           {/* Top toolbar */}
           <div className="d-flex align-items-center justify-content-between mb-3 sticky-top bg-body pt-2 pb-2" style={{ zIndex: 1 }}>
             <div>
-              <h1 className="h3 m-0">Taxes</h1>
-              <div className="text-muted small">Configure VAT/GST, service charges, delivery and B2B options.</div>
+              <h1 className="h3 m-0">{tt('admin.taxes.title', 'Taxes')}</h1>
+              <div className="text-muted small">
+                {tt('admin.taxes.subtitle', 'Configure VAT/GST, service charges, delivery and B2B options.')}
+              </div>
             </div>
             <button disabled={saving} className="btn btn-primary shadow-sm" onClick={save}>
-              {saving ? 'Saving…' : 'Save profile'}
+              {saving ? tt('common.saving', 'Saving…') : tt('admin.taxes.actions.saveProfile', 'Save profile')}
             </button>
           </div>
 
@@ -325,11 +346,11 @@ export default function AdminTaxesPage() {
             <div className="col-12 col-lg-8">
               {/* Basics */}
               <div className="card shadow-sm mb-3">
-                <div className="card-header"><strong>Basic settings</strong></div>
+                <div className="card-header"><strong>{tt('admin.taxes.basic.title', 'Basic settings')}</strong></div>
                 <div className="card-body">
                   <div className="row">
                     <div className="col-md-3 mb-3">
-                      <label className="form-label">Country</label>
+                      <label className="form-label">{tt('admin.taxes.basic.country', 'Country')}</label>
                       <input
                         className="form-control"
                         value={form.country || ''}
@@ -337,7 +358,7 @@ export default function AdminTaxesPage() {
                       />
                     </div>
                     <div className="col-md-3 mb-3">
-                      <label className="form-label">Currency</label>
+                      <label className="form-label">{tt('admin.taxes.basic.currency', 'Currency')}</label>
                       <input
                         className="form-control"
                         value={form.currency || ''}
@@ -345,7 +366,7 @@ export default function AdminTaxesPage() {
                       />
                     </div>
                     <div className="col-md-3 mb-3">
-                      <label className="form-label">Prices include tax?</label>
+                      <label className="form-label">{tt('admin.taxes.basic.include', 'Prices include tax?')}</label>
                       <div className="form-check form-switch">
                         <input
                           type="checkbox"
@@ -354,17 +375,19 @@ export default function AdminTaxesPage() {
                           onChange={(e) => onChange('pricesIncludeTax', e.target.checked)}
                         />
                       </div>
-                      <div className="form-text">Inclusive: tax is already included in the listed price.</div>
+                      <div className="form-text">
+                        {tt('admin.taxes.basic.includeHint', 'Inclusive: tax is already included in the listed price.')}
+                      </div>
                     </div>
                     <div className="col-md-3 mb-3">
-                      <label className="form-label">Rounding</label>
+                      <label className="form-label">{tt('admin.taxes.basic.rounding', 'Rounding')}</label>
                       <select
                         className="form-select"
                         value={(form.rounding || 'half_up') as RoundingMode}
                         onChange={(e) => onChange('rounding', e.target.value as RoundingMode)}
                       >
-                        <option value="half_up">Half up (5 rounds up)</option>
-                        <option value="half_even">Half even (banker’s rounding)</option>
+                        <option value="half_up">{tt('admin.taxes.rounding.halfUp', 'Half up (5 rounds up)')}</option>
+                        <option value="half_even">{tt('admin.taxes.rounding.halfEven', 'Half even (banker’s rounding)')}</option>
                       </select>
                     </div>
                   </div>
@@ -376,15 +399,16 @@ export default function AdminTaxesPage() {
                 rates={form.rates || []}
                 onChange={(next) => onChange('rates', next)}
                 pricesIncludeTax={!!form.pricesIncludeTax}
+                tt={tt}
               />
 
               {/* Service charge */}
               <div className="card shadow-sm mb-3">
-                <div className="card-header"><strong>Service charge</strong></div>
+                <div className="card-header"><strong>{tt('admin.taxes.service.title', 'Service charge')}</strong></div>
                 <div className="card-body">
                   <div className="row">
                     <div className="col-md-4 mb-3">
-                      <label className="form-label">Enabled</label>
+                      <label className="form-label">{tt('common.enabled', 'Enabled')}</label>
                       <div className="form-check form-switch">
                         <input
                           className="form-check-input"
@@ -398,7 +422,7 @@ export default function AdminTaxesPage() {
                       </div>
                     </div>
                     <div className="col-md-4 mb-3">
-                      <label className="form-label">Rate (%)</label>
+                      <label className="form-label">{tt('admin.taxes.service.rate', 'Rate (%)')}</label>
                       <div className="input-group">
                         <input
                           type="number"
@@ -412,7 +436,7 @@ export default function AdminTaxesPage() {
                       </div>
                     </div>
                     <div className="col-md-4 mb-3">
-                      <label className="form-label">Taxable?</label>
+                      <label className="form-label">{tt('admin.taxes.service.taxable', 'Taxable?')}</label>
                       <div className="form-check form-switch">
                         <input
                           className="form-check-input"
@@ -423,13 +447,13 @@ export default function AdminTaxesPage() {
                       </div>
                       {service?.taxable && (
                         <div className="mt-2">
-                          <label className="form-label">Tax code</label>
+                          <label className="form-label">{tt('admin.taxes.service.taxCode', 'Tax code')}</label>
                           <select
                             className="form-select"
                             value={service?.taxCode || ''}
                             onChange={(e) => setService({ taxCode: e.target.value || undefined })}
                           >
-                            <option value="">(choose)</option>
+                            <option value="">{tt('common.choose', '(choose)')}</option>
                             {(form.rates || []).map((r) => (
                               <option key={r.code} value={r.code}>{r.code}</option>
                             ))}
@@ -439,18 +463,18 @@ export default function AdminTaxesPage() {
                     </div>
                   </div>
                   <div className="form-text">
-                    If “Taxable” is enabled, tax will be calculated on the charge using the selected <i>Tax code</i>.
+                    {tt('admin.taxes.service.hint', 'If “Taxable” is enabled, tax will be calculated on the charge using the selected')} <i>{tt('admin.taxes.service.taxCode', 'Tax code')}</i>.
                   </div>
                 </div>
               </div>
 
               {/* Delivery policy */}
               <div className="card shadow-sm mb-3">
-                <div className="card-header"><strong>Delivery fee policy</strong></div>
+                <div className="card-header"><strong>{tt('admin.taxes.delivery.title', 'Delivery fee policy')}</strong></div>
                 <div className="card-body">
                   <div className="row">
                     <div className="col-md-4 mb-3">
-                      <label className="form-label">Mode</label>
+                      <label className="form-label">{tt('admin.taxes.delivery.mode', 'Mode')}</label>
                       <select
                         className="form-select"
                         value={form.delivery?.mode || 'out_of_scope'}
@@ -461,12 +485,12 @@ export default function AdminTaxesPage() {
                           })
                         }
                       >
-                        <option value="out_of_scope">Out of scope (outside the engine)</option>
-                        <option value="as_line">As line (synthetic line)</option>
+                        <option value="out_of_scope">{tt('admin.taxes.delivery.outOfScope', 'Out of scope (outside the engine)')}</option>
+                        <option value="as_line">{tt('admin.taxes.delivery.asLine', 'As line (synthetic line)')}</option>
                       </select>
                     </div>
                     <div className="col-md-4 mb-3">
-                      <label className="form-label">Taxable?</label>
+                      <label className="form-label">{tt('admin.taxes.delivery.taxable', 'Taxable?')}</label>
                       <div className="form-check form-switch">
                         <input
                           className="form-check-input"
@@ -482,7 +506,7 @@ export default function AdminTaxesPage() {
                       </div>
                     </div>
                     <div className="col-md-4 mb-3">
-                      <label className="form-label">Tax code (if taxable)</label>
+                      <label className="form-label">{tt('admin.taxes.delivery.taxCodeIf', 'Tax code (if taxable)')}</label>
                       <select
                         className="form-select"
                         value={form.delivery?.taxCode || ''}
@@ -494,7 +518,7 @@ export default function AdminTaxesPage() {
                         }
                         disabled={!form.delivery?.taxable}
                       >
-                        <option value="">(choose)</option>
+                        <option value="">{tt('common.choose', '(choose)')}</option>
                         {(form.rates || []).map((r) => (
                           <option key={r.code} value={r.code}>{r.code}</option>
                         ))}
@@ -502,35 +526,35 @@ export default function AdminTaxesPage() {
                     </div>
                   </div>
                   <div className="form-text">
-                    With “As line”, the engine adds a synthetic “delivery” line and, if taxable, applies the selected code.
+                    {tt('admin.taxes.delivery.hint', 'With “As line”, the engine adds a synthetic “delivery” line and, if taxable, applies the selected code.')}
                   </div>
                 </div>
               </div>
 
               {/* Jurisdictions (read-only quick view) */}
               <div className="card shadow-sm mb-3">
-                <div className="card-header"><strong>Jurisdictions (read-only quick view)</strong></div>
+                <div className="card-header"><strong>{tt('admin.taxes.jur.quickTitle', 'Jurisdictions (read-only quick view)')}</strong></div>
                 <div className="card-body">
                   {Array.isArray(form.jurisdictions) && form.jurisdictions.length > 0 ? (
                     <div className="d-flex flex-column gap-2">
                       {form.jurisdictions.map((j: any, i: number) => {
                         const m = j?.match || {};
                         const tags: string[] = [];
-                        if (m.country) tags.push(`country=${m.country}`);
-                        if ((m as any).state) tags.push(`state=${(m as any).state}`);
-                        if (m.city) tags.push(`city=${m.city}`);
-                        if (m.zipPrefix) tags.push(`zip^=${m.zipPrefix}`);
+                        if (m.country) tags.push(`${tt('admin.taxes.jur.country', 'country')}=${m.country}`);
+                        if ((m as any).state) tags.push(`${tt('admin.taxes.jur.state', 'state')}=${(m as any).state}`);
+                        if (m.city) tags.push(`${tt('admin.taxes.jur.city', 'city')}=${m.city}`);
+                        if (m.zipPrefix) tags.push(`${tt('admin.taxes.jur.zipPrefix', 'zipPrefix')}^=${m.zipPrefix}`);
                         const counts: string[] = [];
-                        if (Array.isArray(j.ratesOverride)) counts.push(`rates: ${j.ratesOverride.length}`);
-                        if (Array.isArray(j.surchargesOverride)) counts.push(`surcharges: ${j.surchargesOverride.length}`);
-                        if (j.deliveryOverride) counts.push(`delivery: 1`);
+                        if (Array.isArray(j.ratesOverride)) counts.push(`${tt('admin.taxes.jur.rates', 'rates')}: ${j.ratesOverride.length}`);
+                        if (Array.isArray(j.surchargesOverride)) counts.push(`${tt('admin.taxes.jur.surcharges', 'surcharges')}: ${j.surchargesOverride.length}`);
+                        if (j.deliveryOverride) counts.push(`${tt('admin.taxes.jur.delivery', 'delivery')}: 1`);
                         return (
                           <div className="border rounded p-2" key={i}>
                             <div className="d-flex justify-content-between">
                               <div><strong>{j.code || `jur-${i+1}`}</strong></div>
-                              <div className="text-muted small">{counts.join(' · ') || 'no overrides'}</div>
+                              <div className="text-muted small">{counts.join(' · ') || tt('admin.taxes.jur.noOverrides', 'no overrides')}</div>
                             </div>
-                            <div className="text-muted small">match: {tags.join(', ') || '—'}</div>
+                            <div className="text-muted small">{tt('admin.taxes.jur.match', 'match')}: {tags.join(', ') || '—'}</div>
                             {j.pricesIncludeTaxOverride !== undefined && (
                               <div className="text-muted small">pricesIncludeTax: {String(j.pricesIncludeTaxOverride)}</div>
                             )}
@@ -543,7 +567,7 @@ export default function AdminTaxesPage() {
                     </div>
                   ) : (
                     <div className="text-muted">
-                      <div>No jurisdiction overrides configured.</div>
+                      <div>{tt('admin.taxes.jur.none', 'No jurisdiction overrides configured.')}</div>
                       <div className="small"></div>
                     </div>
                   )}
@@ -555,15 +579,16 @@ export default function AdminTaxesPage() {
                 jurisdictions={form.jurisdictions || []}
                 onChange={(next) => onChange('jurisdictions', next)}
                 rateCodes={rateCodes}
+                tt={tt}
               />
 
               {/* B2B / Invoice numbering */}
               <div className="card shadow-sm mb-3">
-                <div className="card-header"><strong>B2B / Invoice numbering</strong></div>
+                <div className="card-header"><strong>{tt('admin.taxes.b2b.title', 'B2B / Invoice numbering')}</strong></div>
                 <div className="card-body">
                   <div className="row">
                     <div className="col-md-6 mb-3">
-                      <label className="form-label">Tax-exempt with Tax ID?</label>
+                      <label className="form-label">{tt('admin.taxes.b2b.exemptWithTaxId', 'Tax-exempt with Tax ID?')}</label>
                       <div className="form-check form-switch">
                         <input
                           className="form-check-input"
@@ -572,10 +597,10 @@ export default function AdminTaxesPage() {
                           onChange={(e) => setB2B({ taxExemptWithTaxId: e.target.checked })}
                         />
                       </div>
-                      <div className="form-text">If enabled, an order with a valid Tax ID (NIT) is marked exempt.</div>
+                      <div className="form-text">{tt('admin.taxes.b2b.exemptHint', 'If enabled, an order with a valid Tax ID (NIT) is marked exempt.')}</div>
                     </div>
                     <div className="col-md-6 mb-3">
-                      <label className="form-label">Invoice numbering enabled</label>
+                      <label className="form-label">{tt('admin.taxes.b2b.numberingEnabled', 'Invoice numbering enabled')}</label>
                       <div className="form-check form-switch">
                         <input
                           className="form-check-input"
@@ -597,7 +622,7 @@ export default function AdminTaxesPage() {
                   {form.b2bConfig?.invoiceNumbering?.enabled && (
                     <div className="row">
                       <div className="col-md-3 mb-3">
-                        <label className="form-label">Series</label>
+                        <label className="form-label">{tt('admin.taxes.b2b.series', 'Series')}</label>
                         <input
                           className="form-control"
                           value={form.b2bConfig?.invoiceNumbering?.series || ''}
@@ -612,7 +637,7 @@ export default function AdminTaxesPage() {
                         />
                       </div>
                       <div className="col-md-3 mb-3">
-                        <label className="form-label">Prefix</label>
+                        <label className="form-label">{tt('admin.taxes.b2b.prefix', 'Prefix')}</label>
                         <input
                           className="form-control"
                           value={form.b2bConfig?.invoiceNumbering?.prefix || ''}
@@ -627,7 +652,7 @@ export default function AdminTaxesPage() {
                         />
                       </div>
                       <div className="col-md-3 mb-3">
-                        <label className="form-label">Suffix</label>
+                        <label className="form-label">{tt('admin.taxes.b2b.suffix', 'Suffix')}</label>
                         <input
                           className="form-control"
                           value={form.b2bConfig?.invoiceNumbering?.suffix || ''}
@@ -642,7 +667,7 @@ export default function AdminTaxesPage() {
                         />
                       </div>
                       <div className="col-md-3 mb-3">
-                        <label className="form-label">Padding</label>
+                        <label className="form-label">{tt('admin.taxes.b2b.padding', 'Padding')}</label>
                         <input
                           type="number"
                           min={0}
@@ -659,7 +684,7 @@ export default function AdminTaxesPage() {
                         />
                       </div>
                       <div className="col-md-6 mb-3">
-                        <label className="form-label">Reset policy</label>
+                        <label className="form-label">{tt('admin.taxes.b2b.resetPolicy', 'Reset policy')}</label>
                         <select
                           className="form-select"
                           value={form.b2bConfig?.invoiceNumbering?.resetPolicy || 'never'}
@@ -672,10 +697,10 @@ export default function AdminTaxesPage() {
                             })
                           }
                         >
-                          <option value="never">never</option>
-                          <option value="yearly">yearly</option>
-                          <option value="monthly">monthly</option>
-                          <option value="daily">daily</option>
+                          <option value="never">{tt('admin.taxes.b2b.reset.never', 'never')}</option>
+                          <option value="yearly">{tt('admin.taxes.b2b.reset.yearly', 'yearly')}</option>
+                          <option value="monthly">{tt('admin.taxes.b2b.reset.monthly', 'monthly')}</option>
+                          <option value="daily">{tt('admin.taxes.b2b.reset.daily', 'daily')}</option>
                         </select>
                       </div>
                     </div>
@@ -688,18 +713,18 @@ export default function AdminTaxesPage() {
             <div className="col-12 col-lg-4">
               {/* Inline test */}
               <div className="card shadow-sm mb-3">
-                <div className="card-header"><strong>Inline test</strong></div>
+                <div className="card-header"><strong>{tt('admin.taxes.inlineTest.title', 'Inline test')}</strong></div>
                 <div className="card-body">
-                  <InlineTest profile={form} />
+                  <InlineTest profile={form} tt={tt} />
                 </div>
               </div>
 
               {/* Existing profiles (manage) */}
               <div className="card shadow-sm">
-                <div className="card-header"><strong>Existing profiles</strong></div>
+                <div className="card-header"><strong>{tt('admin.taxes.existing.title', 'Existing profiles')}</strong></div>
                 <div className="card-body">
                   {profiles.length === 0 ? (
-                    <div className="text-muted small">No profiles found.</div>
+                    <div className="text-muted small">{tt('admin.taxes.existing.none', 'No profiles found.')}</div>
                   ) : (
                     <div className="d-flex flex-column gap-2">
                       {profiles.map((p) => {
@@ -710,31 +735,31 @@ export default function AdminTaxesPage() {
                               <div className="me-2">
                                 <div className="fw-semibold">
                                   {p.id}{' '}
-                                  {p.active && <span className="badge bg-success">active</span>}
+                                  {p.active && <span className="badge bg-success">{tt('common.active', 'active')}</span>}
                                 </div>
                                 <div className="small text-muted">
                                   {String(d.country || 'GT')} · {String(d.currency || 'USD')} ·{' '}
-                                  inclTax={String(!!d.pricesIncludeTax)} · rates={Array.isArray(d.rates) ? d.rates.length : 0}
+                                  {tt('admin.taxes.existing.inclTax', 'inclTax')}={String(!!d.pricesIncludeTax)} · {tt('admin.taxes.existing.rates', 'rates')}={Array.isArray(d.rates) ? d.rates.length : 0}
                                 </div>
                               </div>
                               <div className="btn-group btn-group-sm">
                                 <button className="btn btn-outline-primary" onClick={() => loadProfileIntoEditor(p.id)}>
-                                  Load
+                                  {tt('common.load', 'Load')}
                                 </button>
                                 <button
                                   className="btn btn-outline-success"
                                   onClick={() => setActiveProfile(p.id)}
                                   disabled={p.active}
-                                  title="Set this profile active now"
+                                  title={tt('admin.taxes.existing.setActiveTitle', 'Set this profile active now')}
                                 >
-                                  Set active
+                                  {tt('admin.taxes.existing.setActive', 'Set active')}
                                 </button>
                                 <button
                                   className="btn btn-outline-danger"
                                   onClick={() => removeProfile(p.id, p.active)}
                                   disabled={p.active}
                                 >
-                                  Delete
+                                  {tt('common.delete', 'Delete')}
                                 </button>
                               </div>
                             </div>
@@ -744,7 +769,7 @@ export default function AdminTaxesPage() {
                     </div>
                   )}
                   <div className="small text-muted mt-2">
-                    Use “Load” to edit here and “Save profile” to activate it. “Set active” activates the profile as currently stored.
+                    {tt('admin.taxes.existing.hint', 'Use “Load” to edit here and “Save profile” to activate it. “Set active” activates the profile as currently stored.')}
                   </div>
                 </div>
               </div>
@@ -761,10 +786,12 @@ function RatesEditor({
   rates,
   onChange,
   pricesIncludeTax,
+  tt,
 }: {
   rates: TaxRateRule[];
   onChange: (next: TaxRateRule[]) => void;
   pricesIncludeTax: boolean;
+  tt: (k: string, fb: string, v?: Record<string, unknown>) => string;
 }) {
   const addRate = () => {
     const suffix = rates.length + 1;
@@ -791,11 +818,13 @@ function RatesEditor({
   return (
     <div className="card shadow-sm mb-3">
       <div className="card-header d-flex align-items-center justify-content-between">
-        <strong>Tax rates</strong>
-        <button className="btn btn-sm btn-outline-primary" onClick={addRate}>Add rate</button>
+        <strong>{tt('admin.taxes.rates.title', 'Tax rates')}</strong>
+        <button className="btn btn-sm btn-outline-primary" onClick={addRate}>
+          {tt('admin.taxes.rates.add', 'Add rate')}
+        </button>
       </div>
       <div className="card-body">
-        {rates.length === 0 && <div className="text-muted small">No rates yet.</div>}
+        {rates.length === 0 && <div className="text-muted small">{tt('admin.taxes.rates.none', 'No rates yet.')}</div>}
 
         {rates.map((r, idx) => (
           <div className="border rounded p-2 mb-3" key={idx}>
@@ -803,7 +832,7 @@ function RatesEditor({
               <div className="w-100">
                 <div className="row">
                   <div className="col-md-3 mb-2">
-                    <label className="form-label">Code</label>
+                    <label className="form-label">{tt('admin.taxes.rates.code', 'Code')}</label>
                     <input
                       className="form-control"
                       value={r.code || ''}
@@ -811,7 +840,7 @@ function RatesEditor({
                     />
                   </div>
                   <div className="col-md-3 mb-2">
-                    <label className="form-label">Label</label>
+                    <label className="form-label">{tt('admin.taxes.rates.label', 'Label')}</label>
                     <input
                       className="form-control"
                       value={r.label || ''}
@@ -819,7 +848,7 @@ function RatesEditor({
                     />
                   </div>
                   <div className="col-md-3 mb-2">
-                    <label className="form-label">Rate (%)</label>
+                    <label className="form-label">{tt('admin.taxes.rates.ratePct', 'Rate (%)')}</label>
                     <div className="input-group">
                       <input
                         type="number"
@@ -834,20 +863,20 @@ function RatesEditor({
                       <span className="input-group-text">%</span>
                     </div>
                     <div className="form-text">
-                      {pricesIncludeTax ? 'Inclusive' : 'Exclusive'} · 12.00% → 1200 bps
+                      {pricesIncludeTax ? tt('admin.taxes.rates.inclusive', 'Inclusive') : tt('admin.taxes.rates.exclusive', 'Exclusive')} · 12.00% → 1200 bps
                     </div>
                   </div>
                   <div className="col-md-3 mb-2">
-                    <label className="form-label">Applies to</label>
+                    <label className="form-label">{tt('admin.taxes.rates.appliesTo', 'Applies to')}</label>
                     <select
                       className="form-select"
                       value={r.appliesTo === 'all' ? 'all' : 'filtered'}
                       onChange={(e) => update(idx, { appliesTo: e.target.value === 'all' ? 'all' : undefined })}
                     >
-                      <option value="filtered">Filtered</option>
-                      <option value="all">All items</option>
+                      <option value="filtered">{tt('admin.taxes.rates.filtered', 'Filtered')}</option>
+                      <option value="all">{tt('admin.taxes.rates.allItems', 'All items')}</option>
                     </select>
-                    <div className="form-text">If “All items” is selected, filters are ignored.</div>
+                    <div className="form-text">{tt('admin.taxes.rates.appliesHint', 'If “All items” is selected, filters are ignored.')}</div>
                   </div>
                 </div>
 
@@ -855,28 +884,28 @@ function RatesEditor({
                   <div className="mt-2">
                     <div className="row">
                       <div className="col-md-4 mb-2">
-                        <label className="form-label">Categories (CSV)</label>
+                        <label className="form-label">{tt('admin.taxes.rates.categoriesCsv', 'Categories (CSV)')}</label>
                         <input
                           className="form-control"
-                          placeholder="e.g., food, beverage"
+                          placeholder={tt('admin.taxes.rates.categoriesPh', 'e.g., food, beverage')}
                           value={arrayToCsv(r.itemCategoryIn)}
                           onChange={(e) => update(idx, { itemCategoryIn: csvToArray(e.target.value) })}
                         />
                       </div>
                       <div className="col-md-4 mb-2">
-                        <label className="form-label">Tags include (CSV)</label>
+                        <label className="form-label">{tt('admin.taxes.rates.tagsInCsv', 'Tags include (CSV)')}</label>
                         <input
                           className="form-control"
-                          placeholder="e.g., gluten_free, promo"
+                          placeholder={tt('admin.taxes.rates.tagsInPh', 'e.g., gluten_free, promo')}
                           value={arrayToCsv(r.itemTagIn)}
                           onChange={(e) => update(idx, { itemTagIn: csvToArray(e.target.value) })}
                         />
                       </div>
                       <div className="col-md-4 mb-2">
-                        <label className="form-label">Tags exclude (CSV)</label>
+                        <label className="form-label">{tt('admin.taxes.rates.tagsExCsv', 'Tags exclude (CSV)')}</label>
                         <input
                           className="form-control"
-                          placeholder="e.g., non_taxable"
+                          placeholder={tt('admin.taxes.rates.tagsExPh', 'e.g., non_taxable')}
                           value={arrayToCsv(r.excludeItemTagIn)}
                           onChange={(e) => update(idx, { excludeItemTagIn: csvToArray(e.target.value) })}
                         />
@@ -884,7 +913,7 @@ function RatesEditor({
                     </div>
 
                     <div className="mt-2">
-                      <label className="form-label">Order types</label>
+                      <label className="form-label">{tt('admin.taxes.rates.orderTypes', 'Order types')}</label>
                       <div className="d-flex flex-wrap gap-3">
                         {ORDER_TYPES.map((ot) => {
                           const set = new Set(r.orderTypeIn || []);
@@ -907,7 +936,7 @@ function RatesEditor({
                           );
                         })}
                       </div>
-                      <div className="form-text">If empty, the rate applies to all order types.</div>
+                      <div className="form-text">{tt('admin.taxes.rates.orderTypesHint', 'If empty, the rate applies to all order types.')}</div>
                     </div>
                   </div>
                 )}
@@ -917,9 +946,9 @@ function RatesEditor({
                 <button
                   className="btn btn-outline-danger btn-sm"
                   onClick={() => removeRate(idx)}
-                  title="Remove rate"
+                  title={tt('admin.taxes.rates.removeTitle', 'Remove rate')}
                 >
-                  Remove
+                  {tt('common.remove', 'Remove')}
                 </button>
               </div>
             </div>
@@ -937,10 +966,12 @@ function JurisdictionsEditor({
   jurisdictions,
   onChange,
   rateCodes,
+  tt,
 }: {
   jurisdictions: JurisdictionRule[];
   onChange: (next: JurisdictionRule[]) => void;
   rateCodes: string[];
+  tt: (k: string, fb: string, v?: Record<string, unknown>) => string;
 }) {
   const addJur = () => {
     onChange([
@@ -998,14 +1029,14 @@ function JurisdictionsEditor({
   return (
     <div className="card shadow-sm mb-3">
       <div className="card-header d-flex justify-content-between align-items-center">
-        <strong>Jurisdictions (editor)</strong>
-        <button className="btn btn-sm btn-outline-primary" onClick={addJur}>Add rule</button>
+        <strong>{tt('admin.taxes.jur.editorTitle', 'Jurisdictions (editor)')}</strong>
+        <button className="btn btn-sm btn-outline-primary" onClick={addJur}>{tt('admin.taxes.jur.addRule', 'Add rule')}</button>
       </div>
       <div className="card-body">
         {(!jurisdictions || jurisdictions.length === 0) && (
           <div className="text-muted">
-            No jurisdiction overrides configured.
-            <div className="small">(Create them here. They are saved with “Save profile”.)</div>
+            {tt('admin.taxes.jur.none', 'No jurisdiction overrides configured.')}
+            <div className="small">{tt('admin.taxes.jur.createHint', '(Create them here. They are saved with “Save profile”.)')}</div>
           </div>
         )}
 
@@ -1015,7 +1046,7 @@ function JurisdictionsEditor({
               <div className="w-100">
                 <div className="row">
                   <div className="col-md-3 mb-2">
-                    <label className="form-label">Code</label>
+                    <label className="form-label">{tt('admin.taxes.rates.code', 'Code')}</label>
                     <input
                       className="form-control"
                       value={j.code || ''}
@@ -1023,12 +1054,12 @@ function JurisdictionsEditor({
                     />
                   </div>
                   <div className="col-md-9 mb-2">
-                    <label className="form-label">Match</label>
+                    <label className="form-label">{tt('admin.taxes.jur.match', 'Match')}</label>
                     <div className="row">
                       <div className="col-md-3 mb-2">
                         <input
                           className="form-control"
-                          placeholder="country"
+                          placeholder={tt('admin.taxes.jur.country', 'country')}
                           value={j.match?.country || ''}
                           onChange={(e) => updateMatch(idx, 'country', e.target.value)}
                         />
@@ -1036,7 +1067,7 @@ function JurisdictionsEditor({
                       <div className="col-md-3 mb-2">
                         <input
                           className="form-control"
-                          placeholder="state"
+                          placeholder={tt('admin.taxes.jur.state', 'state')}
                           value={(j.match as any)?.state || ''}
                           onChange={(e) => updateMatch(idx, 'state', e.target.value)}
                         />
@@ -1044,7 +1075,7 @@ function JurisdictionsEditor({
                       <div className="col-md-3 mb-2">
                         <input
                           className="form-control"
-                          placeholder="city"
+                          placeholder={tt('admin.taxes.jur.city', 'city')}
                           value={j.match?.city || ''}
                           onChange={(e) => updateMatch(idx, 'city', e.target.value)}
                         />
@@ -1052,34 +1083,35 @@ function JurisdictionsEditor({
                       <div className="col-md-3 mb-2">
                         <input
                           className="form-control"
-                          placeholder="zipPrefix"
+                          placeholder={tt('admin.taxes.jur.zipPrefix', 'zipPrefix')}
                           value={j.match?.zipPrefix || ''}
                           onChange={(e) => updateMatch(idx, 'zipPrefix', e.target.value)}
                         />
                       </div>
                     </div>
-                    <div className="small text-muted">Priority: zipPrefix &gt; city &gt; state &gt; country.</div>
+                    <div className="small text-muted">{tt('admin.taxes.jur.priority', 'Priority: zipPrefix > city > state > country.')}</div>
                   </div>
                 </div>
 
                 {/* Overrides: rates */}
                 <div className="mt-2">
                   <div className="d-flex justify-content-between align-items-center">
-                    <strong>Rates override</strong>
+                    <strong>{tt('admin.taxes.jur.ratesOverride', 'Rates override')}</strong>
                   </div>
                   <RatesEditor
                     rates={j.ratesOverride || []}
                     onChange={(next) => setRates(idx, next)}
                     pricesIncludeTax={true}
+                    tt={tt}
                   />
                 </div>
 
                 {/* Overrides: surcharges */}
                 <div className="mt-2">
                   <div className="d-flex justify-content-between align-items-center">
-                    <strong>Surcharges override</strong>
+                    <strong>{tt('admin.taxes.jur.surchargesOverride', 'Surcharges override')}</strong>
                     <button className="btn btn-sm btn-outline-secondary" onClick={() => addSurcharge(idx)}>
-                      Add surcharge
+                      {tt('admin.taxes.jur.addSurcharge', 'Add surcharge')}
                     </button>
                   </div>
                   {Array.isArray((j as any).surchargesOverride) && (j as any).surchargesOverride.length > 0 ? (
@@ -1088,15 +1120,15 @@ function JurisdictionsEditor({
                         <div key={sIdx} className="border rounded p-2">
                           <div className="row">
                             <div className="col-md-3 mb-2">
-                              <label className="form-label">Code</label>
+                              <label className="form-label">{tt('admin.taxes.rates.code', 'Code')}</label>
                               <input className="form-control" value={s.code || ''} onChange={(e) => updSurcharge(idx, sIdx, { code: e.target.value })} />
                             </div>
                             <div className="col-md-3 mb-2">
-                              <label className="form-label">Label</label>
+                              <label className="form-label">{tt('admin.taxes.rates.label', 'Label')}</label>
                               <input className="form-control" value={s.label || ''} onChange={(e) => updSurcharge(idx, sIdx, { label: e.target.value })} />
                             </div>
                             <div className="col-md-3 mb-2">
-                              <label className="form-label">Rate (%)</label>
+                              <label className="form-label">{tt('admin.taxes.service.rate', 'Rate (%)')}</label>
                               <div className="input-group">
                                 <input
                                   type="number"
@@ -1110,7 +1142,7 @@ function JurisdictionsEditor({
                               </div>
                             </div>
                             <div className="col-md-3 mb-2">
-                              <label className="form-label">Taxable?</label>
+                              <label className="form-label">{tt('admin.taxes.service.taxable', 'Taxable?')}</label>
                               <div className="form-check form-switch">
                                 <input
                                   className="form-check-input"
@@ -1121,13 +1153,13 @@ function JurisdictionsEditor({
                               </div>
                               {s.taxable && (
                                 <div className="mt-2">
-                                  <label className="form-label">Tax code</label>
+                                  <label className="form-label">{tt('admin.taxes.service.taxCode', 'Tax code')}</label>
                                   <select
                                     className="form-select"
                                     value={s.taxCode || ''}
                                     onChange={(e) => updSurcharge(idx, sIdx, { taxCode: e.target.value || undefined })}
                                   >
-                                    <option value="">(choose)</option>
+                                    <option value="">{tt('common.choose', '(choose)')}</option>
                                     {rateCodes.map((c) => <option key={c} value={c}>{c}</option>)}
                                   </select>
                                 </div>
@@ -1135,33 +1167,35 @@ function JurisdictionsEditor({
                             </div>
                           </div>
                           <div className="text-end">
-                            <button className="btn btn-sm btn-outline-danger" onClick={() => delSurcharge(idx, sIdx)}>Remove surcharge</button>
+                            <button className="btn btn-sm btn-outline-danger" onClick={() => delSurcharge(idx, sIdx)}>
+                              {tt('admin.taxes.jur.removeSurcharge', 'Remove surcharge')}
+                            </button>
                           </div>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <div className="text-muted small mt-1">No surcharges override.</div>
+                    <div className="text-muted small mt-1">{tt('admin.taxes.jur.noSurcharges', 'No surcharges override.')}</div>
                   )}
                 </div>
 
                 {/* Overrides: delivery */}
                 <div className="mt-2">
-                  <strong>Delivery override</strong>
+                  <strong>{tt('admin.taxes.jur.deliveryOverride', 'Delivery override')}</strong>
                   <div className="row mt-1">
                     <div className="col-md-4 mb-2">
-                      <label className="form-label">Mode</label>
+                      <label className="form-label">{tt('admin.taxes.delivery.mode', 'Mode')}</label>
                       <select
                         className="form-select"
                         value={(j as any).deliveryOverride?.mode || 'out_of_scope'}
                         onChange={(e) => setDelivery(idx, { mode: e.target.value })}
                       >
-                        <option value="out_of_scope">Out of scope</option>
-                        <option value="as_line">As line</option>
+                        <option value="out_of_scope">{tt('admin.taxes.delivery.outOfScope', 'Out of scope')}</option>
+                        <option value="as_line">{tt('admin.taxes.delivery.asLineShort', 'As line')}</option>
                       </select>
                     </div>
                     <div className="col-md-4 mb-2">
-                      <label className="form-label">Taxable?</label>
+                      <label className="form-label">{tt('admin.taxes.delivery.taxable', 'Taxable?')}</label>
                       <div className="form-check form-switch">
                         <input
                           className="form-check-input"
@@ -1172,14 +1206,14 @@ function JurisdictionsEditor({
                       </div>
                     </div>
                     <div className="col-md-4 mb-2">
-                      <label className="form-label">Tax code</label>
+                      <label className="form-label">{tt('admin.taxes.service.taxCode', 'Tax code')}</label>
                       <select
                         className="form-select"
                         value={(j as any).deliveryOverride?.taxCode || ''}
                         onChange={(e) => setDelivery(idx, { taxCode: e.target.value || undefined })}
                         disabled={!((j as any).deliveryOverride?.taxable)}
                       >
-                        <option value="">(choose)</option>
+                        <option value="">{tt('common.choose', '(choose)')}</option>
                         {rateCodes.map((c) => <option key={c} value={c}>{c}</option>)}
                       </select>
                     </div>
@@ -1189,7 +1223,7 @@ function JurisdictionsEditor({
                 {/* Overrides: flags */}
                 <div className="row mt-2">
                   <div className="col-md-6 mb-2">
-                    <label className="form-label">pricesIncludeTax override</label>
+                    <label className="form-label">{tt('admin.taxes.jur.pricesIncludeOverride', 'pricesIncludeTax override')}</label>
                     <div className="form-check form-switch">
                       <input
                         className="form-check-input"
@@ -1202,7 +1236,7 @@ function JurisdictionsEditor({
                     </div>
                   </div>
                   <div className="col-md-6 mb-2">
-                    <label className="form-label">rounding override</label>
+                    <label className="form-label">{tt('admin.taxes.jur.roundingOverride', 'rounding override')}</label>
                     <select
                       className="form-select"
                       value={(j as any).roundingOverride || ''}
@@ -1210,7 +1244,7 @@ function JurisdictionsEditor({
                         updateJur(idx, { roundingOverride: (e.target.value || undefined) as any })
                       }
                     >
-                      <option value="">(inherit)</option>
+                      <option value="">{tt('common.inherit', '(inherit)')}</option>
                       <option value="half_up">half_up</option>
                       <option value="half_even">half_even</option>
                     </select>
@@ -1220,7 +1254,7 @@ function JurisdictionsEditor({
 
               <div className="ms-2">
                 <button className="btn btn-outline-danger btn-sm" onClick={() => removeJur(idx)}>
-                  Remove
+                  {tt('common.remove', 'Remove')}
                 </button>
               </div>
             </div>
@@ -1234,7 +1268,7 @@ function JurisdictionsEditor({
 }
 
 /* ====================== Inline Test ====================== */
-function InlineTest({ profile }: { profile: TaxProfile }) {
+function InlineTest({ profile, tt }: { profile: TaxProfile; tt: (k: string, fb: string, v?: Record<string, unknown>) => string }) {
   const [qty, setQty] = useState(2);
   const [unit, setUnit] = useState(2500); // 25.00
   const [addons, setAddons] = useState(0);
@@ -1259,7 +1293,7 @@ function InlineTest({ profile }: { profile: TaxProfile }) {
   return (
     <div>
       <div className="mb-2">
-        <label className="form-label">Qty</label>
+        <label className="form-label">{tt('common.qty', 'Qty')}</label>
         <input
           type="number"
           className="form-control"
@@ -1268,7 +1302,7 @@ function InlineTest({ profile }: { profile: TaxProfile }) {
         />
       </div>
       <div className="mb-2">
-        <label className="form-label">Unit price (cents)</label>
+        <label className="form-label">{tt('admin.taxes.inlineTest.unitCents', 'Unit price (cents)')}</label>
         <input
           type="number"
           className="form-control"
@@ -1277,7 +1311,7 @@ function InlineTest({ profile }: { profile: TaxProfile }) {
         />
       </div>
       <div className="mb-2">
-        <label className="form-label">Addons (cents)</label>
+        <label className="form-label">{tt('admin.taxes.inlineTest.addonsCents', 'Addons (cents)')}</label>
         <input
           type="number"
           className="form-control"
@@ -1288,9 +1322,9 @@ function InlineTest({ profile }: { profile: TaxProfile }) {
 
       {snapshot ? (
         <div className="mt-2 small">
-          <div>Subtotal: {fmtMoneyCents(snapshot.totals.subTotalCents, snapshot.currency)}</div>
-          <div>Tax: {fmtMoneyCents(snapshot.totals.taxCents, snapshot.currency)}</div>
-          <div className="fw-semibold">Grand total: {fmtMoneyCents(snapshot.totals.grandTotalCents, snapshot.currency)}</div>
+          <div>{tt('admin.taxes.inlineTest.subtotal', 'Subtotal')}: {fmtMoneyCents(snapshot.totals.subTotalCents, snapshot.currency)}</div>
+          <div>{tt('admin.taxes.inlineTest.tax', 'Tax')}: {fmtMoneyCents(snapshot.totals.taxCents, snapshot.currency)}</div>
+          <div className="fw-semibold">{tt('admin.taxes.inlineTest.grandTotal', 'Grand total')}: {fmtMoneyCents(snapshot.totals.grandTotalCents, snapshot.currency)}</div>
         </div>
       ) : (
         <div className="text-muted">—</div>

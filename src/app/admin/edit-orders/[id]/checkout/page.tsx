@@ -8,6 +8,10 @@ import { apiFetch } from "@/lib/api/client";
 import Protected from '@/components/Protected';
 import { RoleGate } from '@/components/RoleGate'; // allow={['admin','waiter']}
 
+// 🔤 i18n
+import { t as translate } from "@/lib/i18n/t";
+import { useTenantSettings } from "@/lib/settings/hooks";
+
 export default function EditCheckoutPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -15,6 +19,22 @@ export default function EditCheckoutPage() {
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // 🔤 i18n init
+  const { settings } = useTenantSettings();
+  const lang = useMemo(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const ls = localStorage.getItem("tenant.language");
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language;
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
 
   // Calcula amounts con los mismos campos que usas al crear órdenes
   const amounts = useMemo(() => {
@@ -73,17 +93,17 @@ export default function EditCheckoutPage() {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-    }); // basado en tu handler previo. :contentReference[oaicite:1]{index=1}
+    });
 
     if (res.status === 401) {
-      setError("Unauthorized. Sign in..");
+      setError(tt('admin.editcheckout.err.unauth', 'Unauthorized. Sign in..'));
       setSaving(false);
       router.replace("/login");
       return;
     }
     if (!res.ok) {
       const t = await res.text();
-      setError(`Error saving changes: ${t}`);
+      setError(`${tt('admin.editcheckout.err.save', 'Error saving changes')}: ${t}`);
       setSaving(false);
       return;
     }
@@ -99,32 +119,32 @@ export default function EditCheckoutPage() {
       <RoleGate allow={['admin','waiter']}>
         <div className="container py-3">
           <div className="alert alert-warning mb-3">
-            Edit order{" "}
+            {tt('admin.editcheckout.banner', 'Edit order')}{' '}
             <strong>#{(cart.orderId ?? "").slice(-6).toUpperCase()}</strong>
           </div>
 
-          <h2 className="h6 mb-3">Confirm changes</h2>
+          <h2 className="h6 mb-3">{tt('admin.editcheckout.confirm', 'Confirm changes')}</h2>
 
           <form onSubmit={handleSubmit} className="vstack gap-3">
             <div className="card">
               <div className="card-body">
                 <div className="mb-2">
-                  Items: <strong>{(cart.lines ?? []).length}</strong>
+                  {tt('admin.editcheckout.items', 'Items')}: <strong>{(cart.lines ?? []).length}</strong>
                 </div>
                 <div className="mb-2">
-                  Subtotal:{" "}
+                  {tt('common.subtotal', 'Subtotal')}:{" "}
                   <strong>
                     {(amounts.subtotalCents / 100).toFixed(2)} {currency}
                   </strong>
                 </div>
                 <div className="mb-2">
-                  Tip:{" "}
+                  {tt('common.tip', 'Tip')}:{" "}
                   <strong>
                     {(amounts.tipCents / 100).toFixed(2)} {currency}
                   </strong>
                 </div>
                 <div className="mb-2">
-                  Total:{" "}
+                  {tt('common.total', 'Total')}:{" "}
                   <strong>
                     {(amounts.totalCents / 100).toFixed(2)} {currency}
                   </strong>
@@ -136,7 +156,7 @@ export default function EditCheckoutPage() {
 
             <div className="d-flex gap-2">
               <button className="btn btn-success" disabled={saving}>
-                Save changes
+                {tt('admin.editcheckout.save', 'Save changes')}
               </button>
               <button
                 className="btn btn-outline-secondary"
@@ -144,7 +164,7 @@ export default function EditCheckoutPage() {
                 onClick={() => history.back()}
                 disabled={saving}
               >
-                Back
+                {tt('common.back', 'Back')}
               </button>
             </div>
           </form>

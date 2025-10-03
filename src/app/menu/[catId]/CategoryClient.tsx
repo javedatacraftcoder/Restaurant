@@ -15,6 +15,10 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 
+// 🔤 i18n
+import { useTenantSettings } from "@/lib/settings/hooks";
+import { t as translate } from "@/lib/i18n/t";
+
 type Category = { id: string; name: string; slug?: string; imageUrl?: string | null };
 type Subcategory = {
   id: string;
@@ -29,6 +33,22 @@ export default function CategoryClient({ catId }: { catId: string }) {
   const db = useMemo(() => getFirestore(), []);
   const [category, setCategory] = useState<Category | null>(null);
   const [subcats, setSubcats] = useState<Subcategory[]>([]);
+
+  // 🔤 idioma actual + helper
+  const { settings } = useTenantSettings();
+  const lang = useMemo(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const ls = localStorage.getItem("tenant.language");
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language;
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
 
   useEffect(() => {
     const unsubList: Array<() => void> = [];
@@ -52,8 +72,8 @@ export default function CategoryClient({ catId }: { catId: string }) {
   return (
     <div className="container py-4">
       <div className="d-flex align-items-center justify-content-between mb-3">
-        <h1 className="h4 m-0">{category?.name ?? "Category"}</h1>
-        <Link href="/menu" className="btn btn-sm btn-outline-secondary">← Back</Link>
+        <h1 className="h4 m-0">{category?.name ?? tt("menu.category.title", "Category")}</h1>
+        <Link href="/menu" className="btn btn-sm btn-outline-secondary">← {tt("menu.category.back", "Back")}</Link>
       </div>
 
       <div className="row g-4">
@@ -72,7 +92,7 @@ export default function CategoryClient({ catId }: { catId: string }) {
                     />
                   ) : (
                     <div className="d-flex align-items-center justify-content-center bg-light text-muted">
-                      No image
+                      {tt("menu.category.noImage", "No image")}
                     </div>
                   )}
                 </div>
@@ -89,7 +109,7 @@ export default function CategoryClient({ catId }: { catId: string }) {
         {subcats.length === 0 && (
           <div className="col-12">
             <div className="alert alert-light border">
-              There are no subcategories in this category yet.
+              {tt("menu.category.empty", "There are no subcategories in this category yet.")}
             </div>
           </div>
         )}

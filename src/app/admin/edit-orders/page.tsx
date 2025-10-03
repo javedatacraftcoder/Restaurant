@@ -9,6 +9,10 @@ import Protected from '@/components/Protected';
 import { RoleGate } from '@/components/RoleGate'; // allow={['admin','waiter']}
 import { useFmtQ } from '@/lib/settings/money'; // ✅ usar formateador global
 
+// 🔤 i18n
+import { t as translate } from "@/lib/i18n/t";
+import { useTenantSettings } from "@/lib/settings/hooks";
+
 type TS = any;
 
 type OptItem = {
@@ -115,6 +119,22 @@ export default function EditOrdersListPage() {
   // ✅ formateador global para toda la página
   const fmtQ = useFmtQ();
 
+  // 🔤 idioma (leer de settings y fallback a localStorage)
+  const { settings } = useTenantSettings();
+  const lang = useMemo(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const ls = localStorage.getItem("tenant.language");
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language;
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
+
   useEffect(()=>{ let alive=true;(async()=>{
     try{
       const res = await fetch('/api/orders?limit=100',{cache:'no-store'});
@@ -163,15 +183,19 @@ export default function EditOrdersListPage() {
       <RoleGate allow={['admin','waiter']}>
         <div className="container py-4">
           <div className="d-flex align-items-center justify-content-between mb-3">
-            <h1 className="h4 m-0">Edit orders</h1>
+            <h1 className="h4 m-0">{tt('admin.editorders.title','Edit orders')}</h1>
             <div className="input-group" style={{maxWidth: 360}}>
               <span className="input-group-text">@</span>
-              <input className="form-control" placeholder="Search by email or #"
-                    value={q} onChange={e=>setQ(e.target.value)} />
+              <input
+                className="form-control"
+                placeholder={tt('admin.editorders.searchPh','Search by email or #')}
+                value={q}
+                onChange={e=>setQ(e.target.value)}
+              />
             </div>
           </div>
 
-          {loading && <div className="alert alert-info">Loading...</div>}
+          {loading && <div className="alert alert-info">{tt('common.loading','Loading...')}</div>}
 
           {!loading && (
             <ul className="list-group">
@@ -179,16 +203,25 @@ export default function EditOrdersListPage() {
                 const total = orderTotalQ(o);
                 const d = tsToDate(o.createdAt)?.toLocaleString() ?? '-';
                 const n = o.orderNumber ?? o.id.slice(0,6);
+                const typeLabel = (() => {
+                  const raw = displayType(o);
+                  if (raw === 'Delivery') return tt('admin.kitchen.delivery','Delivery');
+                  if (raw === 'Dine-in') return tt('admin.kitchen.dinein','Dine-in');
+                  if (String(raw).toLowerCase() === 'pickup') return tt('admin.kitchen.pickup','Pickup');
+                  return String(raw || '-');
+                })();
                 return (
                   <li key={o.id} className="list-group-item">
                     <div className="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between">
                       <div>
-                        <div className="fw-semibold">#{n} <span className="badge text-bg-light">{displayType(o)}</span></div>
-                        <div className="small text-muted">Date: {d}</div>
+                        <div className="fw-semibold">#{n} <span className="badge text-bg-light">{typeLabel}</span></div>
+                        <div className="small text-muted">{tt('common.date','Date')}: {d}</div>
                       </div>
                       <div className="d-flex align-items-center gap-2 mt-2 mt-md-0">
                         <div className="fw-bold">{fmtQ(total)}</div>
-                        <Link href={`/admin/edit-orders/${o.id}/menu`} className="btn btn-primary btn-sm">Edit</Link>
+                        <Link href={`/admin/edit-orders/${o.id}/menu`} className="btn btn-primary btn-sm">
+                          {tt('common.edit','Edit')}
+                        </Link>
                       </div>
                     </div>
 
@@ -214,7 +247,7 @@ export default function EditOrdersListPage() {
                               });
                               return rows.length?(
                                 <div key={gi} className="ms-3 text-muted">
-                                  <span className="fw-semibold">{g.groupName || 'Options'}:</span> {rows}
+                                  <span className="fw-semibold">{g.groupName || tt('common.options','Options')}:</span> {rows}
                                 </div>
                               ):null;
                             })}
@@ -226,7 +259,7 @@ export default function EditOrdersListPage() {
                               });
                               return rows.length?(
                                 <div key={`op-${gi}`} className="ms-3 text-muted">
-                                  <span className="fw-semibold">{g.groupName || 'Options'}:</span> {rows}
+                                  <span className="fw-semibold">{g.groupName || tt('common.options','Options')}:</span> {rows}
                                 </div>
                               ):null;
                             })}
@@ -234,7 +267,7 @@ export default function EditOrdersListPage() {
                             {/* addons con precio */}
                             {Array.isArray(l.addons) && l.addons.length>0 && (
                               <div className="ms-3 text-muted">
-                                <span className="fw-semibold">addons:</span>{' '}
+                                <span className="fw-semibold">{tt('common.addons','Add-ons')}:</span>{' '}
                                 {l.addons.map((ad:any,ai:number)=>{
                                   if (typeof ad==='string') return <span key={ai}>{ad}{ai<l.addons!.length-1?', ':''}</span>;
                                   const p = toNum(ad?.price) ?? (toNum(ad?.priceCents)!==undefined ? Number(ad!.priceCents)/100 : undefined);
@@ -244,7 +277,7 @@ export default function EditOrdersListPage() {
                             )}
 
                             <div className="d-flex justify-content-between">
-                              <span className="text-muted">Subtotal line</span>
+                              <span className="text-muted">{tt('admin.cashier.lineSubtotal','Subtotal line')}</span>
                               <span className="text-muted">{fmtQ(sum)}</span>
                             </div>
                           </div>
@@ -254,7 +287,7 @@ export default function EditOrdersListPage() {
                   </li>
                 );
               })}
-              {filtered.length===0 && <li className="list-group-item text-muted">No results</li>}
+              {filtered.length===0 && <li className="list-group-item text-muted">{tt('common.noResults','No results')}</li>}
             </ul>
           )}
         </div>

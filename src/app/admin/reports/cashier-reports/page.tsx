@@ -20,6 +20,10 @@ import {
 } from "firebase/firestore";
 import { useFmtQ /* , fmtCents */ } from "@/lib/settings/money";
 
+// 🔤 i18n
+import { t as translate } from "@/lib/i18n/t";
+import { useTenantSettings } from "@/lib/settings/hooks";
+
 /** ========= Types ========= */
 type OrderDoc = {
   id: string;
@@ -27,14 +31,14 @@ type OrderDoc = {
   totals?: { grandTotalWithTax?: number } | null;
   totalsCents?: { grandTotalWithTaxCents?: number } | null;
   payment?: {
-    provider?: string | null; // 'cash' | 'paypal' | 'card' | ...
-    status?: string | null;   // 'pending' | 'paid' | 'captured' | 'failed' | 'closed' | ...
-    amount?: number | null;   // fallback
+    provider?: string | null;
+    status?: string | null;
+    amount?: number | null;
     currency?: string | null;
     createdAt?: Timestamp | { seconds: number } | Date | null;
     updatedAt?: Timestamp | { seconds: number } | Date | null;
   } | null;
-  orderTotal?: number | null; // legacy
+  orderTotal?: number | null;
 };
 
 type CashboxSession = {
@@ -46,7 +50,7 @@ type CashboxSession = {
   declaredClosingAmountCents?: number | null;
   cashierName?: string | null;
   notes?: string | null;
-  sessionDate?: string | null; // opcional: 'YYYY-MM-DD'
+  sessionDate?: string | null; // 'YYYY-MM-DD'
 };
 
 type PieRow = { label: string; value: number; color?: string };
@@ -60,7 +64,6 @@ function toDate(v: any): Date | null {
   return isNaN(d as any) ? null : d;
 }
 
-// ⬇️ Renombrado para no asumir USD: devolvemos el monto en unidades de la moneda del pedido.
 function getOrderRevenue(o: OrderDoc): number {
   const cents = o.totalsCents?.grandTotalWithTaxCents;
   if (Number.isFinite(cents)) return (cents as number) / 100;
@@ -99,6 +102,36 @@ function arcPath(cx: number, cy: number, r: number, startAngle: number, endAngle
   return `M ${cx} ${cy} L ${start.x} ${start.y} A ${r} ${r} 0 ${largeArcFlag} 0 ${end.x} ${end.y} Z`;
 }
 function PieChart({ rows, size = 220, title }: { rows: PieRow[]; size?: number; title: string }) {
+  // 🔤 i18n dentro del componente
+  const { settings } = useTenantSettings();
+  const lang = React.useMemo(() => {
+    // 1) URL ?lang=xx → prioridad y persistencia
+    try {
+      if (typeof window !== "undefined") {
+        const sp = new URLSearchParams(window.location.search);
+        const q = sp.get("lang");
+        if (q) {
+          const v = q.toLowerCase();
+          try { localStorage.setItem("tenant.language", v); } catch {}
+          return v;
+        }
+      }
+    } catch {}
+    // 2) localStorage → fallback
+    try {
+      if (typeof window !== "undefined") {
+        const ls = localStorage.getItem("tenant.language");
+        if (ls) return ls;
+      }
+    } catch {}
+    // 3) settings.language → último recurso
+    return (settings as any)?.language || "en";
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
+
   const total = rows.reduce((s, r) => s + (Number(r.value) || 0), 0);
   const cx = size / 2, cy = size / 2, r = size / 2 - 4;
   let angle = 0;
@@ -114,10 +147,14 @@ function PieChart({ rows, size = 220, title }: { rows: PieRow[]; size?: number; 
     <div className="card border-0 shadow-sm h-100">
       <div className="card-header fw-semibold d-flex justify-content-between align-items-center">
         <span>{title}</span>
-        <span className="small text-muted">{total === 0 ? "No data" : `${rows.length} segments`}</span>
+        <span className="small text-muted">
+          {total === 0 ? tt("admin.cashrep.nodata", "No data") : tt("admin.cashrep.segments", "{n} segments", { n: rows.length })}
+        </span>
       </div>
       <div className="card-body">
-        {total === 0 ? <div className="text-muted small">No data</div> : (
+        {total === 0 ? (
+          <div className="text-muted small">{tt("admin.cashrep.nodata", "No data")}</div>
+        ) : (
           <div className="d-flex flex-column flex-md-row align-items-center gap-3">
             <div style={{ width: "100%", maxWidth: size }}>
               <svg viewBox={`0 0 ${size} ${size}`} style={{ width: "100%", height: "auto" }}>
@@ -145,6 +182,7 @@ function PieChart({ rows, size = 220, title }: { rows: PieRow[]; size?: number; 
 }
 
 /** ========= Excel (SpreadsheetML 2003) ========= */
+// (sin cambios en export a Excel)
 type Sheet = { name: string; headers: string[]; rows: (string | number)[][] };
 function xmlEscape(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -201,6 +239,36 @@ function downloadExcelXml(filename: string, xml: string) {
 export default function AdminCashierReportsPage() {
   const db = getFirestore();
   const fmtQ = useFmtQ();
+
+  // 🔤 i18n init (igual que kitchen: URL ?lang → localStorage → settings)
+  const { settings } = useTenantSettings();
+  const lang = React.useMemo(() => {
+    // 1) URL ?lang=xx → prioridad y persistencia
+    try {
+      if (typeof window !== "undefined") {
+        const sp = new URLSearchParams(window.location.search);
+        const q = sp.get("lang");
+        if (q) {
+          const v = q.toLowerCase();
+          try { localStorage.setItem("tenant.language", v); } catch {}
+          return v;
+        }
+      }
+    } catch {}
+    // 2) localStorage → fallback
+    try {
+      if (typeof window !== "undefined") {
+        const ls = localStorage.getItem("tenant.language");
+        if (ls) return ls;
+      }
+    } catch {}
+    // 3) settings.language → último recurso
+    return (settings as any)?.language || "en";
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
 
   // Filters
   const [preset, setPreset] = useState<"today" | "7d" | "30d" | "thisMonth" | "custom">("30d");
@@ -303,7 +371,7 @@ export default function AdminCashierReportsPage() {
         setSessions([]); // collection missing or no perms: ignore
       }
     } catch (e: any) {
-      setError(e?.message || "Failed to load data.");
+      setError(e?.message || tt("admin.cashrep.err.load", "Failed to load data."));
     } finally {
       setLoading(false);
     }
@@ -313,7 +381,6 @@ export default function AdminCashierReportsPage() {
   /** ========= Aggregations ========= */
   const currency = useMemo(() => orders[0]?.payment?.currency || "USD", [orders]);
 
-  // Payment method counts & revenue
   const byMethod = useMemo(() => {
     const m = new Map<string, { count: number; revenue: number; paidCount: number }>();
     for (const o of orders) {
@@ -332,10 +399,8 @@ export default function AdminCashierReportsPage() {
   const pieByMethodCount: PieRow[] = useMemo(() => byMethod.map(x => ({ label: x.label, value: x.count })), [byMethod]);
   const pieByMethodRevenue: PieRow[] = useMemo(() => byMethod.map(x => ({ label: x.label, value: Number(x.revenue.toFixed(2)) })), [byMethod]);
 
-  // Unpaid or rejected orders
   const unpaidOrRejected = useMemo(() => orders.filter(o => isUnpaidOrRejected(o.payment?.status)), [orders]);
 
-  // Cash payments (to reconcile cashbox)
   const cashOrders = useMemo(() =>
     orders.filter(o =>
       String(o.payment?.provider || "").toLowerCase() === "cash" && isPaidStatus(o.payment?.status)
@@ -346,10 +411,8 @@ export default function AdminCashierReportsPage() {
   const totalRevenue = useMemo(() => orders.reduce((s, o) => s + getOrderRevenue(o), 0), [orders]);
   const totalCashRevenue = useMemo(() => cashOrders.reduce((s, o) => s + getOrderRevenue(o), 0), [cashOrders]);
 
-  // Cashbox sessions — computed expected vs declared (if sessions exist)
   const sessionsAugmented = useMemo(() => {
     if (!sessions.length) return [];
-    // map yyyy-mm-dd to cash revenue for that day
     const cashByDay = new Map<string, number>();
     for (const o of cashOrders) {
       const d = toDate(o.payment?.createdAt || o.createdAt) || toDate(o.createdAt);
@@ -378,9 +441,9 @@ export default function AdminCashierReportsPage() {
         "payment.provider": "cash",
         "payment.updatedAt": serverTimestamp(),
       });
-      await load(); // refrescar vista
+      await load();
     } catch (e: any) {
-      alert(e?.message || "Could not update payment status.");
+      alert(e?.message || tt("admin.cashrep.err.update", "Could not update payment status."));
     } finally {
       setUpdatingId(null);
     }
@@ -388,6 +451,7 @@ export default function AdminCashierReportsPage() {
 
   /** ========= Export ========= */
   function onExportExcel() {
+    // ⚠️ SIN CAMBIOS EN EXPORT/HEADERS
     const summary: Sheet = {
       name: "Summary",
       headers: ["Metric", "Value"],
@@ -460,37 +524,37 @@ export default function AdminCashierReportsPage() {
     <Protected>
       <AdminOnly>
         <main className="container py-4">
-          <h1 className="h4 mb-3">Cashier & Payments</h1>
+          <h1 className="h4 mb-3">{tt("admin.cashrep.title", "Cashier & Payments")}</h1>
 
           {/* Filters */}
           <div className="card border-0 shadow-sm mb-3">
             <div className="card-body">
               <div className="row g-3">
                 <div className="col-12 col-md-3">
-                  <label className="form-label fw-semibold">Range</label>
+                  <label className="form-label fw-semibold">{tt("admin.cashrep.range", "Range")}</label>
                   <select className="form-select" value={preset} onChange={(e) => setPreset(e.target.value as any)}>
-                    <option value="today">Today</option>
-                    <option value="7d">Last 7 days</option>
-                    <option value="30d">Last 30 days</option>
-                    <option value="thisMonth">This month</option>
-                    <option value="custom">Custom</option>
+                    <option value="today">{tt("admin.cashrep.preset.today", "Today")}</option>
+                    <option value="7d">{tt("admin.cashrep.preset.7d", "Last 7 days")}</option>
+                    <option value="30d">{tt("admin.cashrep.preset.30d", "Last 30 days")}</option>
+                    <option value="thisMonth">{tt("admin.cashrep.preset.thisMonth", "This month")}</option>
+                    <option value="custom">{tt("admin.cashrep.preset.custom", "Custom")}</option>
                   </select>
                 </div>
                 <div className="col-6 col-md-3">
-                  <label className="form-label fw-semibold">From</label>
+                  <label className="form-label fw-semibold">{tt("admin.cashrep.from", "From")}</label>
                   <input type="date" className="form-control" value={fromStr} onChange={(e) => { setFromStr(e.target.value); setPreset("custom"); }} />
                 </div>
                 <div className="col-6 col-md-3">
-                  <label className="form-label fw-semibold">To</label>
+                  <label className="form-label fw-semibold">{tt("admin.cashrep.to", "To")}</label>
                   <input type="date" className="form-control" value={toStr} onChange={(e) => { setToStr(e.target.value); setPreset("custom"); }} />
                 </div>
                 <div className="col-12 col-md-3 d-flex align-items-end">
                   <div className="d-flex gap-2 w-100">
                     <button className="btn btn-primary flex-fill" onClick={load} disabled={loading}>
-                      {loading ? "Loading…" : "Refresh"}
+                      {loading ? tt("common.loadingDots", "Loading…") : tt("common.refresh", "Refresh")}
                     </button>
                     <button className="btn btn-outline-success" onClick={onExportExcel} disabled={loading || orders.length === 0}>
-                      Export to Excel
+                      {tt("admin.cashrep.export", "Export to Excel")}
                     </button>
                   </div>
                 </div>
@@ -503,25 +567,25 @@ export default function AdminCashierReportsPage() {
           <div className="row g-3 mb-3">
             <div className="col-6 col-md-3">
               <div className="card border-0 shadow-sm"><div className="card-body">
-                <div className="text-muted small">Orders</div>
+                <div className="text-muted small">{tt("admin.cashrep.kpi.orders", "Orders")}</div>
                 <div className="h4 mb-0">{totalOrders}</div>
               </div></div>
             </div>
             <div className="col-6 col-md-3">
               <div className="card border-0 shadow-sm"><div className="card-body">
-                <div className="text-muted small">Revenue</div>
+                <div className="text-muted small">{tt("admin.cashrep.kpi.revenue", "Revenue")}</div>
                 <div className="h4 mb-0">{fmtQ(totalRevenue)}</div>
               </div></div>
             </div>
             <div className="col-6 col-md-3">
               <div className="card border-0 shadow-sm"><div className="card-body">
-                <div className="text-muted small">Cash revenue</div>
+                <div className="text-muted small">{tt("admin.cashrep.kpi.cashRevenue", "Cash revenue")}</div>
                 <div className="h5 mb-0">{fmtQ(totalCashRevenue)}</div>
               </div></div>
             </div>
             <div className="col-6 col-md-3">
               <div className="card border-0 shadow-sm"><div className="card-body">
-                <div className="text-muted small">Unpaid/Rejected</div>
+                <div className="text-muted small">{tt("admin.cashrep.kpi.unpaidRejected", "Unpaid/Rejected")}</div>
                 <div className="h4 mb-0">{unpaidOrRejected.length}</div>
               </div></div>
             </div>
@@ -531,20 +595,20 @@ export default function AdminCashierReportsPage() {
           <div className="row g-3">
             <div className="col-12 col-lg-6">
               <div className="card border-0 shadow-sm h-100">
-                <div className="card-header fw-semibold">Payment methods</div>
+                <div className="card-header fw-semibold">{tt("admin.cashrep.table.methods.title", "Payment methods")}</div>
                 <div className="card-body p-0">
                   <div className="table-responsive">
                     <table className="table mb-0">
                       <thead>
                         <tr>
-                          <th>Method</th>
-                          <th className="text-end">Orders</th>
-                          <th className="text-end">Paid Orders</th>
-                          <th className="text-end">Revenue</th>
+                          <th>{tt("admin.cashrep.table.methods.method", "Method")}</th>
+                          <th className="text-end">{tt("admin.cashrep.table.methods.orders", "Orders")}</th>
+                          <th className="text-end">{tt("admin.cashrep.table.methods.paid", "Paid Orders")}</th>
+                          <th className="text-end">{tt("admin.cashrep.table.methods.revenue", "Revenue")}</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {byMethod.length === 0 && <tr><td colSpan={4} className="text-center text-muted">No data</td></tr>}
+                        {byMethod.length === 0 && <tr><td colSpan={4} className="text-center text-muted">{tt("admin.cashrep.nodata", "No data")}</td></tr>}
                         {byMethod.map((m) => (
                           <tr key={m.label}>
                             <td className="text-nowrap">{m.label}</td>
@@ -562,21 +626,21 @@ export default function AdminCashierReportsPage() {
 
             <div className="col-12 col-lg-6">
               <div className="card border-0 shadow-sm h-100">
-                <div className="card-header fw-semibold">Unpaid / Rejected Orders</div>
+                <div className="card-header fw-semibold">{tt("admin.cashrep.table.unpaid.title", "Unpaid / Rejected Orders")}</div>
                 <div className="card-body p-0">
                   <div className="table-responsive">
                     <table className="table mb-0">
                       <thead>
                         <tr>
-                          <th>Order</th>
-                          <th>Method</th>
-                          <th>Status</th>
-                          <th className="text-end">Amount</th>
-                          <th className="text-end">Action</th>
+                          <th>{tt("admin.cashrep.table.unpaid.order", "Order")}</th>
+                          <th>{tt("admin.cashrep.table.unpaid.method", "Method")}</th>
+                          <th>{tt("admin.cashrep.table.unpaid.status", "Status")}</th>
+                          <th className="text-end">{tt("admin.cashrep.table.unpaid.amount", "Amount")}</th>
+                          <th className="text-end">{tt("admin.cashrep.table.unpaid.action", "Action")}</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {unpaidOrRejected.length === 0 && <tr><td colSpan={5} className="text-center text-muted">No data</td></tr>}
+                        {unpaidOrRejected.length === 0 && <tr><td colSpan={5} className="text-center text-muted">{tt("admin.cashrep.nodata", "No data")}</td></tr>}
                         {unpaidOrRejected.map((o) => {
                           const isCash = String(o.payment?.provider || "").toLowerCase() === "cash";
                           const canCloseCash = isCash && !isPaidStatus(o.payment?.status);
@@ -593,7 +657,9 @@ export default function AdminCashierReportsPage() {
                                     onClick={() => markCashPaymentClosed(o.id)}
                                     disabled={updatingId === o.id}
                                   >
-                                    {updatingId === o.id ? "Updating…" : "Mark closed (cash)"}
+                                    {updatingId === o.id
+                                      ? tt("admin.cashrep.updating", "Updating…")
+                                      : tt("admin.cashrep.markClosedCash", "Mark closed (cash)")}
                                   </button>
                                 ) : (
                                   <span className="text-muted small">—</span>
@@ -607,23 +673,24 @@ export default function AdminCashierReportsPage() {
                   </div>
                 </div>
                 <div className="card-footer small text-muted">
-                  Tip: usa el botón “Mark closed (cash)” para cerrar pagos en efectivo desde aquí. 
+                  {tt("admin.cashrep.tip", "Tip: use “Mark closed (cash)” to close cash payments from here.")}
                 </div>
               </div>
             </div>
           </div>
+
           {/* Pies */}
           <div className="row g-3 mt-3">
             <div className="col-12 col-lg-6">
-              <PieChart rows={pieByMethodCount} title="Payments by Method (count)" />
+              <PieChart rows={pieByMethodCount} title={tt("admin.cashrep.pie.count", "Payments by Method (count)")} />
             </div>
             <div className="col-12 col-lg-6">
-              <PieChart rows={pieByMethodRevenue} title="Payments by Method (revenue)" />
+              <PieChart rows={pieByMethodRevenue} title={tt("admin.cashrep.pie.revenue", "Payments by Method (revenue)")} />
             </div>
           </div>
 
           <div className="text-muted small mt-3">
-            Notes: cash revenue computed from paid/closed cash orders within range.
+            {tt("admin.cashrep.notes", "Notes: cash revenue computed from paid/closed cash orders within range.")}
           </div>
         </main>
       </AdminOnly>

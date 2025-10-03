@@ -5,6 +5,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
+/* 🔤 i18n */
+import { t as translate } from '@/lib/i18n/t';
+import { useTenantSettings } from '@/lib/settings/hooks';
+
 /* ===== Autenticación para fetch con idToken (igual que en otras páginas) ===== */
 function getFirebaseClientConfig() {
   return {
@@ -168,16 +172,32 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const cashq = counts?.cashierQueue ?? 0;
   const deliv = counts?.deliveryPending ?? 0;
 
+  /* 🔤 idioma actual + helper (anti hydration mismatch) */
+  const { settings } = useTenantSettings();
+  const [lang, setLang] = useState<string | undefined>(() => (settings as any)?.language);
+  useEffect(() => {
+    try {
+      const ls = localStorage.getItem('tenant.language');
+      setLang(ls || (settings as any)?.language);
+    } catch {
+      setLang((settings as any)?.language);
+    }
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
+
   return (
     <>
       <nav className="navbar navbar-expand-md navbar-light bg-white border-bottom shadow-sm">
         <div className="container">
-          <Link className="navbar-brand fw-semibold" href="/admin">Admin Portal</Link>
+          <Link className="navbar-brand fw-semibold" href="/admin">{tt('admin.nav.brand', 'Admin Portal')}</Link>
 
           <button
             className="navbar-toggler"
             type="button"
-            aria-label="Toggle navigation"
+            aria-label={tt('admin.nav.toggle', 'Toggle navigation')}
             aria-expanded={open ? 'true' : 'false'}
             onClick={() => setOpen((v) => !v)}
           >
@@ -189,7 +209,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
               <li className="nav-item">
                 <Link className={`nav-link d-flex align-items-center gap-2 ${isActive('/admin/kitchen') ? 'active' : ''}`} href="/admin/kitchen">
-                  <span>Kitchen</span>
+                  <span>{tt('admin.nav.kitchen', 'Kitchen')}</span>
                   <span className="badge rounded-pill text-bg-primary">
                     {loading && counts == null ? '…' : kitch}
                   </span>
@@ -198,7 +218,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
               <li className="nav-item">
                 <Link className={`nav-link d-flex align-items-center gap-2 ${isActive('/admin/cashier') ? 'active' : ''}`} href="/admin/cashier">
-                  <span>Cashier</span>
+                  <span>{tt('admin.nav.cashier', 'Cashier')}</span>
                   <span className="badge rounded-pill text-bg-success">
                     {loading && counts == null ? '…' : cashq}
                   </span>
@@ -207,7 +227,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
               <li className="nav-item">
                 <Link className={`nav-link d-flex align-items-center gap-2 ${isActive('/admin/delivery') ? 'active' : ''}`} href="/admin/delivery">
-                  <span>Delivery</span>
+                  <span>{tt('admin.nav.delivery', 'Delivery')}</span>
                   <span className="badge rounded-pill text-bg-warning">
                     {loading && counts == null ? '…' : deliv}
                   </span>
@@ -216,7 +236,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
               <li className="nav-item">
                 <Link className={`nav-link d-flex align-items-center gap-2 ${isActive('/admin/waiter') ? 'active' : ''}`} href="/admin/waiter">
-                  <span>Tables</span>
+                  <span>{tt('admin.nav.tables', 'Tables')}</span>
                   {/* ===== NUEVO: badge de mesas activas ===== */}
                   <span className="badge rounded-pill text-bg-secondary">
                     {loadingTables && activeTables == null ? '…' : (activeTables ?? 0)}
@@ -228,7 +248,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </ul>
 
             <div className="d-flex align-items-center gap-2">
-              <Link className="btn btn-outline-primary btn-sm" href="/logout">Logout</Link>
+              <Link className="btn btn-outline-primary btn-sm" href="/logout">{tt('admin.nav.logout', 'Logout')}</Link>
             </div>
           </div>
         </div>

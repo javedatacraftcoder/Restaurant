@@ -17,6 +17,10 @@ import {
 } from "firebase/firestore";
 import { useFmtQ /* , fmtCents */ } from "@/lib/settings/money";
 
+// 🔤 i18n
+import { t as translate } from "@/lib/i18n/t";
+import { useTenantSettings } from "@/lib/settings/hooks";
+
 /** ========= Types ========= */
 type Timeline = {
   assignedAt?: Timestamp | { seconds: number } | Date | null;
@@ -108,6 +112,33 @@ function PieChart({
   size?: number;
   title: string;
 }) {
+  // 🔤 i18n dentro del componente
+  const { settings } = useTenantSettings();
+  const lang = React.useMemo(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const sp = new URLSearchParams(window.location.search);
+        const q = sp.get("lang");
+        if (q) {
+          const v = q.toLowerCase();
+          try { localStorage.setItem("tenant.language", v); } catch {}
+          return v;
+        }
+      }
+    } catch {}
+    try {
+      if (typeof window !== "undefined") {
+        const ls = localStorage.getItem("tenant.language");
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language || "en";
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
+
   const total = rows.reduce((s, r) => s + (Number(r.value) || 0), 0);
   const cx = size / 2, cy = size / 2, r = size / 2 - 4;
   let angle = 0;
@@ -130,11 +161,13 @@ function PieChart({
     <div className="card border-0 shadow-sm h-100">
       <div className="card-header fw-semibold d-flex justify-content-between align-items-center">
         <span>{title}</span>
-        <span className="small text-muted">{total === 0 ? "No data" : `${rows.length} segments`}</span>
+        <span className="small text-muted">
+          {total === 0 ? tt("admin.delrep.nodata", "No data") : tt("admin.delrep.segments", "{n} segments", { n: rows.length })}
+        </span>
       </div>
       <div className="card-body">
         {total === 0 ? (
-          <div className="text-muted small">No data</div>
+          <div className="text-muted small">{tt("admin.delrep.nodata", "No data")}</div>
         ) : (
           <div className="d-flex flex-column flex-md-row align-items-center gap-3">
             <div style={{ width: "100%", maxWidth: size }}>
@@ -227,6 +260,33 @@ export default function AdminDeliveryReportsPage() {
   const db = getFirestore();
   const fmtQ = useFmtQ();
 
+  // 🔤 i18n init (URL ?lang → localStorage → settings)
+  const { settings } = useTenantSettings();
+  const lang = React.useMemo(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const sp = new URLSearchParams(window.location.search);
+        const q = sp.get("lang");
+        if (q) {
+          const v = q.toLowerCase();
+          try { localStorage.setItem("tenant.language", v); } catch {}
+          return v;
+        }
+      }
+    } catch {}
+    try {
+      if (typeof window !== "undefined") {
+        const ls = localStorage.getItem("tenant.language");
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language || "en";
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
+
   // Filters
   const [preset, setPreset] = useState<"today" | "7d" | "30d" | "thisMonth" | "custom">("30d");
   const [fromStr, setFromStr] = useState<string>("");
@@ -299,7 +359,7 @@ export default function AdminDeliveryReportsPage() {
         .filter((o) => (o.orderInfo?.type || "").toString() === "delivery"); // solo delivery
       setOrders(arr);
     } catch (e: any) {
-      setError(e?.message || "Failed to load data.");
+      setError(e?.message || tt("admin.delrep.err.load", "Failed to load data."));
     } finally {
       setLoading(false);
     }
@@ -319,8 +379,8 @@ export default function AdminDeliveryReportsPage() {
     // 2) objetos comunes con uid/name
     const c = oi?.courier || oi?.deliveryDriver || oi?.assignedCourier || null;
     if (c?.uid || c?.name) {
-      const key = c?.uid ? `uid:${c.uid}` : `name:${c?.name || "Unknown"}`;
-      return { key, name: c?.name || c?.uid || "Unknown" };
+      const key = c?.uid ? `uid:${c.uid}` : `name:${c?.name || tt("admin.delrep.unknown", "Unknown")}`;
+      return { key, name: c?.name || c?.uid || tt("admin.delrep.unknown", "Unknown") };
     }
 
     // 3) campos planos legacy
@@ -328,7 +388,7 @@ export default function AdminDeliveryReportsPage() {
     if (oi?.driverId)   return { key: `uid:${oi.driverId}`,   name: oi.driverId };
 
     // 4) sin asignar
-    return { key: "unassigned", name: "Unassigned" };
+    return { key: "unassigned", name: tt("admin.delrep.unassigned", "Unassigned") };
   }
 
   // Orders by driver
@@ -348,7 +408,7 @@ export default function AdminDeliveryReportsPage() {
   const zonesByCity = useMemo(() => {
     const m = new Map<string, number>();
     for (const o of orders) {
-      const city = (o.orderInfo?.addressInfo?.city || "Unknown").toString();
+      const city = (o.orderInfo?.addressInfo?.city || tt("admin.delrep.unknown", "Unknown")).toString();
       m.set(city, (m.get(city) || 0) + 1);
     }
     return Array.from(m.entries()).map(([label, value]) => ({ label, value })).sort((a,b)=> b.value - a.value);
@@ -357,7 +417,7 @@ export default function AdminDeliveryReportsPage() {
   const zonesByZip = useMemo(() => {
     const m = new Map<string, number>();
     for (const o of orders) {
-      const zip = (o.orderInfo?.addressInfo?.zip || "Unknown").toString();
+      const zip = (o.orderInfo?.addressInfo?.zip || tt("admin.delrep.unknown", "Unknown")).toString();
       m.set(zip, (m.get(zip) || 0) + 1);
     }
     return Array.from(m.entries()).map(([label, value]) => ({ label, value })).sort((a,b)=> b.value - a.value);
@@ -463,41 +523,41 @@ export default function AdminDeliveryReportsPage() {
     <Protected>
       <AdminOnly>
         <main className="container py-4">
-          <h1 className="h4 mb-3">Delivery Reports</h1>
+          <h1 className="h4 mb-3">{tt("admin.delrep.title", "Delivery Reports")}</h1>
 
           {/* Filters */}
           <div className="card border-0 shadow-sm mb-3">
             <div className="card-body">
               <div className="row g-3">
                 <div className="col-12 col-md-3">
-                  <label className="form-label fw-semibold">Range</label>
+                  <label className="form-label fw-semibold">{tt("admin.delrep.range", "Range")}</label>
                   <select className="form-select" value={preset} onChange={(e) => setPreset(e.target.value as any)}>
-                    <option value="today">Today</option>
-                    <option value="7d">Last 7 days</option>
-                    <option value="30d">Last 30 days</option>
-                    <option value="thisMonth">This month</option>
-                    <option value="custom">Custom</option>
+                    <option value="today">{tt("admin.delrep.preset.today", "Today")}</option>
+                    <option value="7d">{tt("admin.delrep.preset.7d", "Last 7 days")}</option>
+                    <option value="30d">{tt("admin.delrep.preset.30d", "Last 30 days")}</option>
+                    <option value="thisMonth">{tt("admin.delrep.preset.thisMonth", "This month")}</option>
+                    <option value="custom">{tt("admin.delrep.preset.custom", "Custom")}</option>
                   </select>
                 </div>
                 <div className="col-6 col-md-3">
-                  <label className="form-label fw-semibold">From</label>
+                  <label className="form-label fw-semibold">{tt("admin.delrep.from", "From")}</label>
                   <input type="date" className="form-control" value={fromStr} onChange={(e) => { setFromStr(e.target.value); setPreset("custom"); }} />
                 </div>
                 <div className="col-6 col-md-3">
-                  <label className="form-label fw-semibold">To</label>
+                  <label className="form-label fw-semibold">{tt("admin.delrep.to", "To")}</label>
                   <input type="date" className="form-control" value={toStr} onChange={(e) => { setToStr(e.target.value); setPreset("custom"); }} />
                 </div>
                 <div className="col-12 col-md-3 d-flex align-items-end">
                   <div className="d-flex gap-2 w-100">
                     <button className="btn btn-primary flex-fill" onClick={load} disabled={loading}>
-                      {loading ? "Loading…" : "Refresh"}
+                      {loading ? tt("common.loadingDots", "Loading…") : tt("common.refresh", "Refresh")}
                     </button>
                     <button
                       className="btn btn-outline-success"
                       onClick={onExportExcel}
                       disabled={loading || orders.length === 0}
                     >
-                      Export to Excel
+                      {tt("admin.delrep.export", "Export to Excel")}
                     </button>
                   </div>
                 </div>
@@ -505,8 +565,7 @@ export default function AdminDeliveryReportsPage() {
               {error && <div className="text-danger small mt-2">{error}</div>}
 
               <div className="text-muted small mt-2">
-                Uses <code>orderInfo</code> from checkout (delivery address &amp; options). To compute delivery times, store
-                timestamps for <em>inRouteAt</em> and <em>deliveredAt</em> in <code>orderInfo.deliveryTimeline</code> or a <code>statusHistory</code> array. :contentReference[oaicite:1]
+                {tt("admin.delrep.notes.main", "Uses")} <code>orderInfo</code> {tt("admin.delrep.notes.cont1", "from checkout (delivery address & options). To compute delivery times, store timestamps for")} <em>inRouteAt</em> {tt("admin.delrep.notes.cont2", "and")} <em>deliveredAt</em> {tt("admin.delrep.notes.cont3", "in")} <code>orderInfo.deliveryTimeline</code> {tt("admin.delrep.notes.cont4", "or a")} <code>statusHistory</code> {tt("admin.delrep.notes.cont5", "array.")}
               </div>
             </div>
           </div>
@@ -515,22 +574,22 @@ export default function AdminDeliveryReportsPage() {
           <div className="row g-3 mb-3">
             <div className="col-6 col-md-3">
               <div className="card border-0 shadow-sm"><div className="card-body">
-                <div className="text-muted small">Delivery orders</div>
+                <div className="text-muted small">{tt("admin.delrep.kpi.deliveryOrders", "Delivery orders")}</div>
                 <div className="h4 mb-0">{totalOrders}</div>
               </div></div>
             </div>
             <div className="col-6 col-md-3">
               <div className="card border-0 shadow-sm"><div className="card-body">
-                <div className="text-muted small">Revenue</div>
+                <div className="text-muted small">{tt("admin.delrep.kpi.revenue", "Revenue")}</div>
                 <div className="h4 mb-0">{fmtQ(totalRevenue)}</div>
               </div></div>
             </div>
             <div className="col-12 col-md-6">
               <div className="card border-0 shadow-sm"><div className="card-body">
-                <div className="text-muted small">Avg delivery time (in route → delivered)</div>
-                <div className="h5 mb-0">{avgDeliveryMinutes != null ? `${avgDeliveryMinutes.toFixed(1)} min` : "N/A"}</div>
+                <div className="text-muted small">{tt("admin.delrep.kpi.avg", "Avg delivery time (in route → delivered)")}</div>
+                <div className="h5 mb-0">{avgDeliveryMinutes != null ? `${avgDeliveryMinutes.toFixed(1)} ${tt("admin.delrep.min", "min")}` : tt("admin.delrep.na", "N/A")}</div>
                 <div className="small text-muted mt-1">
-                  If “N/A”, add <code>orderInfo.deliveryTimeline.inRouteAt</code> &amp; <code>deliveredAt</code> or a <code>statusHistory</code> entry for those steps.
+                  {tt("admin.delrep.kpi.avgHint", "If “N/A”, add")} <code>orderInfo.deliveryTimeline.inRouteAt</code> &amp; <code>deliveredAt</code> {tt("admin.delrep.kpi.avgHint2", "or a")} <code>statusHistory</code> {tt("admin.delrep.kpi.avgHint3", "entry for those steps.")}
                 </div>
               </div></div>
             </div>
@@ -540,19 +599,19 @@ export default function AdminDeliveryReportsPage() {
           <div className="row g-3">
             <div className="col-12 col-lg-6">
               <div className="card border-0 shadow-sm h-100">
-                <div className="card-header fw-semibold">Orders by Driver</div>
+                <div className="card-header fw-semibold">{tt("admin.delrep.table.byDriver.title", "Orders by Driver")}</div>
                 <div className="card-body p-0">
                   <div className="table-responsive">
                     <table className="table mb-0">
                       <thead>
                         <tr>
-                          <th>Driver</th>
-                          <th className="text-end">Orders</th>
-                          <th className="text-end">Revenue</th>
+                          <th>{tt("admin.delrep.table.byDriver.driver", "Driver")}</th>
+                          <th className="text-end">{tt("admin.delrep.table.byDriver.orders", "Orders")}</th>
+                          <th className="text-end">{tt("admin.delrep.table.byDriver.revenue", "Revenue")}</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {byDriver.length === 0 && <tr><td colSpan={3} className="text-center text-muted">No data</td></tr>}
+                        {byDriver.length === 0 && <tr><td colSpan={3} className="text-center text-muted">{tt("admin.delrep.nodata", "No data")}</td></tr>}
                         {byDriver.map((d) => (
                           <tr key={d.key}>
                             <td>{d.name}</td>
@@ -565,27 +624,27 @@ export default function AdminDeliveryReportsPage() {
                   </div>
                 </div>
                 <div className="card-footer small text-muted">
-                  Driver can be read from <code>orderInfo.courier</code>, <code>orderInfo.deliveryDriver</code>, <code>orderInfo.assignedCourier</code>, or flat <code>driverName</code>/<code>driverId</code>.
+                  {tt("admin.delrep.table.byDriver.hint", "Driver can be read from")} <code>orderInfo.courier</code>, <code>orderInfo.deliveryDriver</code>, <code>orderInfo.assignedCourier</code>, {tt("admin.delrep.table.byDriver.or", "or flat")} <code>driverName</code>/<code>driverId</code>.
                 </div>
               </div>
             </div>
 
             <div className="col-12 col-lg-6">
               <div className="card border-0 shadow-sm h-100">
-                <div className="card-header fw-semibold">Delivery Times (in route → delivered)</div>
+                <div className="card-header fw-semibold">{tt("admin.delrep.table.times.title", "Delivery Times (in route → delivered)")}</div>
                 <div className="card-body p-0">
                   <div className="table-responsive">
                     <table className="table mb-0">
                       <thead>
                         <tr>
-                          <th>Order</th>
+                          <th>{tt("admin.delrep.table.times.order", "Order")}</th>
                           <th>InRouteAt</th>
                           <th>DeliveredAt</th>
-                          <th className="text-end">Minutes</th>
+                          <th className="text-end">{tt("admin.delrep.table.times.minutes", "Minutes")}</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {deliveryDurations.length === 0 && <tr><td colSpan={4} className="text-center text-muted">No data</td></tr>}
+                        {deliveryDurations.length === 0 && <tr><td colSpan={4} className="text-center text-muted">{tt("admin.delrep.nodata", "No data")}</td></tr>}
                         {deliveryDurations.map((r) => (
                           <tr key={r.orderId}>
                             <td className="text-nowrap">{r.orderId}</td>
@@ -599,7 +658,7 @@ export default function AdminDeliveryReportsPage() {
                   </div>
                 </div>
                 <div className="card-footer small text-muted">
-                  Populate <code>orderInfo.deliveryTimeline</code> or <code>statusHistory</code> to enable exact durations.
+                  {tt("admin.delrep.table.times.hint", "Populate")} <code>orderInfo.deliveryTimeline</code> {tt("admin.delrep.table.times.or", "or")} <code>statusHistory</code> {tt("admin.delrep.table.times.hint2", "to enable exact durations.")}
                 </div>
               </div>
             </div>
@@ -607,19 +666,19 @@ export default function AdminDeliveryReportsPage() {
 
           {/* Zones */}
           <div className="card border-0 shadow-sm mt-3">
-            <div className="card-header fw-semibold">Delivery Zones</div>
+            <div className="card-header fw-semibold">{tt("admin.delrep.zones.title", "Delivery Zones")}</div>
             <div className="card-body p-0">
               <div className="table-responsive">
                 <table className="table mb-0">
                   <thead>
                     <tr>
-                      <th>City</th>
-                      <th className="text-end">Orders</th>
+                      <th>{tt("admin.delrep.zones.city", "City")}</th>
+                      <th className="text-end">{tt("admin.delrep.zones.orders", "Orders")}</th>
                       <th className="d-none d-md-table-cell">ZIP</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {zonesByCity.length === 0 && <tr><td colSpan={3} className="text-center text-muted">No data</td></tr>}
+                    {zonesByCity.length === 0 && <tr><td colSpan={3} className="text-center text-muted">{tt("admin.delrep.nodata", "No data")}</td></tr>}
                     {zonesByCity.map((z) => (
                       <tr key={`city-${z.label}`}>
                         <td>{z.label}</td>
@@ -639,27 +698,27 @@ export default function AdminDeliveryReportsPage() {
           {/* Pies */}
           <div className="row g-3 mt-3">
             <div className="col-12 col-lg-6">
-              <PieChart rows={pieDrivers} title="Orders by Driver (Pie)" />
+              <PieChart rows={pieDrivers} title={tt("admin.delrep.pie.drivers", "Orders by Driver (Pie)")} />
             </div>
             <div className="col-12 col-lg-6">
-              <PieChart rows={pieZonesCity} title="Top Zones by City (Pie)" />
+              <PieChart rows={pieZonesCity} title={tt("admin.delrep.pie.zonesCity", "Top Zones by City (Pie)")} />
             </div>
           </div>
 
           {/* Implementation guide */}
           <div className="card border-0 shadow-sm mt-3">
-            <div className="card-header fw-semibold">How to enable delivery timing & assignment</div>
+            <div className="card-header fw-semibold">{tt("admin.delrep.howto.title", "How to enable delivery timing & assignment")}</div>
             <div className="card-body">
               <ol className="small mb-2">
-                <li><strong>Assign driver:</strong> set <code>orderInfo.courier</code> = {'{ uid, name }'} on assignment.</li>
-                <li><strong>Mark “in route”:</strong> set <code>orderInfo.deliveryTimeline.inRouteAt = serverTimestamp()</code>.</li>
-                <li><strong>Mark “delivered”:</strong> set <code>orderInfo.deliveryTimeline.deliveredAt = serverTimestamp()</code>.</li>
+                <li><strong>{tt("admin.delrep.howto.assign", "Assign driver")}:</strong> {tt("admin.delrep.howto.assignHint", "set")} <code>orderInfo.courier</code> = {'{ uid, name }'} {tt("admin.delrep.howto.assignAt", "on assignment.")}</li>
+                <li><strong>{tt("admin.delrep.howto.inroute", "Mark “in route”")}:</strong> {tt("admin.delrep.howto.set", "set")} <code>orderInfo.deliveryTimeline.inRouteAt = serverTimestamp()</code>.</li>
+                <li><strong>{tt("admin.delrep.howto.delivered", "Mark “delivered”")}:</strong> {tt("admin.delrep.howto.set", "set")} <code>orderInfo.deliveryTimeline.deliveredAt = serverTimestamp()</code>.</li>
               </ol>
             </div>
           </div>
 
           <div className="text-muted small mt-3">
-            Tip: If Firestore suggests a composite index for <code>createdAt</code> range queries, follow its link to create it.
+            {tt("admin.delrep.tip", "Tip: If Firestore suggests a composite index for")} <code>createdAt</code> {tt("admin.delrep.tip2", "range queries, follow its link to create it.")}
           </div>
         </main>
       </AdminOnly>

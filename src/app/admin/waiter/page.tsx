@@ -25,6 +25,10 @@ import {
 /** ✅ Currency centralizado (respeta settings) */
 import { useFmtQ } from "@/lib/settings/money";
 
+/** 🔤 i18n */
+import { t as translate } from "@/lib/i18n/t";
+import { useTenantSettings } from "@/lib/settings/hooks";
+
 // =================== Types ===================
 type FirestoreTS = Timestamp | { seconds: number; nanoseconds?: number } | Date | null | undefined;
 
@@ -217,6 +221,22 @@ export default function WaiterPage() {
   // ✅ formateador de moneda central (tenant)
   const fmtQ = useFmtQ();
 
+  // 🔤 idioma (igual que kitchen/taxes)
+  const { settings } = useTenantSettings();
+  const lang = React.useMemo(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const ls = localStorage.getItem("tenant.language");
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language;
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
+
   // ------------- Load & Save Settings -------------
   useEffect(() => {
     let mounted = true;
@@ -369,7 +389,7 @@ export default function WaiterPage() {
           <div className="container mb-3">
             <div className="d-flex flex-wrap align-items-end gap-3">
               <div>
-                <label className="form-label mb-1">Tables</label>
+                <label className="form-label mb-1">{tt("admin.waiter.controls.tables", "Tables")}</label>
                 <input
                   type="number"
                   min={1}
@@ -381,7 +401,7 @@ export default function WaiterPage() {
                 />
               </div>
               <button className="btn btn-primary" onClick={saveNumTables}>
-                Save
+                {tt("admin.waiter.controls.save", "Save")}
               </button>
             </div>
           </div>
@@ -430,7 +450,10 @@ export default function WaiterPage() {
                           }}
                         />
                         <span className="fw-bold" style={{ fontSize: 22 }}>
-                          Table {t}
+                          {
+                            // 👇 fallback ya interpolado para evitar "Table {n}"
+                            tt("admin.waiter.floor.table", `Table ${t}`, { n: t })
+                          }
                         </span>
                       </div>
                       {statusBadgeFor(t)}
@@ -440,7 +463,7 @@ export default function WaiterPage() {
                       {occupied ? (
                         <>
                           <div>
-                            <div className="small text-muted">Open order</div>
+                            <div className="small text-muted">{tt("admin.waiter.floor.openOrder", "Open order")}</div>
                             <div className="fw-semibold">
                               {fmtQ(total)}
                             </div>
@@ -450,14 +473,14 @@ export default function WaiterPage() {
                         </>
                       ) : (
                         <>
-                          <div className="text-muted">Empty table</div>
+                          <div className="text-muted">{tt("admin.waiter.floor.emptyTable", "Empty table")}</div>
                           {/* ✅ Botón PICK — solo mesas vacías */}
                           <Link
                             href={`${PICK_TARGET_BASE}${encodeURIComponent(t)}`}
                             className="btn btn-sm btn-primary"
                             onClick={(e) => e.stopPropagation()} // evita abrir el panel
                           >
-                            Pick
+                            {tt("admin.waiter.floor.pick", "Pick")}
                           </Link>
                         </>
                       )}
@@ -481,20 +504,22 @@ export default function WaiterPage() {
           >
             <div className="offcanvas-header">
               <h5 id="tableDetailTitle" className="offcanvas-title">
-                {selectedTable ? `Table ${selectedTable}` : "Table"}
+                {selectedTable
+                  // 👇 fallback ya interpolado
+                  ? tt("admin.waiter.drawer.title", `Table ${selectedTable}`, { n: selectedTable })
+                  : tt("admin.waiter.floor.tableShort", "Table")}
               </h5>
-              <button type="button" className="btn-close" onClick={closePanel} />
             </div>
             <div className="offcanvas-body">
               {!selectedTable ? null : !selectedOrder ? (
                 <div className="d-flex align-items-center justify-content-between">
-                  <div className="text-muted">Empty table. No open order.</div>
+                  <div className="text-muted">{tt("admin.waiter.drawer.empty", "Empty table. No open order.")}</div>
                   {/* ✅ También ofrecemos Pick dentro del panel si está vacía */}
                   <Link
                     href={`${PICK_TARGET_BASE}${encodeURIComponent(selectedTable)}`}
                     className="btn btn-primary btn-sm"
                   >
-                    Pick
+                    {tt("admin.waiter.drawer.pick", "Pick")}
                   </Link>
                 </div>
               ) : (
@@ -520,6 +545,23 @@ export default function WaiterPage() {
 // =================== Detail Panel ===================
 function OrderDetailCard({ order, onClose }: { order: OrderDoc; onClose: () => void }) {
   const fmtQ = useFmtQ(); // ✅ usa settings
+
+  // 🔤 idioma local (igual patrón)
+  const { settings } = useTenantSettings();
+  const lang = React.useMemo(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const ls = localStorage.getItem("tenant.language");
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language;
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
+
   const createdAt = tsToDate(order.createdAt);
   const invoiceDate = tsToDate(order.invoiceDate);
 
@@ -534,16 +576,21 @@ function OrderDetailCard({ order, onClose }: { order: OrderDoc; onClose: () => v
       <div className="card-body">
         <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
           <div>
-            <div className="fw-bold h5 mb-0">Order #{order.id.slice(-6)}</div>
+            <div className="fw-bold h5 mb-0">
+              {
+                // 👇 fallback ya interpolado para evitar "Order #{id}"
+                tt("admin.waiter.detail.order", `Order #${order.id.slice(-6)}`, { id: order.id.slice(-6) })
+              }
+            </div>
             <div className="text-muted small">
               {createdAt ? createdAt.toLocaleString() : ""}
             </div>
           </div>
           <div className="text-end">
-            <div className="small text-muted">Invoice</div>
-            <div className="fw-semibold">{order.invoiceNumber || "-"}</div>
+            <div className="small text-muted">{tt("admin.waiter.detail.invoice", "Invoice")}</div>
+            <div className="fw-semibold">{order.invoiceNumber || tt("admin.waiter.detail.noInvoice", "-")}</div>
             <div className="text-muted small">
-              {invoiceDate ? invoiceDate.toLocaleString() : "-"}
+              {invoiceDate ? invoiceDate.toLocaleString() : tt("admin.waiter.detail.noInvoice", "-")}
             </div>
           </div>
         </div>
@@ -559,7 +606,7 @@ function OrderDetailCard({ order, onClose }: { order: OrderDoc; onClose: () => v
 
         {/* Items */}
         <div className="mb-3">
-          <h6 className="fw-bold">Items</h6>
+          <h6 className="fw-bold">{tt("admin.waiter.detail.items", "Items")}</h6>
           <div className="d-flex flex-column gap-2">
             {(order.items ?? []).map((ln, idx) => (
               <div key={`${ln.menuItemId}-${idx}`} className="border rounded p-2">
@@ -570,9 +617,9 @@ function OrderDetailCard({ order, onClose }: { order: OrderDoc; onClose: () => v
                       <span className="text-muted">× {ln.quantity}</span>
                     </div>
                     <div className="text-muted small">
-                      Base: {fmtQ(ln.basePrice)}{" "}
+                      {tt("admin.waiter.detail.item.base", "Base")}: {fmtQ(ln.basePrice)}{" "}
                       {typeof ln.lineTotal === "number" && (
-                        <> • Line: {fmtQ(ln.lineTotal)}</>
+                        <> • {tt("admin.waiter.detail.item.line", "Line")}: {fmtQ(ln.lineTotal)}</>
                       )}
                     </div>
                   </div>
@@ -585,7 +632,7 @@ function OrderDetailCard({ order, onClose }: { order: OrderDoc; onClose: () => v
                 {/* Addons */}
                 {(ln.addons?.length ?? 0) > 0 && (
                   <div className="mt-2 ps-2">
-                    <div className="small fw-semibold">Add-ons</div>
+                    <div className="small fw-semibold">{tt("admin.waiter.detail.addons", "Add-ons")}</div>
                     <ul className="small mb-0">
                       {ln.addons!.map((a, i) => (
                         <li key={`a-${i}`}>
@@ -600,7 +647,7 @@ function OrderDetailCard({ order, onClose }: { order: OrderDoc; onClose: () => v
                 {/* Option Groups */}
                 {(ln.optionGroups?.length ?? 0) > 0 && (
                   <div className="mt-2 ps-2">
-                    <div className="small fw-semibold">Options</div>
+                    <div className="small fw-semibold">{tt("admin.waiter.detail.options", "Options")}</div>
                     {(ln.optionGroups ?? []).map((g, gi) => (
                       <div key={`g-${gi}`} className="small">
                         <div className="text-muted">{g.groupName}</div>
@@ -626,33 +673,33 @@ function OrderDetailCard({ order, onClose }: { order: OrderDoc; onClose: () => v
         {/* Notes */}
         {order.orderInfo?.notes && (
           <div className="mb-3">
-            <div className="small text-muted">Notes</div>
+            <div className="small text-muted">{tt("admin.waiter.detail.notes", "Notes")}</div>
             <div>{order.orderInfo.notes}</div>
           </div>
         )}
 
         {/* Totals */}
         <div className="mb-3">
-          <h6 className="fw-bold">Totals</h6>
+          <h6 className="fw-bold">{tt("admin.waiter.detail.totals", "Totals")}</h6>
           <div className="d-flex flex-column gap-1 small">
             <div className="d-flex justify-content-between">
-              <span>Subtotal</span>
+              <span>{tt("admin.waiter.detail.subtotal", "Subtotal")}</span>
               <span>{fmtQ(subtotal)}</span>
             </div>
             <div className="d-flex justify-content-between">
-              <span>Tax</span>
+              <span>{tt("admin.waiter.detail.tax", "Tax")}</span>
               <span>{fmtQ(tax)}</span>
             </div>
             <div className="d-flex justify-content-between">
-              <span>Tip</span>
+              <span>{tt("admin.waiter.detail.tip", "Tip")}</span>
               <span>{fmtQ(tip)}</span>
             </div>
             <div className="d-flex justify-content-between">
-              <span>Discount</span>
+              <span>{tt("admin.waiter.detail.discount", "Discount")}</span>
               <span>{fmtQ(discount)}</span>
             </div>
             <div className="d-flex justify-content-between fw-semibold border-top pt-2">
-              <span>Total</span>
+              <span>{tt("admin.waiter.detail.total", "Total")}</span>
               <span>{fmtQ(total)}</span>
             </div>
           </div>
@@ -661,10 +708,10 @@ function OrderDetailCard({ order, onClose }: { order: OrderDoc; onClose: () => v
         {/* Actions */}
         <div className="d-flex gap-2">
           <a className="btn btn-outline-primary" href="/admin/edit-orders">
-            Edit order
+            {tt("admin.waiter.detail.actions.edit", "Edit order")}
           </a>
           <button className="btn btn-secondary" onClick={onClose}>
-            Close
+            {tt("admin.waiter.detail.actions.close", "Close")}
           </button>
         </div>
       </div>

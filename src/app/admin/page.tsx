@@ -1,8 +1,14 @@
 // src/app/admin/page.tsx
+"use client";
+
 import Protected from "@/components/Protected";
 import AdminOnly from "@/components/AdminOnly";
 import Link from "next/link";
 import React from "react";
+
+// 🔤 i18n (usar lenguaje desde settings)
+import { useTenantSettings } from "@/lib/settings/hooks";
+import { t as translate } from "@/lib/i18n/t";
 
 type AdminTile = {
   title: string;
@@ -32,8 +38,72 @@ const TILES: AdminTile[] = [
   { title: "Settings", subtitle: "admin/home-configure", href: "/admin/home-configure", emoji: "🏠", hint: "Configure the Home Page" },
 ];
 
+function getTitleKeyByHref(href: string): string {
+  switch (href) {
+    case "/admin/kitchen": return "admin.tiles.kitchen.title";
+    case "/admin/cashier": return "admin.tiles.cashier.title";
+    case "/admin/delivery": return "admin.tiles.delivery.title";
+    case "/admin/menu": return "admin.tiles.menu.title";
+    case "/admin/waiter": return "admin.tiles.tables.title";
+    case "/admin/orders": return "admin.tiles.orders.title";
+    case "/admin/edit-orders": return "admin.tiles.editOrders.title";
+    case "/admin/roles": return "admin.tiles.roles.title";
+    case "/admin/ops": return "admin.tiles.ops.title";
+    case "/admin/promotions": return "admin.tiles.promotions.title";
+    case "/admin/delivery-options": return "admin.tiles.deliveryOptions.title";
+    case "/admin/marketing": return "admin.tiles.marketing.title";
+    case "/admin/taxes": return "admin.tiles.taxes.title";
+    case "/admin/reports": return "admin.tiles.reports.title";
+    case "/admin/ai-studio": return "admin.tiles.aiStudio.title";
+    case "/admin/settings": return "admin.tiles.settings.title";
+    case "/admin/home-configure": return "admin.tiles.homeConfigure.title";
+    default: return "admin.tiles.unknown.title";
+  }
+}
+
+function getHintKeyByHref(href: string): string {
+  switch (href) {
+    case "/admin/kitchen": return "admin.tiles.kitchen.hint";
+    case "/admin/cashier": return "admin.tiles.cashier.hint";
+    case "/admin/delivery": return "admin.tiles.delivery.hint";
+    case "/admin/menu": return "admin.tiles.menu.hint";
+    case "/admin/waiter": return "admin.tiles.tables.hint";
+    case "/admin/orders": return "admin.tiles.orders.hint";
+    case "/admin/edit-orders": return "admin.tiles.editOrders.hint";
+    case "/admin/roles": return "admin.tiles.roles.hint";
+    case "/admin/ops": return "admin.tiles.ops.hint";
+    case "/admin/promotions": return "admin.tiles.promotions.hint";
+    case "/admin/delivery-options": return "admin.tiles.deliveryOptions.hint";
+    case "/admin/marketing": return "admin.tiles.marketing.hint";
+    case "/admin/taxes": return "admin.tiles.taxes.hint";
+    case "/admin/reports": return "admin.tiles.reports.hint";
+    case "/admin/ai-studio": return "admin.tiles.aiStudio.hint";
+    case "/admin/settings": return "admin.tiles.settings.hint";
+    case "/admin/home-configure": return "admin.tiles.homeConfigure.hint";
+    default: return "admin.tiles.unknown.hint";
+  }
+}
 
 export default function AdminPage() {
+  const { settings } = useTenantSettings();
+
+  // ✅ Resolver idioma: 1) localStorage (tenant.language)  2) Firestore settings.language
+  const lang = React.useMemo(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const ls = localStorage.getItem("tenant.language");
+        if (ls) return ls;
+      }
+    } catch (_) {}
+    return (settings as any)?.language;
+  }, [settings]);
+
+  // Helper local con fallback al texto original
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
+
   return (
     <Protected>
       <AdminOnly>
@@ -89,14 +159,16 @@ export default function AdminPage() {
           <section className="admin-hero p-4 p-md-5 mb-4 shadow-sm">
             <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
               <div>
-                <h1 className="h3 m-0 fw-semibold">Admin panel</h1>
+                <h1 className="h3 m-0 fw-semibold">
+                  {tt("admin.page.title", "Admin panel")}
+                </h1>
                 <p className="m-0 mt-2 admin-subtle" style={{ color: "rgba(255,255,255,.85)" }}>
-                  Quickly access management tools.
+                  {tt("admin.page.subtitle", "Quickly access management tools.")}
                 </p>
               </div>
               <div className="d-flex flex-wrap gap-2">
-                <span className="admin-chip">🔐 Only Admin</span>
-                <span className="admin-chip">⚡ Quick access</span>
+                <span className="admin-chip">🔐 {tt("admin.page.badgeOnlyAdmin", "Only Admin")}</span>
+                <span className="admin-chip">⚡ {tt("admin.page.badgeQuickAccess", "Quick access")}</span>
               </div>
             </div>
           </section>
@@ -104,28 +176,32 @@ export default function AdminPage() {
           {/* Cuadrícula de accesos */}
           <section>
             <div className="row g-3 g-md-4">
-              {TILES.map((t) => (
-                <div key={t.href} className="col-12 col-sm-6 col-lg-4 col-xxl-3">
-                  <Link href={t.href} className="admin-link">
-                    <div className="card admin-card h-100 shadow-sm">
-                      <div className="card-body d-flex flex-column gap-3">
-                        <div className="d-flex align-items-center gap-3">
-                          <div className="admin-emoji" aria-hidden>{t.emoji}</div>
-                          <div>
-                            <div className="h5 m-0">{t.title}</div>
-                            <div className="small text-muted">{t.subtitle}</div>
+              {TILES.map((t) => {
+                const titleKey = getTitleKeyByHref(t.href);
+                const hintKey = getHintKeyByHref(t.href);
+                return (
+                  <div key={t.href} className="col-12 col-sm-6 col-lg-4 col-xxl-3">
+                    <Link href={t.href} className="admin-link">
+                      <div className="card admin-card h-100 shadow-sm">
+                        <div className="card-body d-flex flex-column gap-3">
+                          <div className="d-flex align-items-center gap-3">
+                            <div className="admin-emoji" aria-hidden>{t.emoji}</div>
+                            <div>
+                              <div className="h5 m-0">{tt(titleKey, t.title)}</div>
+                              <div className="small text-muted">{t.subtitle}</div>
+                            </div>
+                          </div>
+                          {t.hint && <p className="mb-0 admin-subtle">{tt(hintKey, t.hint)}</p>}
+                          <div className="mt-auto d-flex justify-content-between align-items-center">
+                            <span className="text-primary fw-semibold">{tt("admin.page.open", "Open")}</span>
+                            <span aria-hidden>↗</span>
                           </div>
                         </div>
-                        {t.hint && <p className="mb-0 admin-subtle">{t.hint}</p>}
-                        <div className="mt-auto d-flex justify-content-between align-items-center">
-                          <span className="text-primary fw-semibold">Open</span>
-                          <span aria-hidden>↗</span>
-                        </div>
                       </div>
-                    </div>
-                  </Link>
-                </div>
-              ))}
+                    </Link>
+                  </div>
+                );
+              })}
             </div>
           </section>
         </main>

@@ -1,8 +1,12 @@
 // src/app/admin/reports/layout.tsx
 'use client';
 
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+
+// 🔤 i18n
+import { t as translate } from '@/lib/i18n/t';
+import { useTenantSettings } from '@/lib/settings/hooks';
 
 const REPORT_LINKS = [
   { title: 'Taxes',     subtitle: '/reports/taxes',             href: '/admin/reports/taxes',             emoji: '📊', hint: 'Tax reports' },
@@ -17,6 +21,24 @@ const REPORT_LINKS = [
 
 export default function ReportsLayout({ children }: { children: React.ReactNode }) {
   const railRef = useRef<HTMLDivElement | null>(null);
+
+  // 🔤 idioma actual + helper (semilla estable para SSR/hidratación)
+  const { settings } = useTenantSettings();
+  const [lang, setLang] = useState<string | undefined>(() => (settings as any)?.language);
+
+  useEffect(() => {
+    try {
+      const ls = localStorage.getItem('tenant.language');
+      setLang(ls || (settings as any)?.language);
+    } catch {
+      setLang((settings as any)?.language);
+    }
+  }, [settings]);
+
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
 
   // drag-to-scroll state (sin flechas)
   const [drag, setDrag] = useState({ active: false, startX: 0, startLeft: 0, moved: false });
@@ -47,17 +69,23 @@ export default function ReportsLayout({ children }: { children: React.ReactNode 
     setDrag((d) => ({ ...d, active: false }));
   };
 
+  // util: clave i18n derivada del slug de la ruta (último segmento del href)
+  const slugKey = (href: string) => {
+    const slug = href.split('/').filter(Boolean).pop() || '';
+    return `admin.reports.${slug}`;
+  };
+
   return (
     <div className="container-fluid py-3">
       <div className="container">
-        <h1 className="h4 mb-3 text-center">Reports</h1>
+        <h1 className="h4 mb-3 text-center">{tt('admin.reports.title', 'Reports')}</h1>
 
         {/* Rail centrado sin flechas */}
         <div className="mx-auto" style={{ maxWidth: 'min(1100px, 100%)' }}>
           <div
             ref={railRef}
             role="region"
-            aria-label="Report shortcuts"
+            aria-label={tt('admin.reports.shortcuts', 'Report shortcuts')}
             className="d-flex gap-2 justify-content-center"
             style={{
               overflowX: 'auto',
@@ -95,23 +123,28 @@ export default function ReportsLayout({ children }: { children: React.ReactNode 
               }
             `}</style>
 
-            {REPORT_LINKS.map((r) => (
-              <Link
-                key={r.href}
-                href={r.href}
-                className="btn btn-outline-secondary d-inline-flex align-items-center gap-2 px-3 py-2"
-                title={r.hint || r.subtitle}
-                style={{
-                  scrollSnapAlign: 'center',
-                  whiteSpace: 'nowrap',
-                  borderRadius: 9999,
-                  flex: '0 0 auto',
-                }}
-              >
-                <span aria-hidden="true" style={{ fontSize: 22, lineHeight: 1 }}>{r.emoji}</span>
-                <span className="fw-semibold">{r.title}</span>
-              </Link>
-            ))}
+            {REPORT_LINKS.map((r) => {
+              const base = slugKey(r.href);
+              const title = tt(`${base}.title`, r.title);
+              const hint = tt(`${base}.hint`, r.hint || r.subtitle);
+              return (
+                <Link
+                  key={r.href}
+                  href={r.href}
+                  className="btn btn-outline-secondary d-inline-flex align-items-center gap-2 px-3 py-2"
+                  title={hint}
+                  style={{
+                    scrollSnapAlign: 'center',
+                    whiteSpace: 'nowrap',
+                    borderRadius: 9999,
+                    flex: '0 0 auto',
+                  }}
+                >
+                  <span aria-hidden="true" style={{ fontSize: 22, lineHeight: 1 }}>{r.emoji}</span>
+                  <span className="fw-semibold">{title}</span>
+                </Link>
+              );
+            })}
           </div>
         </div>
       </div>

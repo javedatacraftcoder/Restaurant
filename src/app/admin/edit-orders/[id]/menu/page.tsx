@@ -1,9 +1,14 @@
+// src/app/admin/edit-orders/[id]/menu/page.tsx
 'use client';
 
 import { useParams, useRouter } from 'next/navigation';
 import React, { useEffect, useState } from 'react';
 import Protected from '@/components/Protected';
 import { RoleGate } from '@/components/RoleGate'; // allow={['admin','waiter']}
+
+// 🔤 i18n
+import { t as translate } from "@/lib/i18n/t";
+import { useTenantSettings } from "@/lib/settings/hooks";
 
 const storageKey = (orderId: string) => `editcart:${orderId}`;
 
@@ -138,6 +143,22 @@ export default function EditOrderMenuPage() {
   const [addonsSel, setAddonsSel] = useState<Record<string, Record<string, boolean>>>({});
   const [optSel, setOptSel] = useState<Record<string, Record<string, boolean>>>({});
 
+  // 🔤 i18n init
+  const { settings } = useTenantSettings();
+  const lang = React.useMemo(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const ls = localStorage.getItem("tenant.language");
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language;
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
+
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -226,10 +247,14 @@ export default function EditOrderMenuPage() {
     <Protected>
       <RoleGate allow={['admin','waiter']}>
         <div className="container py-4">
-          <h1 className="h5 mb-3">Add to order #{String(id).slice(0, 6)}</h1>
+          <h1 className="h5 mb-3">
+            {tt('admin.editmenu.title', 'Add to order')} #{String(id).slice(0, 6)}
+          </h1>
 
           {menu.length === 0 && (
-            <div className="alert alert-light border">No dishes were found.</div>
+            <div className="alert alert-light border">
+              {tt('admin.editmenu.empty', 'No dishes were found.')}
+            </div>
           )}
 
           <div className="list-group">
@@ -260,10 +285,12 @@ export default function EditOrderMenuPage() {
                         className="btn btn-outline-secondary btn-sm"
                         onClick={() => toggle(mi.id)}
                       >
-                        {isOpen ? 'Hide' : 'Options'}
+                        {isOpen
+                          ? tt('admin.editmenu.hide', 'Hide')
+                          : tt('admin.editmenu.options', 'Options')}
                       </button>
                       <button className="btn btn-primary btn-sm" onClick={() => addToCart(mi)}>
-                        Agregar
+                        {tt('admin.editmenu.add', 'Add')}
                       </button>
                     </div>
                   </div>
@@ -272,7 +299,7 @@ export default function EditOrderMenuPage() {
                     <div className="mt-3">
                       {(mi.addons || []).length > 0 && (
                         <div className="mb-3">
-                          <div className="fw-semibold">Addons</div>
+                          <div className="fw-semibold">{tt('common.addons', 'Addons')}</div>
                           {(mi.addons || []).map((a) => (
                             <label key={a.name} className="d-flex align-items-center gap-2">
                               <input

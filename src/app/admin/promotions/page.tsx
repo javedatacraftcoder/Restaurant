@@ -1,9 +1,12 @@
-// src/app/admin/promotions/page.tsx
 'use client';
 
 import { OnlyAdmin } from "@/components/Only";
 import React, { useEffect, useMemo, useState } from "react";
 import { useFmtQ /* , fmtCents */ } from '@/lib/settings/money';
+
+/* 🔤 i18n (mismo patrón que Kitchen/Ops/Orders) */
+import { t as translate } from "@/lib/i18n/t";
+import { useTenantSettings } from "@/lib/settings/hooks";
 
 /* =========================================================================
    Firebase (cliente): Auth + Firestore
@@ -202,6 +205,22 @@ function AdminPromotionsPage_Inner() {
   const { authReady, user, isAdmin } = useAuthClaims();
   const fmtQ = useFmtQ();
 
+  /* 🔤 idioma */
+  const { settings } = useTenantSettings();
+  const lang = useMemo(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const ls = localStorage.getItem("tenant.language");
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language;
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
+
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
@@ -309,7 +328,7 @@ function AdminPromotionsPage_Inner() {
         });
 
       } catch (e: any) {
-        setErr(e?.message || "Error loading data");
+        setErr(e?.message || tt("admin.promos.err.loading", "Error loading data"));
       } finally {
         setLoading(false);
       }
@@ -339,15 +358,15 @@ function AdminPromotionsPage_Inner() {
   async function onSavePromotion() {
     try {
       const nameV = name.trim();
-      if (!nameV) { alert("Promotion name is required"); return; }
+      if (!nameV) { alert(tt("admin.promos.alert.nameRequired", "Promotion name is required")); return; }
 
       const codeV = normalizeCode(code);
-      if (!codeV) { alert("Code is required"); return; }
+      if (!codeV) { alert(tt("admin.promos.alert.codeRequired", "Code is required")); return; }
 
       // --------- ÚNICO CAMBIO: normalización robusta del valor ----------
       let valN = Number(String(value).replace(',', '.'));
       if (!Number.isFinite(valN) || valN <= 0) {
-        alert(type === "percent" ? "Invalid percentage" : "Invalid amount");
+        alert(type === "percent" ? tt("admin.promos.alert.invalidPct", "Invalid percentage") : tt("admin.promos.alert.invalidAmt", "Invalid amount"));
         return;
       }
       if (type === "percent") {
@@ -355,7 +374,7 @@ function AdminPromotionsPage_Inner() {
         valN = Math.round(valN * 100) / 100;
         const near = Math.round(valN);
         if (Math.abs(valN - near) < 0.05) valN = near;
-        if (valN <= 0 || valN > 100) { alert("Percentage must be 1–100"); return; }
+        if (valN <= 0 || valN > 100) { alert(tt("admin.promos.alert.pctRange", "Percentage must be 1–100")); return; }
       } else {
         // fixed: 2 decimales
         valN = Math.round(valN * 100) / 100;
@@ -364,7 +383,7 @@ function AdminPromotionsPage_Inner() {
 
       // chequear unicidad de código
       if (await isCodeTaken(codeV, editingId || undefined)) {
-        alert("That code already exists. Use another one.");
+        alert(tt("admin.promos.alert.codeExists", "That code already exists. Use another one."));
         return;
       }
 
@@ -422,18 +441,18 @@ function AdminPromotionsPage_Inner() {
       }
 
       resetForm();
-      alert("Promotion saved.");
+      alert(tt("admin.promos.alert.saved", "Promotion saved."));
     } catch (e: any) {
-      alert(e?.message || "Could not save the promotion");
+      alert(e?.message || tt("admin.promos.alert.saveError", "Could not save the promotion"));
     }
   }
 
   async function onDeletePromotion(id: string) {
-    if (!confirm("Delete this promotion?")) return;
+    if (!confirm(tt("admin.promos.confirm.delete", "Delete this promotion?"))) return;
     try {
       await deleteDocById("promotions", id);
     } catch (e: any) {
-      alert(e?.message || "Could not delete the promotion");
+      alert(e?.message || tt("admin.promos.alert.deleteError", "Could not delete the promotion"));
     }
   }
 
@@ -501,24 +520,24 @@ function AdminPromotionsPage_Inner() {
     const cats = p.scope?.categories?.length || 0;
     const subs = p.scope?.subcategories?.length || 0;
     const mis  = p.scope?.menuItems?.length || 0;
-    if (!cats && !subs && !mis) return "All items";
+    if (!cats && !subs && !mis) return tt("admin.promos.scope.all", "All items");
     const parts: string[] = [];
-    if (cats) parts.push(`${cats} category(ies)`);
-    if (subs) parts.push(`${subs} subcat(s)`);
-    if (mis)  parts.push(`${mis} dish(es)`);
+    if (cats) parts.push(tt("admin.promos.scope.cats", "{n} category(ies)", { n: cats }));
+    if (subs) parts.push(tt("admin.promos.scope.subs", "{n} subcat(s)", { n: subs }));
+    if (mis)  parts.push(tt("admin.promos.scope.items", "{n} dish(es)", { n: mis }));
     return parts.join(" · ");
   }
   function discountSummary(p: Promotion) {
-    return p.type === "percent" ? `${p.value}%` : `${fmtQ(p.value)} fixed`;
+    return p.type === "percent" ? `${p.value}%` : `${fmtQ(p.value)} ${tt("admin.promos.fixed", "fixed")}`;
   }
   function ruleSummary(p: Promotion) {
     const arr: string[] = [];
-    if (p.constraints?.minTargetSubtotal) arr.push(`min ${fmtQ(p.constraints.minTargetSubtotal)}`);
+    if (p.constraints?.minTargetSubtotal) arr.push(`${tt("admin.promos.rule.min", "min")} ${fmtQ(p.constraints.minTargetSubtotal)}`);
     if (p.constraints?.allowedOrderTypes?.length) arr.push(p.constraints.allowedOrderTypes.join("/"));
-    if (p.constraints?.globalLimit != null) arr.push(`global limit: ${p.constraints.globalLimit}`);
-    if (p.constraints?.perUserLimit != null) arr.push(`user limit: ${p.constraints.perUserLimit}`);
-    if (p.constraints?.stackable) arr.push("stackable");
-    if (p.constraints?.autoApply) arr.push("auto");
+    if (p.constraints?.globalLimit != null) arr.push(`${tt("admin.promos.rule.global", "global limit")}: ${p.constraints.globalLimit}`);
+    if (p.constraints?.perUserLimit != null) arr.push(`${tt("admin.promos.rule.user", "user limit")}: ${p.constraints.perUserLimit}`);
+    if (p.constraints?.stackable) arr.push(tt("admin.promos.rule.stackable", "stackable"));
+    if (p.constraints?.autoApply) arr.push(tt("admin.promos.rule.auto", "auto"));
     return arr.join(" · ") || "—";
   }
 
@@ -534,15 +553,15 @@ function AdminPromotionsPage_Inner() {
   /* =========================================================================
      Render
      ========================================================================= */
-  if (!authReady) return <div className="container py-3">Initializing session…</div>;
-  if (!user) return <div className="container py-5 text-danger">You must sign in.</div>;
-  if (!isAdmin) return <div className="container py-5 text-danger">Unauthorized (admins only).</div>;
+  if (!authReady) return <div className="container py-3">{tt("admin.common.initializing", "Initializing session…")}</div>;
+  if (!user) return <div className="container py-5 text-danger">{tt("admin.common.mustSignIn", "You must sign in.")}</div>;
+  if (!isAdmin) return <div className="container py-5 text-danger">{tt("admin.common.unauthorized", "Unauthorized (admins only).")}</div>;
 
   return (
     <div className="container py-3">
       <div className="d-flex align-items-center justify-content-between mb-3">
-        <h1 className="h4 m-0">Promotions — Discount Codes</h1>
-        <span className="text-muted small">Real-time updates</span>
+        <h1 className="h4 m-0">{tt("admin.promos.title", "Promotions — Discount Codes")}</h1>
+        <span className="text-muted small">{tt("admin.promos.realtime", "Real-time updates")}</span>
       </div>
       {err && <div className="alert alert-danger">{err}</div>}
 
@@ -551,31 +570,33 @@ function AdminPromotionsPage_Inner() {
         <div className="col-12 col-lg-5">
           <div className="card">
             <div className="card-header d-flex align-items-center justify-content-between">
-              <span>{editingId ? "Edit promotion" : "Create promotion"}</span>
+              <span>{editingId ? tt("admin.promos.form.editTitle", "Edit promotion") : tt("admin.promos.form.createTitle", "Create promotion")}</span>
               {editingId && (
-                <button className="btn btn-sm btn-outline-secondary" onClick={resetForm}>New</button>
+                <button className="btn btn-sm btn-outline-secondary" onClick={resetForm}>
+                  {tt("admin.promos.form.new", "New")}
+                </button>
               )}
             </div>
             <div className="card-body">
               {/* Básicos */}
               <div className="mb-2">
-                <label className="form-label">Name (visible to customer)</label>
+                <label className="form-label">{tt("admin.promos.form.name", "Name (visible to customer)")}</label>
                 <input className="form-control" value={name} onChange={(e) => setName(e.target.value)} />
               </div>
               <div className="row g-2">
                 <div className="col-8">
-                  <label className="form-label">Code</label>
+                  <label className="form-label">{tt("admin.promos.form.code", "Code")}</label>
                   <input
                     className="form-control"
                     value={code}
                     onChange={(e) => setCode(e.target.value.toUpperCase())}
-                    placeholder="e.g., DESSERTS10"
+                    placeholder={tt("admin.promos.form.codePh", "e.g., DESSERTS10")}
                   />
                 </div>
                 <div className="col-4 d-flex align-items-end">
                   <div className="form-check">
                     <input className="form-check-input" type="checkbox" id="act" checked={active} onChange={(e) => setActive(e.target.checked)} />
-                    <label className="form-check-label" htmlFor="act">Active</label>
+                    <label className="form-check-label" htmlFor="act">{tt("admin.promos.form.active", "Active")}</label>
                   </div>
                 </div>
               </div>
@@ -591,24 +612,28 @@ function AdminPromotionsPage_Inner() {
                     onChange={(e) => setSecret(e.target.checked)}
                   />
                   <label className="form-check-label" htmlFor="secret">
-                    Secret coupon (hide from customer lists)
+                    {tt("admin.promos.form.secret", "Secret coupon (hide from customer lists)")}
                   </label>
                 </div>
                 <div className="form-text">
-                  Customers won’t see this code in the promotions section, but it can still be applied manually at checkout.
+                  {tt("admin.promos.form.secretHelp", "Customers won’t see this code in the promotions section, but it can still be applied manually at checkout.")}
                 </div>
               </div>
 
               <div className="row g-2 mt-3">
                 <div className="col-6">
-                  <label className="form-label">Discount type</label>
+                  <label className="form-label">{tt("admin.promos.form.type", "Discount type")}</label>
                   <select className="form-select" value={type} onChange={(e) => setType(e.target.value as any)}>
-                    <option value="percent">% percent</option>
-                    <option value="fixed">Q fixed amount</option>
+                    <option value="percent">{tt("admin.promos.form.type.percent", "% percent")}</option>
+                    <option value="fixed">{tt("admin.promos.form.type.fixed", "Q fixed amount")}</option>
                   </select>
                 </div>
                 <div className="col-6">
-                  <label className="form-label">{type === "percent" ? "Percentage (1–100)" : "Amount (GTQ)"}</label>
+                  <label className="form-label">
+                    {type === "percent"
+                      ? tt("admin.promos.form.valuePct", "Percentage (1–100)")
+                      : tt("admin.promos.form.valueAmt", "Amount (GTQ)")}
+                  </label>
                   <input
                     type="number"
                     step="0.01"
@@ -621,11 +646,11 @@ function AdminPromotionsPage_Inner() {
 
               <div className="row g-2 mt-2">
                 <div className="col-6">
-                  <label className="form-label">Start (optional)</label>
+                  <label className="form-label">{tt("admin.promos.form.start", "Start (optional)")}</label>
                   <input type="datetime-local" className="form-control" value={startAt} onChange={(e) => setStartAt(e.target.value)} />
                 </div>
                 <div className="col-6">
-                  <label className="form-label">End (optional)</label>
+                  <label className="form-label">{tt("admin.promos.form.end", "End (optional)")}</label>
                   <input type="datetime-local" className="form-control" value={endAt} onChange={(e) => setEndAt(e.target.value)} />
                 </div>
               </div>
@@ -633,21 +658,21 @@ function AdminPromotionsPage_Inner() {
               <hr className="my-3" />
               {/* Alcance */}
               <div className="d-flex align-items-center justify-content-between mb-2">
-                <strong>Scope (what does it apply to?)</strong>
+                <strong>{tt("admin.promos.scope.title", "Scope (what does it apply to?)")}</strong>
                 <button
                   type="button"
                   className="btn btn-sm btn-outline-secondary"
                   onClick={() => { setScopeCats([]); setScopeSubs([]); setScopeItems([]); }}
                 >
-                  Clear selection
+                  {tt("admin.promos.scope.clear", "Clear selection")}
                 </button>
               </div>
 
               <div className="row g-2">
                 <div className="col-12 col-md-4">
                   <div className="border rounded p-2" style={{ maxHeight: 180, overflow: "auto" }}>
-                    <div className="fw-semibold small mb-1">Categories</div>
-                    {categories.length === 0 && <div className="text-muted small">No categories.</div>}
+                    <div className="fw-semibold small mb-1">{tt("admin.promos.scope.categories", "Categories")}</div>
+                    {categories.length === 0 && <div className="text-muted small">{tt("admin.promos.none.categories", "No categories.")}</div>}
                     {categories.map((c) => {
                       const checked = scopeCats.includes(c.id);
                       return (
@@ -670,8 +695,8 @@ function AdminPromotionsPage_Inner() {
 
                 <div className="col-12 col-md-4">
                   <div className="border rounded p-2" style={{ maxHeight: 180, overflow: "auto" }}>
-                    <div className="fw-semibold small mb-1">Subcategories</div>
-                    {subcategories.length === 0 && <div className="text-muted small">No subcategories.</div>}
+                    <div className="fw-semibold small mb-1">{tt("admin.promos.scope.subcategories", "Subcategories")}</div>
+                    {subcategories.length === 0 && <div className="text-muted small">{tt("admin.promos.none.subcategories", "No subcategories.")}</div>}
                     {subcategories.map((s) => {
                       const checked = scopeSubs.includes(s.id);
                       const catName = categories.find(c => c.id === s.categoryId)?.name || "—";
@@ -696,21 +721,21 @@ function AdminPromotionsPage_Inner() {
                 <div className="col-12 col-md-4">
                   <div className="border rounded p-2">
                     <div className="d-flex align-items-center justify-content-between">
-                      <div className="fw-semibold small">Dishes</div>
+                      <div className="fw-semibold small">{tt("admin.promos.scope.dishes", "Dishes")}</div>
                       <div className="d-flex gap-2">
                         <select className="form-select form-select-sm" style={{ width: 160 }} value={filterCat} onChange={(e) => { setFilterCat(e.target.value); setFilterSub(""); }}>
-                          <option value="">(All categories)</option>
+                          <option value="">{tt("admin.promos.scope.allCategories", "(All categories)")}</option>
                           {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                         </select>
                         <select className="form-select form-select-sm" style={{ width: 160 }} value={filterSub} onChange={(e) => setFilterSub(e.target.value)}>
-                          <option value="">(All subcategories)</option>
+                          <option value="">{tt("admin.promos.scope.allSubcategories", "(All subcategories)")}</option>
                           {subcategories.filter(s => !filterCat || s.categoryId === filterCat).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                         </select>
                       </div>
                     </div>
 
                     <div style={{ maxHeight: 180, overflow: "auto" }} className="mt-2">
-                      {itemsFiltered.length === 0 && <div className="text-muted small">No dishes.</div>}
+                      {itemsFiltered.length === 0 && <div className="text-muted small">{tt("admin.promos.none.dishes", "No dishes.")}</div>}
                       {itemsFiltered.map((mi) => {
                         const checked = scopeItems.includes(mi.id);
                         const cName = categories.find(c => c.id === mi.categoryId)?.name || "—";
@@ -737,14 +762,14 @@ function AdminPromotionsPage_Inner() {
 
               <hr className="my-3" />
               {/* Reglas */}
-              <strong>Rules</strong>
+              <strong>{tt("admin.promos.rules.title", "Rules")}</strong>
               <div className="row g-2 mt-1">
                 <div className="col-6">
-                  <label className="form-label">Min. eligible subtotal </label>
+                  <label className="form-label">{tt("admin.promos.rules.minSubtotal", "Min. eligible subtotal ")}</label>
                   <input type="number" step="0.01" className="form-control" value={minTargetSubtotal} onChange={(e) => setMinTargetSubtotal(e.target.value)} />
                 </div>
                 <div className="col-6">
-                  <label className="form-label">Allowed order types</label>
+                  <label className="form-label">{tt("admin.promos.rules.allowedTypes", "Allowed order types")}</label>
                   <div className="d-flex flex-wrap gap-3 border rounded p-2">
                     {(["dine_in","delivery","takeaway"] as const).map((t) => (
                       <label key={t} className="form-check">
@@ -764,31 +789,31 @@ function AdminPromotionsPage_Inner() {
                 </div>
 
                 <div className="col-6">
-                  <label className="form-label">Global usage limit</label>
+                  <label className="form-label">{tt("admin.promos.rules.globalLimit", "Global usage limit")}</label>
                   <input type="number" className="form-control" value={globalLimit} onChange={(e) => setGlobalLimit(e.target.value)} />
                 </div>
                 <div className="col-6">
-                  <label className="form-label">Per-user limit</label>
+                  <label className="form-label">{tt("admin.promos.rules.userLimit", "Per-user limit")}</label>
                   <input type="number" className="form-control" value={perUserLimit} onChange={(e) => setPerUserLimit(e.target.value)} />
                 </div>
 
                 <div className="col-6 d-flex align-items-end">
                   <div className="form-check">
                     <input className="form-check-input" type="checkbox" id="stack" checked={stackable} onChange={(e) => setStackable(e.target.checked)} />
-                    <label className="form-check-label" htmlFor="stack">Stackable (stackable)</label>
+                    <label className="form-check-label" htmlFor="stack">{tt("admin.promos.rules.stackable", "Stackable (stackable)")}</label>
                   </div>
                 </div>
                 <div className="col-6 d-flex align-items-end">
                   <div className="form-check">
                     <input className="form-check-input" type="checkbox" id="auto" checked={autoApply} onChange={(e) => setAutoApply(e.target.checked)} />
-                    <label className="form-check-label" htmlFor="auto">Auto-apply (autoApply)</label>
+                    <label className="form-check-label" htmlFor="auto">{tt("admin.promos.rules.autoApply", "Auto-apply (autoApply)")}</label>
                   </div>
                 </div>
               </div>
 
               <div className="text-end mt-3">
                 <button className="btn btn-primary" onClick={onSavePromotion}>
-                  {editingId ? "Save changes" : "Create promotion"}
+                  {editingId ? tt("admin.promos.btn.saveChanges", "Save changes") : tt("admin.promos.btn.create", "Create promotion")}
                 </button>
               </div>
             </div>
@@ -799,17 +824,17 @@ function AdminPromotionsPage_Inner() {
         <div className="col-12 col-lg-7">
           <div className="card">
             <div className="card-header d-flex align-items-center justify-content-between">
-              <span>Existing promotions</span>
+              <span>{tt("admin.promos.list.title", "Existing promotions")}</span>
               <input
                 className="form-control form-control-sm"
                 style={{ maxWidth: 240 }}
-                placeholder="Search by name or code…"
+                placeholder={tt("admin.promos.list.searchPh", "Search by name or code…")}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
             <div className="card-body">
-              {promosFiltered.length === 0 && <div className="text-muted small">No promotions.</div>}
+              {promosFiltered.length === 0 && <div className="text-muted small">{tt("admin.promos.none.promos", "No promotions.")}</div>}
               <div className="row g-3">
                 {promosFiltered.map((p) => {
                   // Fechas legibles
@@ -826,27 +851,27 @@ function AdminPromotionsPage_Inner() {
                             <div>
                               <div className="fw-semibold">
                                 {p.name}{" "}
-                                {p.secret ? <span className="badge text-bg-warning align-middle ms-1">secret</span> : null}
+                                {p.secret ? <span className="badge text-bg-warning align-middle ms-1">{tt("admin.promos.badge.secret", "secret")}</span> : null}
                               </div>
                               <div className="text-muted small">
-                                Code: <strong>{p.code}</strong> · {discountSummary(p)} · {p.active ? <span className="badge text-bg-success">active</span> : <span className="badge text-bg-secondary">inactive</span>}
+                                {tt("admin.promos.code", "Code")}: <strong>{p.code}</strong> · {discountSummary(p)} · {p.active ? <span className="badge text-bg-success">{tt("admin.promos.badge.active", "active")}</span> : <span className="badge text-bg-secondary">{tt("admin.promos.badge.inactive", "inactive")}</span>}
                               </div>
                               <div className="text-muted small mt-1">
-                                Scope: {scopeSummary(p)}
+                                {tt("admin.promos.scope.label", "Scope")}: {scopeSummary(p)}
                               </div>
                               <div className="text-muted small">
-                                Rules: {ruleSummary(p)}
+                                {tt("admin.promos.rules.label", "Rules")}: {ruleSummary(p)}
                               </div>
                               <div className="text-muted small">
-                                Validity: {toStr(p.startAt)} → {toStr(p.endAt)}
+                                {tt("admin.promos.validity", "Validity")}: {toStr(p.startAt)} → {toStr(p.endAt)}
                               </div>
                               <div className="text-muted small">
-                                Uses: {typeof p.timesRedeemed === "number" ? p.timesRedeemed : 0}
+                                {tt("admin.promos.uses", "Uses")}: {typeof p.timesRedeemed === "number" ? p.timesRedeemed : 0}
                               </div>
                             </div>
                             <div className="d-flex flex-column gap-2 align-items-stretch" style={{ minWidth: 160 }}>
-                              <button className="btn btn-outline-secondary btn-sm w-100" onClick={() => onEditPromotion(p)}>Edit</button>
-                              <button className="btn btn-outline-danger btn-sm w-100" onClick={() => onDeletePromotion(p.id)}>Delete</button>
+                              <button className="btn btn-outline-secondary btn-sm w-100" onClick={() => onEditPromotion(p)}>{tt("admin.promos.btn.edit", "Edit")}</button>
+                              <button className="btn btn-outline-danger btn-sm w-100" onClick={() => onDeletePromotion(p.id)}>{tt("admin.promos.btn.delete", "Delete")}</button>
                             </div>
                           </div>
                         </div>
@@ -859,7 +884,7 @@ function AdminPromotionsPage_Inner() {
           </div>
 
           <div className="alert alert-light border mt-3 small">
-            <strong>Note:</strong> this page only manages promotion metadata. In the <em>checkout</em> we’ll add a code field and an endpoint that calculates the discount only over eligible items (by category, subcategory, or dish). I haven’t touched the checkout yet.
+            <strong>{tt("admin.promos.note.title", "Note")}:</strong> {tt("admin.promos.note.body", "This page only manages promotion metadata. In the checkout we’ll add a code field and an endpoint that calculates the discount only over eligible items (by category, subcategory, or dish). I haven’t touched the checkout yet.")}
           </div>
         </div>
       </div>

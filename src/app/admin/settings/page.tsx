@@ -1,4 +1,4 @@
-//src/app/admin/settings/page.tsx
+// src/app/admin/settings/page.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -7,6 +7,9 @@ import AdminOnly from "@/components/AdminOnly";
 import "@/lib/firebase/client";
 import { useTenantSettings } from "@/lib/settings/hooks";
 import { writeGeneralSettings } from "@/lib/settings/storage";
+
+// 🔤 i18n
+import { t as translate } from "@/lib/i18n/t";
 
 // Opciones comunes (puedes ampliar)
 const CURRENCIES = [
@@ -41,9 +44,25 @@ const LANGUAGES = [
 export default function AdminSettingsPage() {
   const { settings, loading, error, fmtCurrency, reload } = useTenantSettings();
 
+  // 🔤 idioma actual (como en Kitchen/Ops: localStorage -> settings.language)
+  const lang = useMemo(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const ls = localStorage.getItem("tenant.language");
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language;
+  }, [settings]);
+
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
+
   const [currency, setCurrency] = useState<string>("USD");
   const [locale, setLocale] = useState<string>("en-US");
-  const [uiLanguage, setUiLanguage] = useState<string>("es"); // ✅ corregido
+  const [uiLanguage, setUiLanguage] = useState<string>("es"); // (estado controlado)
 
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<null | "ok" | "err">(null);
@@ -52,7 +71,7 @@ export default function AdminSettingsPage() {
     if (settings) {
       setCurrency(settings.currency || "USD");
       setLocale(settings.currencyLocale || "en-US");
-      setUiLanguage((settings as any).language || "es"); // ✅ cast a any
+      setUiLanguage((settings as any).language || "es");
     }
   }, [settings]);
 
@@ -63,11 +82,11 @@ export default function AdminSettingsPage() {
     setSaving(true);
     setSaved(null);
     try {
-      await writeGeneralSettings({ 
-        currency, 
-        currencyLocale: locale, 
-        language: uiLanguage, // ✅ guardar como language en Firestore
-      } as any); // ✅ cast a any
+      await writeGeneralSettings({
+        currency,
+        currencyLocale: locale,
+        language: uiLanguage,
+      } as any);
       if (typeof window !== "undefined") localStorage.setItem("tenant.language", uiLanguage);
 
       await reload();
@@ -84,21 +103,23 @@ export default function AdminSettingsPage() {
     <Protected>
       <AdminOnly>
         <main className="container py-4">
-          <h1 className="mb-3">⚙️ Configuración General</h1>
+          <h1 className="mb-3">{tt("admin.settings.title", "⚙️ General Settings")}</h1>
           <p className="text-muted mb-4">
-            Ajusta el <strong>currency</strong>, el <strong>locale</strong> y el{" "}
-            <strong>idioma</strong> del área cliente.
+            {tt(
+              "admin.settings.subtitle",
+              "Adjust the currency, locale and customer-facing language."
+            )}
           </p>
 
-          {loading && <div className="alert alert-info">Cargando configuración…</div>}
-          {error && <div className="alert alert-danger">Error: {error}</div>}
+          {loading && <div className="alert alert-info">{tt("admin.settings.loading", "Loading settings…")}</div>}
+          {error && <div className="alert alert-danger">{tt("admin.settings.errorPrefix", "Error:")} {error}</div>}
 
           {!loading && (
             <form className="card p-3 shadow-sm" onSubmit={onSave}>
               <div className="row gy-3">
                 {/* Currency */}
                 <div className="col-12 col-md-4">
-                  <label className="form-label fw-semibold">Moneda (ISO)</label>
+                  <label className="form-label fw-semibold">{tt("admin.settings.currency.label", "Currency (ISO)")}</label>
                   <select
                     className="form-select"
                     value={currency}
@@ -109,13 +130,13 @@ export default function AdminSettingsPage() {
                     ))}
                   </select>
                   <div className="form-text">
-                    Afecta el símbolo y reglas monetarias. Ej.: {fmtCurrency(1500)}
+                    {tt("admin.settings.currency.help", "Affects symbol and money rules. Ex.:")} {fmtCurrency(1500)}
                   </div>
                 </div>
 
                 {/* Locale */}
                 <div className="col-12 col-md-4">
-                  <label className="form-label fw-semibold">Locale</label>
+                  <label className="form-label fw-semibold">{tt("admin.settings.locale.label", "Locale")}</label>
                   <select
                     className="form-select"
                     value={locale}
@@ -126,14 +147,14 @@ export default function AdminSettingsPage() {
                     ))}
                   </select>
                   <div className="form-text">
-                    Afecta separadores, orden y formato. Ej.:{" "}
+                    {tt("admin.settings.locale.help.prefix", "Affects separators, order and format. Ex.:")}{" "}
                     {new Intl.NumberFormat(locale, { style: "currency", currency }).format(1500)}
                   </div>
                 </div>
 
                 {/* Language */}
                 <div className="col-12 col-md-4">
-                  <label className="form-label fw-semibold">Idioma (área cliente)</label>
+                  <label className="form-label fw-semibold">{tt("admin.settings.language.label", "Language (customer area)")}</label>
                   <select
                     className="form-select"
                     value={uiLanguage}
@@ -144,7 +165,7 @@ export default function AdminSettingsPage() {
                     ))}
                   </select>
                   <div className="form-text">
-                    Define el idioma de la interfaz que verán los clientes.
+                    {tt("admin.settings.language.help", "Defines the interface language customers will see.")}
                   </div>
                 </div>
               </div>
@@ -153,15 +174,15 @@ export default function AdminSettingsPage() {
 
               <div className="d-flex align-items-center gap-3">
                 <button className="btn btn-primary" disabled={saving}>
-                  {saving ? "Guardando…" : "Guardar cambios"}
+                  {saving ? tt("admin.settings.btn.saving", "Saving…") : tt("admin.settings.btn.save", "Save changes")}
                 </button>
-                {saved === "ok" && <span className="text-success">✅ Guardado</span>}
-                {saved === "err" && <span className="text-danger">❌ Error al guardar</span>}
+                {saved === "ok" && <span className="text-success">{tt("admin.settings.saved.ok", "✅ Saved")}</span>}
+                {saved === "err" && <span className="text-danger">{tt("admin.settings.saved.err", "❌ Error saving")}</span>}
               </div>
 
               <div className="mt-4">
                 <span className="badge text-bg-light">
-                  Vista previa moneda: <strong>{example}</strong>
+                  {tt("admin.settings.preview.currency", "Currency preview:")} <strong>{example}</strong>
                 </span>
               </div>
             </form>

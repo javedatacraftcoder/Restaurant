@@ -5,6 +5,10 @@
 import { OnlyKitchen } from "@/components/Only";
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
+// 🔤 i18n
+import { t as translate } from "@/lib/i18n/t";
+import { useTenantSettings } from "@/lib/settings/hooks";
+
 /* --------------------------------------------
    Firebase init (client)
 --------------------------------------------- */
@@ -192,33 +196,36 @@ type OrderDoc = {
 };
 
 /* --------------------------------------------
-   Utils
+   Utils (i18n-aware)
 --------------------------------------------- */
-const TitleMap: Record<StatusSnake, string> = {
-  cart: 'Cart',
-  placed: 'Received',
-  kitchen_in_progress: 'In kitchen',
-  kitchen_done: 'Kitchen ready',
-  ready_to_close: 'Ready to close',
-  assigned_to_courier: 'Assigned delivery',
-  on_the_way: 'In route',
-  delivered: 'Delivered',
-  closed: 'Closed',
-  cancelled: 'Cancelled',
-};
+function statusKey(s: StatusSnake): string {
+  const map: Record<StatusSnake, string> = {
+    cart: 'admin.kitchen.status.cart',
+    placed: 'admin.kitchen.status.received',
+    kitchen_in_progress: 'admin.kitchen.status.inKitchen',
+    kitchen_done: 'admin.kitchen.status.kitchenReady',
+    ready_to_close: 'admin.kitchen.status.readyToClose',
+    assigned_to_courier: 'admin.kitchen.status.assigned',
+    on_the_way: 'admin.kitchen.status.onTheWay',
+    delivered: 'admin.kitchen.status.delivered',
+    closed: 'admin.kitchen.status.closed',
+    cancelled: 'admin.kitchen.status.cancelled',
+  };
+  return map[s] || 'admin.kitchen.status.unknown';
+}
 function toDate(x: any): Date {
   if (x?.toDate?.() instanceof Date) return x.toDate();
   const d = new Date(x);
   return isNaN(d.getTime()) ? new Date() : d;
 }
-function timeAgo(from: Date, now: Date) {
+function timeAgo(from: Date, now: Date, tt: (k: string, fb: string, v?: Record<string, unknown>) => string) {
   const ms = Math.max(0, now.getTime() - from.getTime());
   const m = Math.floor(ms / 60000);
-  if (m < 1) return 'Seconds ago';
-  if (m < 60) return `min ${m} ago`;
+  if (m < 1) return tt('admin.kitchen.time.secondsAgo', 'Seconds ago');
+  if (m < 60) return tt('admin.kitchen.time.minAgo', 'min {m} ago', { m });
   const h = Math.floor(m / 60);
   const rem = m % 60;
-  return `hace ${h} h ${rem} m`;
+  return tt('admin.kitchen.time.hmsAgo', 'h {h} m {m} ago', { h, m: rem });
 }
 function toSnakeStatus(s: string): StatusSnake {
   if (!s) return 'placed';
@@ -274,7 +281,7 @@ function normalizeOptions(l: any): Array<{ label: string; values: string[] }> {
   // 1) Checkout nuevo: optionGroups
   if (Array.isArray(l?.optionGroups) && l.optionGroups.length) {
     for (const g of l.optionGroups) {
-      const label = String(g?.groupName ?? 'Opciones');
+      const label = String(g?.groupName ?? 'Options');
       const values = Array.isArray(g?.items)
         ? g.items.map((it: any) => String(it?.name ?? it)).filter(Boolean)
         : [];
@@ -285,7 +292,7 @@ function normalizeOptions(l: any): Array<{ label: string; values: string[] }> {
   // 2) Legacy: options + selected
   if (Array.isArray(l?.options) && l.options.length) {
     for (const g of l.options) {
-      const label = String(g?.groupName ?? 'Opciones');
+      const label = String(g?.groupName ?? 'Options');
       const values = Array.isArray(g?.selected)
         ? g.selected.map((s: any) => String(s?.name ?? s)).filter(Boolean)
         : [];
@@ -353,11 +360,6 @@ function tsMs(x: any): number {
     return Number.isFinite(t) ? t : 0;
   } catch { return 0; }
 }
-/** Es nueva si:
- *  1) line.addedAt >= order.reopenedAt
- *  2) o line.addedBatchId === order.currentAppendBatchId
- *  3) o idx >= order.itemsCountBeforeAppend
- */
 function isNewLine(order: OrderDoc, line: any, idx: number): boolean {
   const addedAt = tsMs(line?.addedAt);
   const reopenedAt = tsMs(order?.reopenedAt);
@@ -391,7 +393,6 @@ function useKitchenOrders(
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<any>(null);
 
-  // ➕ NUEVO: snapshot del mapa previo para el callback onChange
   const prevMapRef = useRef<Map<string, string>>(new Map());
 
   const fetchNow = async () => {
@@ -404,13 +405,13 @@ function useKitchenOrders(
       const token = await getIdTokenSafe(false);
       if (!token) {
         setLoading(false);
-        setError('You must log in to view orders..');
+        setError('ERR_NOT_LOGGED_IN');
         return;
       }
       const url = `/api/orders?statusIn=${encodeURIComponent(STATUS_QUERY)}&typeIn=${encodeURIComponent(TYPE_QUERY)}&limit=100`;
       const res = await apiFetch(url);
-      if (res.status === 401) throw new Error('Unauthorized (401). Log in again.');
-      if (!res.ok) throw new Error(`GET /orders ${res.status}`);
+      if (res.status === 401) throw new Error('ERR_UNAUTHORIZED');
+      if (!res.ok) throw new Error(`ERR_API_${res.status}`);
 
       const data = await res.json();
       const rawList = (data.items ?? data.orders ?? []) as any[];
@@ -418,7 +419,7 @@ function useKitchenOrders(
         console.error('Unexpected format in /api/orders:', data);
         setOrders([]);
         setLoading(false);
-        setError('Unexpected server response.');
+        setError('ERR_UNEXPECTED');
         return;
       }
 
@@ -433,13 +434,11 @@ function useKitchenOrders(
       setLoading(false);
 
       const nextMap = new Map<string, string>(list.map((o) => [o.id, o.status]));
-
-      // 🔧 Estas eran las líneas “en rojo”: ahora compilan porque prevMapRef existe
       if (onChange) onChange(prevMapRef.current, nextMap);
       prevMapRef.current = nextMap;
 
     } catch (e: any) {
-      setError(e?.message || 'Loading error');
+      setError(e?.message || 'ERR_LOADING');
       setLoading(false);
     }
   };
@@ -492,8 +491,8 @@ function useBeep(enabled: boolean) {
 --------------------------------------------- */
 function nextActionsKitchen(order: OrderDoc, canAct: boolean) {
   const acts: Array<{ label: string; to: StatusSnake; show: boolean }> = [];
-  if (order.status === 'placed') acts.push({ label: 'Start Kitchen', to: 'kitchen_in_progress', show: canAct });
-  if (order.status === 'kitchen_in_progress') acts.push({ label: 'Kitchen ready', to: 'kitchen_done', show: canAct });
+  if (order.status === 'placed') acts.push({ label: 'START_KITCHEN', to: 'kitchen_in_progress', show: canAct });
+  if (order.status === 'kitchen_in_progress') acts.push({ label: 'KITCHEN_READY', to: 'kitchen_done', show: canAct });
   return acts.filter((a) => a.show);
 }
 async function changeStatus(orderId: string, to: StatusSnake) {
@@ -552,13 +551,12 @@ function formatDuration(ms: number) {
   return h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
 }
 
-// ⚠️ UMBRAL PARA PONER EL CONTADOR EN ROJO (en milisegundos). Cambia aquí, p.ej. 30_000 = 30s.
 const ALERT_RED_MS = 30_000;
 
 /* --------------------------------------------
    UI: Badge y Tarjeta
 --------------------------------------------- */
-function BadgeStatus({ s }: { s: StatusSnake }) {
+function BadgeStatus({ s, tt }: { s: StatusSnake; tt: (k: string, fb: string, v?: Record<string, unknown>) => string }) {
   const map: Record<StatusSnake, string> = {
     placed: 'bg-primary',
     kitchen_in_progress: 'bg-warning text-dark',
@@ -572,7 +570,7 @@ function BadgeStatus({ s }: { s: StatusSnake }) {
     cart: 'bg-light text-dark',
   };
   const cls = `badge ${map[s] || 'bg-light text-dark'}`;
-  return <span className={cls}>{TitleMap[s] || s}</span>;
+  return <span className={cls}>{tt(statusKey(s), s)}</span>;
 }
 
 function OrderCard({
@@ -582,6 +580,7 @@ function OrderCard({
   busyKey,
   timer,
   nowMs,
+  tt,
 }: {
   o: OrderDoc;
   canAct: boolean;
@@ -589,17 +588,15 @@ function OrderCard({
   busyKey: string | null;
   timer?: TimerInfo | null;
   nowMs: number;
+  tt: (k: string, fb: string, v?: Record<string, unknown>) => string;
 }) {
   const created = toDate(o.createdAt ?? new Date());
   const isBusy = (to: StatusSnake) => busyKey === `${o.id}:${to}`;
-  const prev = getPrevKitchen(o);
   const nexts = nextActionsKitchen(o, canAct);
 
   const typeVal = getDisplayType(o);
   const tableVal = getDisplayTable(o);
   const notesVal = getDisplayNotes(o);
-
-  // ➕ NUEVO: detectar pickup para mostrar badge
   const rawType = o?.orderInfo?.type?.toLowerCase?.();
 
   let elapsedLabel: string | null = null;
@@ -611,37 +608,49 @@ function OrderCard({
     isElapsedAlert = elapsedMs >= ALERT_RED_MS;
   }
 
+  const translateGroupLabel = (label: string) => {
+    const L = label.toLowerCase();
+    if (L === 'options' || L === 'opciones') return tt('admin.kitchen.group.options', 'Options');
+    if (L === 'addons') return tt('admin.kitchen.group.addons', 'Addons');
+    if (L === 'extras') return tt('admin.kitchen.group.extras', 'Extras');
+    if (L === 'modifiers') return tt('admin.kitchen.group.modifiers', 'Modifiers');
+    if (L === 'group items') return tt('admin.kitchen.group.groupItems', 'Group items');
+    return label;
+  };
+
+  const actionLabel = (to: StatusSnake) => {
+    if (to === 'kitchen_in_progress') return tt('admin.kitchen.act.start', 'Start Kitchen');
+    if (to === 'kitchen_done') return tt('admin.kitchen.act.ready', 'Kitchen ready');
+    return String(to);
+  };
+
   return (
     <div className="card shadow-sm">
-      {/* ➕➕ Cambio mínimo: agregar flex-wrap para permitir salto de línea */}
       <div className="card-header d-flex align-items-center justify-content-between flex-wrap">
         <div className="d-flex flex-column">
           <div className="fw-semibold">#{o.orderNumber || o.id}</div>
-          {typeVal === 'dine_in' && tableVal && <div className="fw-semibold">Table {tableVal}</div>}
+          {typeVal === 'dine_in' && tableVal && <div className="fw-semibold">{tt('admin.kitchen.table', 'Table')} {tableVal}</div>}
           <small className="text-muted">
-            {created.toLocaleString()} · {timeAgo(created, new Date())}
+            {created.toLocaleString()} · {timeAgo(created, new Date(), tt)}
           </small>
         </div>
-        {/* ➕➕ Cambio mínimo: forzar que los badges bajen a una nueva línea */}
         <div className="d-flex gap-2 align-items-center w-100 justify-content-end mt-2">
           {elapsedLabel && (
             <span className={`badge ${isElapsedAlert ? 'bg-danger' : 'bg-dark-subtle text-dark'}`}>{elapsedLabel}</span>
           )}
           <span className="badge bg-outline-secondary text-dark">{typeVal}</span>
-          {/* ➕ Badge adicional para pickup */}
-          {rawType === 'pickup' && <span className="badge bg-info text-dark">Pickup</span>}
-          <BadgeStatus s={o.status} />
+          {rawType === 'pickup' && <span className="badge bg-info text-dark">{tt('admin.kitchen.pickup', 'Pickup')}</span>}
+          <BadgeStatus s={o.status} tt={tt} />
         </div>
       </div>
 
       <div className="card-body">
         {notesVal ? (
           <div className="mb-2">
-            <em>Note: {notesVal}</em>
+            <em>{tt('admin.kitchen.note', 'Note')}: {notesVal}</em>
           </div>
         ) : null}
 
-        {/* Ítems + addons/opciones/group-items (sin valores) */}
         <div className="mb-2">
           {(o.items?.length ? o.items : o.lines || []).map((it: any, idx: number) => {
             const groups = normalizeOptions(it);
@@ -653,7 +662,7 @@ function OrderCard({
                   <div className={`ms-3 ${isNew ? 'text-danger' : 'text-muted'}`}>
                     {groups.map((g, ix) => (
                       <div key={ix}>
-                        <span className="fw-semibold">{g.label}:</span>{' '}
+                        <span className="fw-semibold">{translateGroupLabel(g.label)}:</span>{' '}
                         <span>{g.values.join(', ')}</span>
                       </div>
                     ))}
@@ -664,21 +673,23 @@ function OrderCard({
           })}
         </div>
 
-        {/* Acciones (sin totales/precios/dirección) */}
         <div className="d-flex justify-content-end align-items-center">
           <div className="btn-group">
-            {nexts.map((a) => (
-              <button
-                key={a.to}
-                type="button"
-                className="btn btn-primary btn-sm"
-                disabled={isBusy(a.to)}
-                onClick={() => onAction(o.id, a.to)}
-                title={a.label}
-              >
-                {a.label}
-              </button>
-            ))}
+            {nexts.map((a) => {
+              const label = actionLabel(a.to);
+              return (
+                <button
+                  key={a.to}
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  disabled={isBusy(a.to)}
+                  onClick={() => onAction(o.id, a.to)}
+                  title={label}
+                >
+                  {label}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -690,6 +701,21 @@ function OrderCard({
    Página /admin/kitchen
 --------------------------------------------- */
 function KitchenBoardPage_Inner() {
+  const { settings } = useTenantSettings();
+  const lang = React.useMemo(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const ls = localStorage.getItem("tenant.language");
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language;
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
+
   const { authReady, user, isKitchen, isAdmin } = useAuthClaims();
 
   const [soundOn, setSoundOn] = useState(true);
@@ -706,7 +732,6 @@ function KitchenBoardPage_Inner() {
 
   const { orders, loading, error, refresh } = useKitchenOrders(!!user, 4000, onOrdersChange);
 
-  /* ⏱️ estado de cronómetros (solo en memoria) */
   const timersRef = useRef<Record<string, TimerInfo>>({});
   const [tick, setTick] = useState(0);
   const [nowMs, setNowMs] = useState<number>(Date.now());
@@ -714,12 +739,11 @@ function KitchenBoardPage_Inner() {
   useEffect(() => {
     const id = setInterval(() => {
       setNowMs(Date.now());
-      setTick((v) => v + 1); // fuerza repaint de badges
+      setTick((v) => v + 1);
     }, 1000);
     return () => clearInterval(id);
   }, []);
 
-  // Limpieza: remover timers de órdenes que ya no están visibles (por ejemplo, pasaron a kitchen_done)
   useEffect(() => {
     const visible = new Set(orders.map(o => o.id));
     let changed = false;
@@ -752,21 +776,22 @@ function KitchenBoardPage_Inner() {
 
   const [busy, setBusy] = useState<string | null>(null);
   const doAct = async (id: string, to: StatusSnake) => {
-    // Manejo de cronómetro optimista:
     const prevSnapshot = timersRef.current[id] ? { ...timersRef.current[id] } : undefined;
     if (to === 'kitchen_in_progress') startTimer(id);
     if (to === 'kitchen_done') stopTimer(id);
 
     try {
       const order = orders.find((o) => o.id === id);
-      if (!order) throw new Error('Order not found');
+      if (!order) throw new Error(tt('admin.kitchen.err.notFound', 'Order not found'));
 
       const allowed = allowedNextKitchen(order.status);
       const prev = getPrevKitchen(order);
       const isRevert = prev === to;
       if (!isRevert && !allowed.includes(to)) {
-        alert(`Transition not allowed from "${TitleMap[order.status]}" a "${TitleMap[to]}".`);
-        // revertir cronómetro si hicimos algo
+        alert(tt('admin.kitchen.err.transitionNotAllowed', 'Transition not allowed from "{from}" to "{to}".', {
+          from: translate(lang, statusKey(order.status)),
+          to: translate(lang, statusKey(to)),
+        }));
         if (to === 'kitchen_in_progress' && prevSnapshot) timersRef.current[id] = prevSnapshot;
         if (to === 'kitchen_done' && prevSnapshot) timersRef.current[id] = prevSnapshot;
         if (!prevSnapshot) clearTimer(id);
@@ -778,13 +803,12 @@ function KitchenBoardPage_Inner() {
       await changeStatus(id, to);
       await refresh();
     } catch (e: any) {
-      // En caso de error, revertimos el cambio del cronómetro
       if (prevSnapshot) {
         timersRef.current[id] = prevSnapshot;
       } else {
         clearTimer(id);
       }
-      alert(e?.message || 'Error');
+      alert(e?.message || tt('admin.kitchen.err.generic', 'Error'));
     } finally {
       setBusy(null);
     }
@@ -820,6 +844,18 @@ function KitchenBoardPage_Inner() {
 
   const { isFs, toggle: toggleFs } = useFullscreen();
 
+  // mapear errores conocidos a llaves i18n (fallback al string)
+  const errorText = error
+    ? (() => {
+        if (error === 'ERR_NOT_LOGGED_IN') return tt('admin.kitchen.err.notLogged', 'You must log in to view orders.');
+        if (error === 'ERR_UNAUTHORIZED') return tt('admin.kitchen.err.unauthorized', 'Unauthorized (401). Log in again.');
+        if (error?.startsWith?.('ERR_API_')) return tt('admin.kitchen.err.api', 'Server error.');
+        if (error === 'ERR_UNEXPECTED') return tt('admin.kitchen.err.unexpected', 'Unexpected server response.');
+        if (error === 'ERR_LOADING') return tt('admin.kitchen.err.loading', 'Loading error');
+        return error;
+      })()
+    : null;
+
   return (
     <div className="container py-3">
       <div
@@ -827,51 +863,56 @@ function KitchenBoardPage_Inner() {
         style={{ top: 0, zIndex: 5, borderBottom: '1px solid #eee' }}
       >
         <div className="d-flex align-items-center gap-3">
-          <h1 className="h4 m-0">Kitchen Display</h1>
+          <h1 className="h4 m-0">{tt('admin.kitchen.title', 'Kitchen Display')}</h1>
           <span className="text-muted small d-none d-md-inline">
-            You will see orders in status: <strong>Received</strong> & <strong>In kitchen</strong>.
+            {tt('admin.kitchen.subtitle', 'You will see orders in status: {a} & {b}.', {
+              a: translate(lang, 'admin.kitchen.status.received', {}),
+              b: translate(lang, 'admin.kitchen.status.inKitchen', {}),
+            })}
           </span>
         </div>
         <div className="d-flex align-items-center gap-2">
           <div className="input-group input-group-sm" style={{ width: 260 }}>
-            <span className="input-group-text">Search</span>
+            <span className="input-group-text">{tt('common.search', 'Search')}</span>
             <input
               type="search"
               className="form-control"
-              placeholder="#order, table, item, note"
+              placeholder={tt('admin.kitchen.searchPh', '#order, table, item, note')}
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
           </div>
-          <button className="btn btn-outline-secondary btn-sm" onClick={() => refresh()}>Refresh</button>
+          <button className="btn btn-outline-secondary btn-sm" onClick={() => refresh()}>
+            {tt('common.refresh', 'Refresh')}
+          </button>
           <div className="form-check form-switch">
             <input className="form-check-input" type="checkbox" id="soundSwitch" checked={soundOn} onChange={(e) => setSoundOn(e.target.checked)} />
-            <label className="form-check-label small" htmlFor="soundSwitch">Sound</label>
+            <label className="form-check-label small" htmlFor="soundSwitch">{tt('admin.kitchen.sound', 'Sound')}</label>
           </div>
           <button
             className="btn btn-outline-dark btn-sm"
             onClick={toggleFs}
-            title={isFs ? 'Exit full screen (Esc)' : 'Full Screen'}
+            title={isFs ? tt('admin.kitchen.fullscreen.exitTitle', 'Exit full screen (Esc)') : tt('admin.kitchen.fullscreen.enterTitle', 'Full Screen')}
           >
-            {isFs ? 'Exit full screen' : 'Full Screen'}
+            {isFs ? tt('admin.kitchen.fullscreen.exit', 'Exit full screen') : tt('admin.kitchen.fullscreen.enter', 'Full Screen')}
           </button>
         </div>
       </div>
 
-      {!authReady && <div className="text-muted">Initializing session…</div>}
-      {authReady && !user && <div className="text-danger">You are not logged in. Sign in to view orders..</div>}
-      {error && <div className="text-danger">{error}</div>}
-      {user && loading && <div className="text-muted">Loading orders…</div>}
+      {!authReady && <div className="text-muted">{tt('admin.kitchen.init', 'Initializing session…')}</div>}
+      {authReady && !user && <div className="text-danger">{tt('admin.kitchen.notLogged', 'You are not logged in. Sign in to view orders.')}</div>}
+      {errorText && <div className="text-danger">{errorText}</div>}
+      {user && loading && <div className="text-muted">{tt('admin.kitchen.loading', 'Loading orders…')}</div>}
 
       {user && (
         <section className="mb-4">
           <div className="d-flex align-items-center justify-content-between mb-2">
-            <h2 className="h5 m-0">Dine-in</h2>
+            <h2 className="h5 m-0">{tt('admin.kitchen.dinein', 'Dine-in')}</h2>
             <span className="badge bg-secondary">{dineIn.length}</span>
           </div>
 
           {dineIn.length === 0 ? (
-            <div className="text-muted small">No dine-in orders.</div>
+            <div className="text-muted small">{tt('admin.kitchen.noDinein', 'No dine-in orders.')}</div>
           ) : (
             <div className="row g-3">
               {dineIn.map((o) => (
@@ -883,6 +924,7 @@ function KitchenBoardPage_Inner() {
                     busyKey={busy}
                     timer={timersRef.current[o.id]}
                     nowMs={nowMs}
+                    tt={tt}
                   />
                 </div>
               ))}
@@ -894,12 +936,12 @@ function KitchenBoardPage_Inner() {
       {user && (
         <section className="mt-4">
           <div className="d-flex align-items-center justify-content-between mb-2">
-            <h2 className="h5 m-0">Delivery</h2>
+            <h2 className="h5 m-0">{tt('admin.kitchen.delivery', 'Delivery')}</h2>
             <span className="badge bg-secondary">{delivery.length}</span>
           </div>
 
           {delivery.length === 0 ? (
-            <div className="text-muted small">No delivery orders.</div>
+            <div className="text-muted small">{tt('admin.kitchen.noDelivery', 'No delivery orders.')}</div>
           ) : (
             <div className="row g-3">
               {delivery.map((o) => (
@@ -911,6 +953,7 @@ function KitchenBoardPage_Inner() {
                     busyKey={busy}
                     timer={timersRef.current[o.id]}
                     nowMs={nowMs}
+                    tt={tt}
                   />
                 </div>
               ))}

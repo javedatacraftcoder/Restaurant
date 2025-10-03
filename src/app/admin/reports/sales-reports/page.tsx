@@ -1,4 +1,3 @@
-// src/app/admin/sales-report/page.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -15,6 +14,10 @@ import {
   Timestamp,
 } from "firebase/firestore";
 import { useFmtQ } from "@/lib/settings/money";
+
+// 🔤 i18n
+import { t as translate } from "@/lib/i18n/t";
+import { useTenantSettings } from "@/lib/settings/hooks";
 
 /** ===== Types (minimal) ===== */
 type OrderDoc = {
@@ -112,12 +115,17 @@ function PieChart({
   title,
   currency = false,
   compactLabels = false,
+  noDataLabel = "Sin datos",
+  segmentsLabel = "{n} segmentos",
 }: {
   rows: PieRow[];
   size?: number;
   title: string;
   currency?: boolean;
   compactLabels?: boolean;
+  /** 🔤 i18n inyectado */
+  noDataLabel?: string;
+  segmentsLabel?: string; // usa {n}
 }) {
   const fmtQ = useFmtQ();
   const total = rows.reduce((s, r) => s + (Number(r.value) || 0), 0);
@@ -141,15 +149,17 @@ function PieChart({
     };
   });
 
+  const seg = segmentsLabel.replace("{n}", String(rows.length));
+
   return (
     <div className="card border-0 shadow-sm h-100">
       <div className="card-header fw-semibold d-flex justify-content-between align-items-center">
         <span>{title}</span>
-        <span className="small text-muted">{total === 0 ? "No data" : `${rows.length} segments`}</span>
+        <span className="small text-muted">{total === 0 ? noDataLabel : seg}</span>
       </div>
       <div className="card-body">
         {total === 0 ? (
-          <div className="text-muted small">No data</div>
+          <div className="text-muted small">{noDataLabel}</div>
         ) : (
           <div className="d-flex flex-column flex-md-row align-items-center gap-3">
             <div style={{ width: "100%", maxWidth: size }}>
@@ -281,6 +291,22 @@ export default function AdminSalesReportPage() {
   const db = getFirestore();
   const fmtQ = useFmtQ();
 
+  // 🔤 idioma actual (igual que en Kitchen)
+  const { settings } = useTenantSettings();
+  const lang = React.useMemo(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const ls = localStorage.getItem("tenant.language");
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language;
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
+
   // ===== Filters =====
   const [preset, setPreset] = useState<"today" | "7d" | "30d" | "thisMonth" | "custom">("30d");
   const [fromStr, setFromStr] = useState<string>("");
@@ -362,7 +388,7 @@ export default function AdminSalesReportPage() {
       });
       setOrders(arr);
     } catch (e: any) {
-      setError(e?.message || "Failed to load orders.");
+      setError(e?.message || tt("common.loadError", "Could not load data."));
     } finally {
       setLoading(false);
     }
@@ -435,8 +461,13 @@ export default function AdminSalesReportPage() {
   /** ===== Build Excel (multi-tab) ===== */
   function onExportExcel() {
     const dailySheet: Sheet = {
-      name: "Daily",
-      headers: ["Day", "Orders", `Revenue (${currency})`, `Avg Ticket (${currency})`],
+      name: tt("admin.sales.sheet.daily", "Daily"),
+      headers: [
+        tt("admin.sales.day", "Day"),
+        tt("admin.sales.orders", "Orders"),
+        `${tt("admin.sales.revenue", "Revenue")} (${currency})`,
+        `${tt("admin.sales.avgTicket", "Avg. ticket")} (${currency})`,
+      ],
       rows: daily.map(d => [
         d.key,
         d.count,
@@ -445,8 +476,13 @@ export default function AdminSalesReportPage() {
       ]),
     };
     const weeklySheet: Sheet = {
-      name: "Weekly",
-      headers: ["Week", "Orders", `Revenue (${currency})`, `Avg Ticket (${currency})`],
+      name: tt("admin.sales.sheet.weekly", "Weekly"),
+      headers: [
+        tt("admin.sales.week", "Week"),
+        tt("admin.sales.orders", "Orders"),
+        `${tt("admin.sales.revenue", "Revenue")} (${currency})`,
+        `${tt("admin.sales.avgTicket", "Avg. ticket")} (${currency})`,
+      ],
       rows: weekly.map(w => [
         w.key,
         w.count,
@@ -455,8 +491,13 @@ export default function AdminSalesReportPage() {
       ]),
     };
     const monthlySheet: Sheet = {
-      name: "Monthly",
-      headers: ["Month", "Orders", `Revenue (${currency})`, `Avg Ticket (${currency})`],
+      name: tt("admin.sales.sheet.monthly", "Monthly"),
+      headers: [
+        tt("admin.sales.month", "Month"),
+        tt("admin.sales.orders", "Orders"),
+        `${tt("admin.sales.revenue", "Revenue")} (${currency})`,
+        `${tt("admin.sales.avgTicket", "Avg. ticket")} (${currency})`,
+      ],
       rows: monthly.map(m => [
         m.key,
         m.count,
@@ -465,8 +506,12 @@ export default function AdminSalesReportPage() {
       ]),
     };
     const byTypeSheet: Sheet = {
-      name: "ByType",
-      headers: ["Type", "Orders", `Revenue (${currency})`],
+      name: tt("admin.sales.sheet.byType", "ByType"),
+      headers: [
+        tt("admin.sales.type", "Type"),
+        tt("admin.sales.orders", "Orders"),
+        `${tt("admin.sales.revenue", "Revenue")} (${currency})`,
+      ],
       rows: byType.map(t => [
         t.type,
         t.count,
@@ -484,28 +529,28 @@ export default function AdminSalesReportPage() {
     <Protected>
       <AdminOnly>
         <main className="container py-4">
-          <h1 className="h4 mb-3">Sales Report</h1>
+          <h1 className="h4 mb-3">{tt("admin.sales.title", "Sales Report")}</h1>
 
           {/* Filters */}
           <div className="card border-0 shadow-sm mb-3">
             <div className="card-body">
               <div className="row g-3">
                 <div className="col-12 col-md-3">
-                  <label className="form-label fw-semibold">Range</label>
+                  <label className="form-label fw-semibold">{tt("common.range", "Range")}</label>
                   <select
                     className="form-select"
                     value={preset}
                     onChange={(e) => setPreset(e.target.value as any)}
                   >
-                    <option value="today">Today</option>
-                    <option value="7d">Last 7 days</option>
-                    <option value="30d">Last 30 days</option>
-                    <option value="thisMonth">This month</option>
-                    <option value="custom">Custom</option>
+                    <option value="today">{tt("common.preset.today", "Today")}</option>
+                    <option value="7d">{tt("common.preset.7d", "Last 7 days")}</option>
+                    <option value="30d">{tt("common.preset.30d", "Last 30 days")}</option>
+                    <option value="thisMonth">{tt("common.preset.thisMonth", "This month")}</option>
+                    <option value="custom">{tt("common.preset.custom", "Custom")}</option>
                   </select>
                 </div>
                 <div className="col-6 col-md-3">
-                  <label className="form-label fw-semibold">From</label>
+                  <label className="form-label fw-semibold">{tt("common.from", "From")}</label>
                   <input
                     type="date"
                     className="form-control"
@@ -514,7 +559,7 @@ export default function AdminSalesReportPage() {
                   />
                 </div>
                 <div className="col-6 col-md-3">
-                  <label className="form-label fw-semibold">To</label>
+                  <label className="form-label fw-semibold">{tt("common.to", "To")}</label>
                   <input
                     type="date"
                     className="form-control"
@@ -529,15 +574,15 @@ export default function AdminSalesReportPage() {
                       onClick={load}
                       disabled={loading}
                     >
-                      {loading ? "Loading…" : "Refresh"}
+                      {loading ? tt("common.loading", "Loading…") : tt("common.update", "Update")}
                     </button>
                     <button
                       className="btn btn-outline-success"
                       onClick={onExportExcel}
                       disabled={loading || (daily.length + weekly.length + monthly.length + byType.length) === 0}
-                      title="Export Excel with tabs: Daily, Weekly, Monthly, ByType"
+                      title={tt("admin.sales.export.title", "Export Excel with tabs: Daily, Weekly, Monthly, ByType")}
                     >
-                      Export to Excel
+                      {tt("common.exportExcel", "Export to Excel")}
                     </button>
                   </div>
                 </div>
@@ -551,7 +596,7 @@ export default function AdminSalesReportPage() {
             <div className="col-12 col-md-3">
               <div className="card border-0 shadow-sm">
                 <div className="card-body">
-                  <div className="text-muted small">Orders</div>
+                  <div className="text-muted small">{tt("admin.sales.orders", "Orders")}</div>
                   <div className="h4 mb-0">{totalOrders}</div>
                 </div>
               </div>
@@ -559,7 +604,7 @@ export default function AdminSalesReportPage() {
             <div className="col-12 col-md-3">
               <div className="card border-0 shadow-sm">
                 <div className="card-body">
-                  <div className="text-muted small">Revenue</div>
+                  <div className="text-muted small">{tt("admin.sales.revenue", "Revenue")}</div>
                   <div className="h4 mb-0">{fmtQ(totalRevenue)}</div>
                 </div>
               </div>
@@ -567,7 +612,7 @@ export default function AdminSalesReportPage() {
             <div className="col-12 col-md-3">
               <div className="card border-0 shadow-sm">
                 <div className="card-body">
-                  <div className="text-muted small">Avg. Ticket</div>
+                  <div className="text-muted small">{tt("admin.sales.avgTicket", "Avg. ticket")}</div>
                   <div className="h4 mb-0">{fmtQ(avgTicket)}</div>
                 </div>
               </div>
@@ -575,9 +620,9 @@ export default function AdminSalesReportPage() {
             <div className="col-12 col-md-3">
               <div className="card border-0 shadow-sm">
                 <div className="card-body">
-                  <div className="text-muted small">By Order Type</div>
+                  <div className="text-muted small">{tt("admin.sales.byType", "By order type")}</div>
                   <div className="d-flex flex-wrap gap-2">
-                    {byType.length === 0 && <span className="text-muted small">No data</span>}
+                    {byType.length === 0 && <span className="text-muted small">{tt("common.nodata", "No data")}</span>}
                     {byType.map((t) => (
                       <span key={t.type} className="badge text-bg-light border">
                         {t.type}: {t.count} ({fmtQ(t.revenue)})
@@ -593,19 +638,19 @@ export default function AdminSalesReportPage() {
           <div className="row g-3">
             <div className="col-12 col-lg-4">
               <div className="card border-0 shadow-sm h-100">
-                <div className="card-header fw-semibold">Daily</div>
+                <div className="card-header fw-semibold">{tt("admin.sales.daily", "Daily")}</div>
                 <div className="card-body p-0">
                   <table className="table mb-0">
                     <thead>
                       <tr>
-                        <th style={{ width: "40%" }}>Day</th>
-                        <th className="text-end">Orders</th>
-                        <th className="text-end">Revenue</th>
+                        <th style={{ width: "40%" }}>{tt("admin.sales.day", "Day")}</th>
+                        <th className="text-end">{tt("admin.sales.orders", "Orders")}</th>
+                        <th className="text-end">{tt("admin.sales.revenue", "Revenue")}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {daily.length === 0 && (
-                        <tr><td colSpan={3} className="text-center text-muted">No data</td></tr>
+                        <tr><td colSpan={3} className="text-center text-muted">{tt("common.nodata", "No data")}</td></tr>
                       )}
                       {daily.map((r) => (
                         <tr key={r.key}>
@@ -622,19 +667,19 @@ export default function AdminSalesReportPage() {
 
             <div className="col-12 col-lg-4">
               <div className="card border-0 shadow-sm h-100">
-                <div className="card-header fw-semibold">Weekly</div>
+                <div className="card-header fw-semibold">{tt("admin.sales.weekly", "Weekly")}</div>
                 <div className="card-body p-0">
                   <table className="table mb-0">
                     <thead>
                       <tr>
-                        <th style={{ width: "40%" }}>Week</th>
-                        <th className="text-end">Orders</th>
-                        <th className="text-end">Revenue</th>
+                        <th style={{ width: "40%" }}>{tt("admin.sales.week", "Week")}</th>
+                        <th className="text-end">{tt("admin.sales.orders", "Orders")}</th>
+                        <th className="text-end">{tt("admin.sales.revenue", "Revenue")}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {weekly.length === 0 && (
-                        <tr><td colSpan={3} className="text-center text-muted">No data</td></tr>
+                        <tr><td colSpan={3} className="text-center text-muted">{tt("common.nodata", "No data")}</td></tr>
                       )}
                       {weekly.map((r) => (
                         <tr key={r.key}>
@@ -651,19 +696,19 @@ export default function AdminSalesReportPage() {
 
             <div className="col-12 col-lg-4">
               <div className="card border-0 shadow-sm h-100">
-                <div className="card-header fw-semibold">Monthly</div>
+                <div className="card-header fw-semibold">{tt("admin.sales.monthly", "Monthly")}</div>
                 <div className="card-body p-0">
                   <table className="table mb-0">
                     <thead>
                       <tr>
-                        <th style={{ width: "40%" }}>Month</th>
-                        <th className="text-end">Orders</th>
-                        <th className="text-end">Revenue</th>
+                        <th style={{ width: "40%" }}>{tt("admin.sales.month", "Month")}</th>
+                        <th className="text-end">{tt("admin.sales.orders", "Orders")}</th>
+                        <th className="text-end">{tt("admin.sales.revenue", "Revenue")}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {monthly.length === 0 && (
-                        <tr><td colSpan={3} className="text-center text-muted">No data</td></tr>
+                        <tr><td colSpan={3} className="text-center text-muted">{tt("common.nodata", "No data")}</td></tr>
                       )}
                       {monthly.map((r) => (
                         <tr key={r.key}>
@@ -684,28 +729,33 @@ export default function AdminSalesReportPage() {
             <div className="col-12 col-lg-4">
               <PieChart
                 rows={dailyRevenuePie}
-                title="Daily Revenue (Pie)"
+                title={tt("admin.sales.pie.dailyRevenue", "Daily revenue (Pie)")}
                 currency
                 compactLabels
+                noDataLabel={tt("common.nodata", "No data")}
+                segmentsLabel={tt("common.segments", "{n} segments")}
               />
             </div>
             <div className="col-12 col-lg-4">
               <PieChart
                 rows={dailyOrdersPie}
-                title="Daily Orders (Pie)"
+                title={tt("admin.sales.pie.dailyOrders", "Daily orders (Pie)")}
                 compactLabels
+                noDataLabel={tt("common.nodata", "No data")}
+                segmentsLabel={tt("common.segments", "{n} segments")}
               />
             </div>
             <div className="col-12 col-lg-4">
               <PieChart
                 rows={typePie}
-                title="Orders by Type (Pie)"
+                title={tt("admin.sales.pie.byType", "Orders by type (Pie)")}
+                noDataLabel={tt("common.nodata", "No data")}
+                segmentsLabel={tt("common.segments", "{n} segments")}
               />
             </div>
           </div>
 
-          <div className="text-muted small mt-3">
-          </div>
+          <div className="text-muted small mt-3" />
         </main>
       </AdminOnly>
     </Protected>

@@ -1,4 +1,3 @@
-// src/app/admin/orders/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -7,6 +6,10 @@ import AdminOnly from "@/components/AdminOnly";
 
 /** ✅ Currency centralizado (respeta SettingsProvider) */
 import { useFmtQ } from "@/lib/settings/money";
+
+/* 🔤 i18n (igual patrón que Kitchen/Ops) */
+import { t as translate } from "@/lib/i18n/t";
+import { useTenantSettings } from "@/lib/settings/hooks";
 
 /* ------------------- Tipos base ------------------- */
 type FirestoreTimestamp =
@@ -225,12 +228,12 @@ function displayType(o: OrderDoc): "dine_in" | "delivery" | "-" {
   return "-";
 }
 
-/* 🔹 Label legible para sub-estado delivery */
-function deliverySubstateLabel(s?: string | null) {
+/* 🔹 Label legible para sub-estado delivery (ahora i18n-aware) */
+function deliverySubstateLabel(tt: (k: string, fb: string) => string, s?: string | null) {
   const v = String(s || "").toLowerCase();
-  if (v === "pending") return "Pending";
-  if (v === "inroute") return "En route";
-  if (v === "delivered") return "Delivered";
+  if (v === "pending") return tt("admin.orders.delivery.pending", "Pending");
+  if (v === "inroute") return tt("admin.orders.delivery.inroute", "En route");
+  if (v === "delivered") return tt("admin.orders.delivery.delivered", "Delivered");
   return "-";
 }
 
@@ -245,6 +248,22 @@ function AdminOrdersPageInner() {
   /** ✅ formateador de moneda del tenant */
   const fmtQ = useFmtQ();
 
+  /* 🔤 idioma */
+  const { settings } = useTenantSettings();
+  const lang = useMemo(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const ls = localStorage.getItem("tenant.language");
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language;
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
+
   useEffect(() => {
     let isMounted = true;
     (async () => {
@@ -255,7 +274,7 @@ function AdminOrdersPageInner() {
         if (!res.ok || data?.ok === false) throw new Error(data?.error || `HTTP ${res.status}`);
         if (isMounted) setOrders(data.orders || []);
       } catch (e: any) {
-        if (isMounted) setErr(e?.message || "Error loading orders");
+        if (isMounted) setErr(e?.message || tt("admin.orders.err.loading", "Error loading orders"));
       } finally {
         if (isMounted) setLoading(false);
       }
@@ -297,10 +316,14 @@ function AdminOrdersPageInner() {
   return (
     <div className="container py-4">
       <div className="d-flex align-items-center justify-content-between mb-3">
-        <h1 className="h4 m-0">Orders (Admin)</h1>
+        <h1 className="h4 m-0">{tt("admin.orders.title", "Orders (Admin)")}</h1>
         <div className="d-flex align-items-center gap-2">
-          <span className="badge rounded-pill bg-primary">Active: {counts.active}</span>
-          <span className="badge rounded-pill bg-danger">Closed: {counts.closed}</span>
+          <span className="badge rounded-pill bg-primary">
+            {tt("admin.orders.counts.active", "Active")}: {counts.active}
+          </span>
+          <span className="badge rounded-pill bg-danger">
+            {tt("admin.orders.counts.closed", "Closed")}: {counts.closed}
+          </span>
         </div>
       </div>
 
@@ -309,7 +332,7 @@ function AdminOrdersPageInner() {
           <div className="row g-2 align-items-end">
             <div className="col-12 col-md-6">
               <label htmlFor="emailFilter" className="form-label mb-1">
-                Filter by user email
+                {tt("admin.orders.filter.email.label", "Filter by user email")}
               </label>
               <div className="input-group">
                 <span className="input-group-text">@</span>
@@ -317,26 +340,26 @@ function AdminOrdersPageInner() {
                   id="emailFilter"
                   type="text"
                   className="form-control"
-                  placeholder="user@email.com"
+                  placeholder={tt("admin.orders.filter.email.ph", "user@email.com")}
                   value={emailFilter}
                   onChange={(e) => setEmailFilter(e.target.value)}
                 />
                 {emailFilter && (
                   <button className="btn btn-outline-secondary" type="button" onClick={() => setEmailFilter("")}>
-                    Clear
+                    {tt("admin.orders.filter.clear", "Clear")}
                   </button>
                 )}
               </div>
               <div className="form-text">
-                User email search.
+                {tt("admin.orders.filter.email.help", "User email search.")}
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {loading && <div className="alert alert-info">Loading orders…</div>}
-      {err && <div className="alert alert-danger">Error: {err}</div>}
+      {loading && <div className="alert alert-info">{tt("admin.orders.loading", "Loading orders…")}</div>}
+      {err && <div className="alert alert-danger">{tt("common.errorPrefix", "Error:")} {err}</div>}
 
       {!loading && !err && (
         <ul className="list-group">
@@ -344,7 +367,12 @@ function AdminOrdersPageInner() {
             const closed = isClosed(o.status);
             const pillClass = closed ? "bg-danger" : "bg-primary";
             const type = displayType(o);
-            const typeLabel = type === "dine_in" ? "Dine-in" : type === "delivery" ? "Delivery" : "-";
+            const typeLabel =
+              type === "dine_in"
+                ? tt("admin.orders.type.dinein", "Dine-in")
+                : type === "delivery"
+                ? tt("admin.orders.type.delivery", "Delivery")
+                : "-";
             const number = o.orderNumber ?? o.id.slice(0, 6);
             const total = orderTotalQ(o);
             const d = formatDate(o.createdAt);
@@ -366,14 +394,19 @@ function AdminOrdersPageInner() {
                         {isOpen ? "−" : "+"}
                       </button>
                       <span>#{number}</span>
-                      <span className={`badge rounded-pill ${pillClass}`}>{closed ? "CLOSED" : "ACTIVE"}</span>
+                      <span className={`badge rounded-pill ${pillClass}`}>
+                        {closed ? tt("admin.orders.badge.closed", "CLOSED") : tt("admin.orders.badge.active", "ACTIVE")}
+                      </span>
                       <span className="badge text-bg-light">{typeLabel}</span>
                     </div>
                     <div className="small text-muted mt-1">
-                      Date: {d} {type === "dine_in" && (o.orderInfo?.table || o.tableNumber) ? `• Table: ${o.orderInfo?.table || o.tableNumber}` : ""}
+                      {tt("admin.orders.date", "Date")}: {d}{" "}
+                      {type === "dine_in" && (o.orderInfo?.table || o.tableNumber)
+                        ? `• ${tt("admin.orders.table", "Table")}: ${o.orderInfo?.table || o.tableNumber}`
+                        : ""}
                     </div>
                     <div className="small mt-1">
-                      <span className="text-muted">User: </span>
+                      <span className="text-muted">{tt("admin.orders.user", "User")}: </span>
                       <span>{email}</span>
                     </div>
                   </div>
@@ -381,15 +414,19 @@ function AdminOrdersPageInner() {
                   <div className="text-md-end mt-2 mt-md-0">
                     {/* ✅ ahora respeta currency global */}
                     <div className="fw-bold">{fmtQ(total)}</div>
-                    {o.notes ? <div className="small text-muted text-wrap" style={{ maxWidth: 420 }}>Note: {o.notes}</div> : null}
+                    {o.notes ? (
+                      <div className="small text-muted text-wrap" style={{ maxWidth: 420 }}>
+                        {tt("admin.orders.note", "Note")}: {o.notes}
+                      </div>
+                    ) : null}
                     <a
                       href={`/admin/orders/invoice/${o.id}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="btn btn-sm btn-outline-primary mt-2"
-                      title="Print invoice"
+                      title={tt("admin.orders.printInvoice.title", "Print invoice")}
                     >
-                      Print invoice
+                      {tt("admin.orders.printInvoice", "Print invoice")}
                     </a>
                   </div>
                 </div>
@@ -401,15 +438,17 @@ function AdminOrdersPageInner() {
                     {type === "delivery" && (o.orderInfo?.delivery || o.orderInfo?.courierName) ? (
                       <div className="mb-3">
                         <div className="d-flex flex-wrap align-items-center gap-2 small">
-                          <span className="badge text-bg-secondary">Delivery</span>
+                          <span className="badge text-bg-secondary">
+                            {tt("admin.orders.delivery.badge", "Delivery")}
+                          </span>
                           {o.orderInfo?.delivery && (
                             <span className="badge text-bg-info">
-                              Status: {deliverySubstateLabel(o.orderInfo?.delivery)}
+                              {tt("admin.orders.delivery.status", "Status")}: {deliverySubstateLabel(tt, o.orderInfo?.delivery)}
                             </span>
                           )}
                           {o.orderInfo?.courierName && (
                             <span className="badge text-bg-dark">
-                              Courier: {o.orderInfo.courierName}
+                              {tt("admin.orders.delivery.courier", "Courier")}: {o.orderInfo.courierName}
                             </span>
                           )}
                         </div>
@@ -426,7 +465,7 @@ function AdminOrdersPageInner() {
                         <div key={idx} className="small mb-2 border-top pt-2">
                           <div className="d-flex justify-content-between">
                             <div>• {qty} × {name}</div>
-                            <div className="text-muted">({fmtQ(baseUnit)} ea)</div>
+                            <div className="text-muted">({tt("admin.orders.each", "ea")}: {fmtQ(baseUnit)})</div>
                           </div>
 
                           {/* optionGroups (checkout) */}
@@ -437,7 +476,7 @@ function AdminOrdersPageInner() {
                             });
                             return rows.length ? (
                               <div key={gi} className="ms-3 text-muted">
-                                <span className="fw-semibold">{g.groupName || "Options"}:</span> {rows}
+                                <span className="fw-semibold">{g.groupName || tt("admin.orders.options", "Options")}:</span> {rows}
                               </div>
                             ) : null;
                           })}
@@ -450,7 +489,7 @@ function AdminOrdersPageInner() {
                             });
                             return rows.length ? (
                               <div key={`op-${gi}`} className="ms-3 text-muted">
-                                <span className="fw-semibold">{g.groupName || "Options"}:</span> {rows}
+                                <span className="fw-semibold">{g.groupName || tt("admin.orders.options", "Options")}:</span> {rows}
                               </div>
                             ) : null;
                           })}
@@ -458,7 +497,7 @@ function AdminOrdersPageInner() {
                           {/* addons */}
                           {Array.isArray(l.addons) && l.addons.length > 0 && (
                             <div className="ms-3 text-muted">
-                              <span className="fw-semibold">addons:</span>{" "}
+                              <span className="fw-semibold">{tt("admin.orders.addons", "addons")}:</span>{" "}
                               {l.addons.map((ad, ai) => {
                                 if (typeof ad === "string") {
                                   return (
@@ -484,7 +523,7 @@ function AdminOrdersPageInner() {
                           )}
 
                           <div className="d-flex justify-content-between">
-                            <span className="text-muted">Line subtotal</span>
+                            <span className="text-muted">{tt("admin.orders.lineSubtotal", "Line subtotal")}</span>
                             <span className="text-muted">{fmtQ(lineTotal)}</span>
                           </div>
                         </div>
@@ -498,7 +537,7 @@ function AdminOrdersPageInner() {
 
           {sorted.length === 0 && (
             <li className="list-group-item text-center text-muted">
-              No orders match the filter.
+              {tt("admin.orders.empty", "No orders match the filter.")}
             </li>
           )}
         </ul>

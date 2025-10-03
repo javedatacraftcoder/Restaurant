@@ -5,6 +5,119 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Protected from "@/components/Protected";
 import { OnlyDelivery } from "@/components/Only";
 
+/* ✅ i18n (alineado a Kitchen) */
+import { useTenantSettings } from '@/lib/settings/hooks';
+import { t as T } from '@/lib/i18n/t';
+
+/* --------------------------------------------
+   Fallback i18n (evita mostrar las keys crudas)
+--------------------------------------------- */
+const FALLBACK: Record<string, string> = {
+  // Top / page
+  'delivery.page.title': 'Delivery — Assignment and Route',
+  'common.search': 'Search',
+  'common.refresh': 'Refresh',
+  'delivery.search.placeholder': '#order, address, phone, item, note',
+  'delivery.top.initializing': 'Initializing session…',
+  'delivery.top.signIn': 'Sign in to view orders.',
+  'delivery.top.loading': 'Loading orders…',
+
+  // Sections
+  'delivery.sections.readyToAssign.title': 'Ready to assign',
+  'delivery.sections.readyToAssign.empty': 'There are no orders ready to assign.',
+  'delivery.sections.inRoute.title': 'In route',
+  'delivery.sections.inRoute.empty': 'There are no orders en route.',
+  'delivery.sections.delivered.title': 'Delivered',
+  'delivery.sections.delivered.empty': 'No deliveries recorded.',
+
+  // Status / track
+  'track.badge.delivery': 'delivery',
+  'track.status.cart': 'Cart',
+  'track.status.received': 'Received',
+  'track.status.inKitchen': 'In kitchen',
+  'track.status.kitchenReady': 'Kitchen ready',
+  'track.status.readyToClose': 'Ready to close',
+  'track.status.assigned': 'Assigned to delivery',
+  'track.status.onTheWay': 'In route',
+  'track.status.delivered': 'Delivered',
+  'track.status.closed': 'Closed',
+  'track.status.cancelled': 'Cancelled',
+
+  // Relative time
+  'delivery.time.secondsAgo': 'seconds ago',
+  'delivery.time.minAgo': 'min {m} ago',
+  'delivery.time.hAndMinAgo': 'h {h} m {m} ago',
+
+  // Card
+  'delivery.card.deliveryBy': 'Delivery',
+  'delivery.card.address': 'Address',
+  'delivery.card.addressNotes': 'Address notes',
+  'delivery.card.phone': 'Phone',
+  'delivery.card.orderNotes': 'Order notes',
+  'delivery.card.status': 'Status',
+  'delivery.card.printTicket': 'Print ticket',
+  'delivery.card.take': 'Take',
+  'delivery.card.inRoute': 'In route',
+  'delivery.card.delivered': 'Delivered',
+
+  // Tooltips
+  'delivery.card.tooltip.print': 'Print delivery ticket',
+  'delivery.card.tooltip.take': 'Assign delivery person and take order',
+  'delivery.card.tooltip.inRoute': 'In route',
+  'delivery.card.tooltip.delivered': 'Mark as delivered',
+
+  // Modal
+  'delivery.modal.assignTitle': 'Assign delivery',
+  'delivery.modal.driverName': "Delivery driver's name",
+  'delivery.modal.driverPlaceholder': 'Ex. John Snow',
+  'delivery.modal.cancel': 'Cancel',
+  'delivery.modal.saveAndTake': 'Save and take',
+
+  // Print
+  'delivery.print.title': 'Ticket delivery',
+  'delivery.print.order': 'Order:',
+  'delivery.print.client': 'Client:',
+  'delivery.print.phone': 'Phone:',
+  'delivery.print.address': 'Address:',
+  'delivery.print.additionalNotes': 'Additional notes:',
+  'delivery.print.products': 'Products:',
+  'delivery.print.printBtn': 'Print',
+  'delivery.print.closeBtn': 'Close',
+};
+
+/** Interpola variables simples tipo {m}, {h} */
+function fmtVars(s: string, vars?: Record<string, any>) {
+  if (!vars) return s;
+  return s.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? `{${k}}`));
+}
+
+/** ✅ tt: usa tenant.language (LS) → settings.language; si falla, usa FALLBACK */
+function useTT() {
+  const { settings } = useTenantSettings();
+
+  // igual que Kitchen: primero localStorage('tenant.language'), luego settings.language
+  const lang = useMemo(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const ls = localStorage.getItem('tenant.language');
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language;
+  }, [settings]);
+
+  return useMemo(() => {
+    return (key: string, vars?: Record<string, any>) => {
+      const v = T(lang, key, vars);
+      if (!v || v === key) {
+        const fb = FALLBACK[key] ?? key;
+        return fmtVars(fb, vars);
+      }
+      return v;
+    };
+  }, [lang]);
+}
+
 /* --------------------------------------------
    Firebase init (patrón similar a Kitchen)
 --------------------------------------------- */
@@ -132,13 +245,12 @@ type OrderDoc = {
   orderInfo?: {
     type?: 'dine-in' | 'delivery';
     table?: string;
-    notes?: string; // notas de la orden
+    notes?: string;
     address?: string;
     phone?: string;
     delivery?: 'pending' | 'inroute' | 'delivered';
     courierName?: string | null;
 
-    // extras que vienen del checkout reciente:
     customerName?: string;
     addressLabel?: 'home' | 'office';
     addressInfo?: {
@@ -146,47 +258,47 @@ type OrderDoc = {
     };
     addressNotes?: string;
 
-    // (podría venir un timestamp de delivered)
     deliveredAt?: any;
     deliveryAt?: any;
   } | any;
 
-  // (posibles campos a nivel raíz)
   deliveredAt?: any;
   deliveryDeliveredAt?: any;
 
-  // historial posible
   statusHistory?: Array<{ at?: any; to?: string }>;
 };
 
 /* --------------------------------------------
    Utils y helpers (alineados con Kitchen)
 --------------------------------------------- */
-const TitleMap: Record<StatusSnake, string> = {
-  cart: 'Cart',
-  placed: 'Received',
-  kitchen_in_progress: 'In kitchen',
-  kitchen_done: 'Kitchen ready',
-  ready_to_close: 'Ready to close',
-  assigned_to_courier: 'Assigned to delivery',
-  on_the_way: 'In route',
-  delivered: 'Delivered',
-  closed: 'Closed',
-  cancelled: 'Cancelled',
-};
+function statusLabel(s: StatusSnake, tt: (k: string) => string): string {
+  switch (s) {
+    case 'cart': return tt('track.status.cart');
+    case 'placed': return tt('track.status.received');
+    case 'kitchen_in_progress': return tt('track.status.inKitchen');
+    case 'kitchen_done': return tt('track.status.kitchenReady');
+    case 'ready_to_close': return tt('track.status.readyToClose');
+    case 'assigned_to_courier': return tt('track.status.assigned');
+    case 'on_the_way': return tt('track.status.onTheWay');
+    case 'delivered': return tt('track.status.delivered');
+    case 'closed': return tt('track.status.closed');
+    case 'cancelled': return tt('track.status.cancelled');
+    default: return s;
+  }
+}
 function toDate(x: any): Date {
   if (x?.toDate?.() instanceof Date) return x.toDate();
   const d = new Date(x);
   return isNaN(d.getTime()) ? new Date() : d;
 }
-function timeAgo(from: Date, now: Date) {
+function timeAgo(from: Date, now: Date, tt: (k: string, v?: any) => string) {
   const ms = Math.max(0, now.getTime() - from.getTime());
   const m = Math.floor(ms / 60000);
-  if (m < 1) return 'seconds ago';
-  if (m < 60) return `min ${m} ago`;
+  if (m < 1) return tt('delivery.time.secondsAgo');
+  if (m < 60) return tt('delivery.time.minAgo', { m });
   const h = Math.floor(m / 60);
   const rem = m % 60;
-  return `h ${h} m ${rem} ago`;
+  return tt('delivery.time.hAndMinAgo', { h, m: rem });
 }
 function toSnakeStatus(s: string): StatusSnake {
   if (!s) return 'placed';
@@ -331,7 +443,6 @@ function buildFullAddress(o: OrderDoc): { full: string | null; notes: string | n
       full = `${full} ${String(ai.zip)}`;
     }
   } else {
-    // Fallback al address plano si no hay addressInfo
     full = getDisplayAddress(o);
   }
 
@@ -425,7 +536,6 @@ async function updateDeliveryMeta(
 
 /* --------------------------------------------
    ✅ AGREGADO: disparar correo "Order Delivered"
-   (cambio mínimo: enviar body JSON y loguear errores)
 --------------------------------------------- */
 async function triggerDeliveredEmail(orderId: string) {
   try {
@@ -446,7 +556,7 @@ async function triggerDeliveredEmail(orderId: string) {
 /* --------------------------------------------
    UI helpers
 --------------------------------------------- */
-function BadgeStatus({ s }: { s: StatusSnake }) {
+function BadgeStatus({ s, tt }: { s: StatusSnake, tt: (k: string) => string }) {
   const map: Record<StatusSnake, string> = {
     placed: 'bg-primary',
     kitchen_in_progress: 'bg-warning text-dark',
@@ -460,7 +570,7 @@ function BadgeStatus({ s }: { s: StatusSnake }) {
     cart: 'bg-light text-dark',
   };
   const cls = `badge ${map[s] || 'bg-light text-dark'}`;
-  return <span className={cls}>{TitleMap[s] || s}</span>;
+  return <span className={cls}>{statusLabel(s, tt)}</span>;
 }
 
 /* --------------------------------------------
@@ -471,11 +581,13 @@ function CourierModal({
   defaultName,
   onClose,
   onSave,
+  tt,
 }: {
   show: boolean;
   defaultName?: string | null;
   onClose: () => void;
   onSave: (name: string) => void;
+  tt: (k: string, v?: any) => string;
 }) {
   const [name, setName] = useState(defaultName ?? '');
   useEffect(() => { setName(defaultName ?? ''); }, [defaultName, show]);
@@ -486,21 +598,21 @@ function CourierModal({
       <div className="modal-dialog">
         <div className="modal-content shadow">
           <div className="modal-header">
-            <h5 className="modal-title">Assign delivery</h5>
+            <h5 className="modal-title">{tt('delivery.modal.assignTitle')}</h5>
             <button type="button" className="btn-close" onClick={onClose} />
           </div>
           <div className="modal-body">
-            <label className="form-label">Delivery driver's name</label>
+            <label className="form-label">{tt('delivery.modal.driverName')}</label>
             <input
               className="form-control"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Ex. John Snow"
+              placeholder={tt('delivery.modal.driverPlaceholder')}
               autoFocus
             />
           </div>
           <div className="modal-footer">
-            <button className="btn btn-outline-secondary" onClick={onClose}>Cancel</button>
+            <button className="btn btn-outline-secondary" onClick={onClose}>{tt('delivery.modal.cancel')}</button>
             <button
               className="btn btn-primary"
               onClick={() => {
@@ -509,7 +621,7 @@ function CourierModal({
                 onSave(v);
               }}
             >
-              Save and take
+              {tt('delivery.modal.saveAndTake')}
             </button>
           </div>
         </div>
@@ -524,7 +636,7 @@ function CourierModal({
 function escapeHtml(s: string) {
   return s.replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;', "'":'&#39;' }[c]!));
 }
-function printDeliveryTicket(o: OrderDoc) {
+function printDeliveryTicket(o: OrderDoc, tt: (k: string) => string) {
   const created = toDate(o.createdAt ?? new Date());
   const info = o?.orderInfo || {};
   const customer = (info?.customerName && String(info.customerName)) || '—';
@@ -544,7 +656,7 @@ function printDeliveryTicket(o: OrderDoc) {
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Ticket delivery #${escapeHtml(o.orderNumber || o.id)}</title>
+<title>${escapeHtml(tt('delivery.print.title'))} #${escapeHtml(o.orderNumber || o.id)}</title>
 <style>
   html, body { margin: 0; padding: 0; }
   body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px; padding: 12px; }
@@ -559,20 +671,20 @@ function printDeliveryTicket(o: OrderDoc) {
 </style>
 </head>
 <body>
-  <h1>Ticket delivery</h1>
-  <div class="row"><strong>Orden:</strong> #${escapeHtml(o.orderNumber || o.id)}</div>
+  <h1>${escapeHtml(tt('delivery.print.title'))}</h1>
+  <div class="row"><strong>${escapeHtml(tt('delivery.print.order'))}</strong> #${escapeHtml(o.orderNumber || o.id)}</div>
   <div class="row muted">${escapeHtml(created.toLocaleString())}</div>
-  <div class="row"><strong>Client:</strong> ${escapeHtml(customer)}</div>
-  <div class="row"><strong>Phone:</strong> ${escapeHtml(phone)}</div>
-  <div class="row"><strong>Address:</strong> ${escapeHtml(full || '—')}</div>
-  ${notes ? `<div class="row"><strong>Additional notes:</strong> ${escapeHtml(notes)}</div>` : ''}
+  <div class="row"><strong>${escapeHtml(tt('delivery.print.client'))}</strong> ${escapeHtml(customer)}</div>
+  <div class="row"><strong>${escapeHtml(tt('delivery.print.phone'))}</strong> ${escapeHtml(phone)}</div>
+  <div class="row"><strong>${escapeHtml(tt('delivery.print.address'))}</strong> ${escapeHtml(full || '—')}</div>
+  ${notes ? `<div class="row"><strong>${escapeHtml(tt('delivery.print.additionalNotes'))}</strong> ${escapeHtml(notes)}</div>` : ''}
   <hr/>
-  <div class="row"><strong>Products:</strong></div>
+  <div class="row"><strong>${escapeHtml(tt('delivery.print.products'))}</strong></div>
   <pre>${escapeHtml(itemsText || '—')}</pre>
 
   <div class="no-print" style="margin-top:12px;">
-    <button onclick="window.print()">Imprimir</button>
-    <button onclick="window.close()">Cerrar</button>
+    <button onclick="window.print()">${escapeHtml(tt('delivery.print.printBtn'))}</button>
+    <button onclick="window.close()">${escapeHtml(tt('delivery.print.closeBtn'))}</button>
   </div>
   <script>
     setTimeout(function(){ window.print(); setTimeout(function(){ window.close(); }, 300); }, 200);
@@ -597,19 +709,20 @@ function printDeliveryTicket(o: OrderDoc) {
 function DeliveryCard({
   o,
   onRefresh,
+  tt,
 }: {
   o: OrderDoc;
   onRefresh: () => Promise<void> | void;
+  tt: (k: string, v?: any) => string;
 }) {
   const created = toDate(o.createdAt ?? new Date());
   const phone = getDisplayPhone(o);
-  const notes = getDisplayNotes(o); // notas de la ORDEN
+  const notes = getDisplayNotes(o);
   const courierName: string | null = o?.orderInfo?.courierName ?? null;
   const subState: 'pending' | 'inroute' | 'delivered' = o?.orderInfo?.delivery ?? 'pending';
 
   const isDelivery = getDisplayType(o) === 'delivery';
 
-  // Botones basados SOLO en sub-estado
   const canTake   = isDelivery && subState === 'pending';
   const canGo     = isDelivery && subState === 'pending' && !!(courierName && courierName.trim());
   const canFinish = isDelivery && subState === 'inroute';
@@ -655,41 +768,36 @@ function DeliveryCard({
 
   const lines = (o.items?.length ? o.items : o.lines || []);
 
-  // Dirección completa + nota de dirección para mostrar en la tarjeta
   const { full: fullAddress, notes: addressNote } = buildFullAddress(o);
 
   return (
     <>
       <div className="card shadow-sm">
-        {/* ✅ Cambio visual mínimo: flex-wrap en el header */}
         <div className="card-header d-flex align-items-center justify-content-between flex-wrap">
           <div className="d-flex flex-column">
             <div className="fw-semibold">#{o.orderNumber || o.id}</div>
             <small className="text-muted">
-              {created.toLocaleString()} · {timeAgo(created, new Date())}
+              {created.toLocaleString()} · {timeAgo(created, new Date(), tt)}
             </small>
-            {courierName && <small className="text-muted">Delivery: <strong>{courierName}</strong></small>}
+            {courierName && <small className="text-muted">{tt('delivery.card.deliveryBy')}: <strong>{courierName}</strong></small>}
           </div>
-          {/* ✅ Cambio visual mínimo: badges bajan a nueva línea */}
           <div className="d-flex gap-2 align-items-center w-100 justify-content-end mt-2">
-            <span className="badge bg-outline-secondary text-dark">delivery</span>
-            <BadgeStatus s={o.status} />
+            <span className="badge bg-outline-secondary text-dark">{tt('track.badge.delivery')}</span>
+            <BadgeStatus s={o.status} tt={tt} />
           </div>
         </div>
 
         <div className="card-body">
-          {/* Datos de entrega */}
           <div className="mb-2">
-            <div><span className="fw-semibold">Address:</span> {fullAddress || <em className="text-muted">—</em>}</div>
+            <div><span className="fw-semibold">{tt('delivery.card.address')}:</span> {fullAddress || <em className="text-muted">—</em>}</div>
             {addressNote ? (
-              <div><span className="fw-semibold">Address notes:</span> {addressNote}</div>
+              <div><span className="fw-semibold">{tt('delivery.card.addressNotes')}:</span> {addressNote}</div>
             ) : null}
-            <div><span className="fw-semibold">Phone:</span> {phone || <em className="text-muted">—</em>}</div>
-            {notes ? <div><span className="fw-semibold">Order notes:</span> {notes}</div> : null}
-            <div className="small text-muted">Status: {subState}</div>
+            <div><span className="fw-semibold">{tt('delivery.card.phone')}:</span> {phone || <em className="text-muted">—</em>}</div>
+            {notes ? <div><span className="fw-semibold">{tt('delivery.card.orderNotes')}:</span> {notes}</div> : null}
+            <div className="small text-muted">{tt('delivery.card.status')}: {subState}</div>
           </div>
 
-          {/* Ítems con addons / option-groups */}
           <div className="mb-2">
             {lines.map((it: any, idx: number) => {
               const groups = normalizeOptions(it);
@@ -711,37 +819,36 @@ function DeliveryCard({
             })}
           </div>
 
-          {/* Acciones (solo sub-estado) */}
           <div className="d-flex justify-content-end">
             <div className="btn-group">
               <button
                 className="btn btn-outline-dark btn-sm"
-                onClick={() => printDeliveryTicket(o)}
-                title="Imprimir ticket de entrega"
+                onClick={() => printDeliveryTicket(o, (k) => tt(k))}
+                title={tt('delivery.card.tooltip.print')}
               >
-                Print ticket
+                {tt('delivery.card.printTicket')}
               </button>
 
-              <button className="btn btn-outline-secondary btn-sm" disabled>{TitleMap[o.status]}</button>
+              <button className="btn btn-outline-secondary btn-sm" disabled>{statusLabel(o.status, (k) => tt(k))}</button>
 
               {canTake && (
                 <button
                   className="btn btn-primary btn-sm"
                   disabled={busy}
                   onClick={() => setShowModal(true)}
-                  title="Assign delivery person and take order"
+                  title={tt('delivery.card.tooltip.take')}
                 >
-                  Take
+                  {tt('delivery.card.take')}
                 </button>
               )}
               {canGo && (
-                <button className="btn btn-primary btn-sm" disabled={busy} onClick={doOut} title="In route">
-                  In route
+                <button className="btn btn-primary btn-sm" disabled={busy} onClick={doOut} title={tt('delivery.card.tooltip.inRoute')}>
+                  {tt('delivery.card.inRoute')}
                 </button>
               )}
               {canFinish && (
-                <button className="btn btn-success btn-sm" disabled={busy} onClick={doDelivered} title="Mark as delivered">
-                  Delivered
+                <button className="btn btn-success btn-sm" disabled={busy} onClick={doDelivered} title={tt('delivery.card.tooltip.delivered')}>
+                  {tt('delivery.card.delivered')}
                 </button>
               )}
             </div>
@@ -749,12 +856,12 @@ function DeliveryCard({
         </div>
       </div>
 
-      {/* Modal para capturar el nombre del repartidor */}
       <CourierModal
         show={showModal}
         defaultName={courierName}
         onClose={() => setShowModal(false)}
         onSave={doAssignWithName}
+        tt={tt}
       />
     </>
   );
@@ -765,6 +872,7 @@ function DeliveryCard({
 --------------------------------------------- */
 function DeliveryBoardPageInner() {
   const { authReady, user } = useAuthState();
+  const tt = useTT();
   const { orders, loading, error, refresh } = useDeliveryOrders(!!user, 4000);
 
   const [q, setQ] = useState('');
@@ -799,7 +907,6 @@ function DeliveryBoardPageInner() {
     [filtered]
   );
 
-  // ✅ NUEVO: solo mostrar delivered de las últimas 24 horas
   const entregados = useMemo(() => {
     const DAY_MS = 24 * 60 * 60 * 1000;
     const now = Date.now();
@@ -814,42 +921,42 @@ function DeliveryBoardPageInner() {
   return (
     <div className="container py-3">
       <div className="d-flex align-items-center justify-content-between mb-3 gap-2 flex-wrap">
-        <h1 className="h4 m-0">Delivery — Assignment and Route</h1>
+        <h1 className="h4 m-0">{tt('delivery.page.title')}</h1>
         <div className="d-flex align-items-center gap-2">
           <div className="input-group input-group-sm" style={{ width: 280 }}>
-            <span className="input-group-text">Search</span>
+            <span className="input-group-text">{tt('common.search')}</span>
             <input
               type="search"
               className="form-control"
-              placeholder="#order, address, phone, item, note"
+              placeholder={tt('delivery.search.placeholder')}
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
           </div>
-          <button className="btn btn-outline-secondary btn-sm" onClick={() => refresh()}>Refresh</button>
+          <button className="btn btn-outline-secondary btn-sm" onClick={() => refresh()}>{tt('common.refresh')}</button>
         </div>
       </div>
 
-      {!authReady && <div className="text-muted">Initializing session…</div>}
-      {authReady && !user && <div className="text-danger">Sign in to view orders.</div>}
+      {!authReady && <div className="text-muted">{tt('delivery.top.initializing')}</div>}
+      {authReady && !user && <div className="text-danger">{tt('delivery.top.signIn')}</div>}
       {error && <div className="text-danger">{error}</div>}
-      {user && loading && <div className="text-muted">Loading orders…</div>}
+      {user && loading && <div className="text-muted">{tt('delivery.top.loading')}</div>}
 
       {user && (
         <>
           {/* 1) Listos para asignar */}
           <section className="mb-4">
             <div className="d-flex align-items-center justify-content-between mb-2">
-              <h2 className="h5 m-0">Ready to assign</h2>
+              <h2 className="h5 m-0">{tt('delivery.sections.readyToAssign.title')}</h2>
               <span className="badge bg-secondary">{listosParaAsignar.length}</span>
             </div>
             {listosParaAsignar.length === 0 ? (
-              <div className="text-muted small">There are no orders ready to assign.</div>
+              <div className="text-muted small">{tt('delivery.sections.readyToAssign.empty')}</div>
             ) : (
               <div className="row g-3">
                 {listosParaAsignar.map((o) => (
                   <div key={o.id} className="col-12 col-md-6 col-lg-4">
-                    <DeliveryCard o={o} onRefresh={refresh} />
+                    <DeliveryCard o={o} onRefresh={refresh} tt={tt} />
                   </div>
                 ))}
               </div>
@@ -859,16 +966,16 @@ function DeliveryBoardPageInner() {
           {/* 2) En ruta */}
           <section className="mb-4">
             <div className="d-flex align-items-center justify-content-between mb-2">
-              <h2 className="h5 m-0">In route</h2>
+              <h2 className="h5 m-0">{tt('delivery.sections.inRoute.title')}</h2>
               <span className="badge bg-secondary">{enRuta.length}</span>
             </div>
             {enRuta.length === 0 ? (
-              <div className="text-muted small">There are no orders en route.</div>
+              <div className="text-muted small">{tt('delivery.sections.inRoute.empty')}</div>
             ) : (
               <div className="row g-3">
                 {enRuta.map((o) => (
                   <div key={o.id} className="col-12 col-md-6 col-lg-4">
-                    <DeliveryCard o={o} onRefresh={refresh} />
+                    <DeliveryCard o={o} onRefresh={refresh} tt={tt} />
                   </div>
                 ))}
               </div>
@@ -878,16 +985,16 @@ function DeliveryBoardPageInner() {
           {/* 3) Entregados */}
           <section className="mb-4">
             <div className="d-flex align-items-center justify-content-between mb-2">
-              <h2 className="h5 m-0">Delivered</h2>
+              <h2 className="h5 m-0">{tt('delivery.sections.delivered.title')}</h2>
               <span className="badge bg-secondary">{entregados.length}</span>
             </div>
             {entregados.length === 0 ? (
-              <div className="text-muted small">No deliveries recorded.</div>
+              <div className="text-muted small">{tt('delivery.sections.delivered.empty')}</div>
             ) : (
               <div className="row g-3">
                 {entregados.map((o) => (
                   <div key={o.id} className="col-12 col-md-6 col-lg-4">
-                    <DeliveryCard o={o} onRefresh={refresh} />
+                    <DeliveryCard o={o} onRefresh={refresh} tt={tt} />
                   </div>
                 ))}
               </div>

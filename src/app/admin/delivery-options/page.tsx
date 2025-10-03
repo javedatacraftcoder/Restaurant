@@ -17,6 +17,10 @@ import {
 import { getAuth } from 'firebase/auth';
 import { useFmtQ } from '@/lib/settings/money'; // ✅ usar formateador global
 
+// 🔤 i18n (mismo patrón que Kitchen)
+import { t as translate } from '@/lib/i18n/t';
+import { useTenantSettings } from '@/lib/settings/hooks';
+
 type DeliveryOption = {
   id: string;
   title: string;
@@ -41,6 +45,22 @@ export default function AdminDeliveryOptionsPage() {
 
   // ✅ formateador centralizado (por si lo necesitas mostrar en algún label)
   const fmtQ = useFmtQ();
+
+  // ===== i18n bootstrap (idéntico a Kitchen) =====
+  const { settings } = useTenantSettings();
+  const lang = React.useMemo(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const ls = localStorage.getItem('tenant.language');
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language;
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
 
   useEffect(() => {
     const qRef = query(collection(db, 'deliveryOptions'), orderBy('sortOrder', 'asc'));
@@ -81,10 +101,10 @@ export default function AdminDeliveryOptionsPage() {
       setPrice(0);
       setIsActive(true);
       setSortOrder(0);
-      alert('Option created');
+      alert(tt('admin.deliveryOptions.alert.created', 'Option created'));
     } catch (e) {
       console.error(e);
-      alert('The option could not be created');
+      alert(tt('admin.deliveryOptions.alert.createError', 'The option could not be created'));
     }
   }
 
@@ -98,45 +118,45 @@ export default function AdminDeliveryOptionsPage() {
         sortOrder: Number(it.sortOrder || 0),
         updatedAt: serverTimestamp(),
       });
-      alert('Updated option');
+      alert(tt('admin.deliveryOptions.alert.updated', 'Updated option'));
     } catch (e) {
       console.error(e);
-      alert('Could not update');
+      alert(tt('admin.deliveryOptions.alert.updateError', 'Could not update'));
     }
   }
 
   async function onDelete(id: string) {
-    if (!confirm('Remove this shipping option?')) return;
+    if (!confirm(tt('admin.deliveryOptions.confirm.delete', 'Remove this shipping option?'))) return;
     try {
       await deleteDoc(doc(db, 'deliveryOptions', id));
-      alert('Delted');
+      alert(tt('admin.deliveryOptions.alert.deleted', 'Deleted'));
     } catch (e) {
       console.error(e);
-      alert('Could not delete');
+      alert(tt('admin.deliveryOptions.alert.deleteError', 'Could not delete'));
     }
   }
 
   return (
     <div className="container py-4">
-      <h1 className="h4 mb-3">Delivery options</h1>
+      <h1 className="h4 mb-3">{tt('admin.deliveryOptions.title', 'Delivery options')}</h1>
 
       {/* Crear nueva */}
       <div className="card border-0 shadow-sm mb-4">
         <div className="card-header">
-          <div className="fw-semibold">Create delivery option</div>
+          <div className="fw-semibold">{tt('admin.deliveryOptions.create.title', 'Create delivery option')}</div>
         </div>
         <form className="card-body" onSubmit={onCreate}>
           <div className="row g-3">
             <div className="col-md-4">
-              <label className="form-label">Title</label>
+              <label className="form-label">{tt('admin.deliveryOptions.field.title', 'Title')}</label>
               <input className="form-control" value={title} onChange={(e) => setTitle(e.target.value)} required />
             </div>
             <div className="col-md-4">
-              <label className="form-label">Description</label>
+              <label className="form-label">{tt('admin.deliveryOptions.field.description', 'Description')}</label>
               <input className="form-control" value={description} onChange={(e) => setDescription(e.target.value)} />
             </div>
             <div className="col-md-2">
-              <label className="form-label">Price</label>
+              <label className="form-label">{tt('admin.deliveryOptions.field.price', 'Price')}</label>
               <input
                 type="number"
                 step="0.01"
@@ -146,12 +166,12 @@ export default function AdminDeliveryOptionsPage() {
                 onChange={(e) => setPrice(Number(e.target.value))}
                 required
               />
-              {/* Si quieres mostrar el preview formateado:
+              {/* Preview formateado opcional:
                   <div className="form-text">{fmtQ(price)}</div>
                */}
             </div>
             <div className="col-md-1">
-              <label className="form-label">Active</label>
+              <label className="form-label">{tt('admin.deliveryOptions.field.active', 'Active')}</label>
               <div className="form-check mt-2">
                 <input
                   type="checkbox"
@@ -162,7 +182,7 @@ export default function AdminDeliveryOptionsPage() {
               </div>
             </div>
             <div className="col-md-1">
-              <label className="form-label">Order</label>
+              <label className="form-label">{tt('admin.deliveryOptions.field.order', 'Order')}</label>
               <input
                 type="number"
                 className="form-control"
@@ -173,7 +193,7 @@ export default function AdminDeliveryOptionsPage() {
           </div>
           <div className="mt-3">
             <button className="btn btn-primary" type="submit">
-              Save
+              {tt('admin.deliveryOptions.btn.save', 'Save')}
             </button>
           </div>
         </form>
@@ -182,25 +202,25 @@ export default function AdminDeliveryOptionsPage() {
       {/* Listado y edición */}
       <div className="card border-0 shadow-sm">
         <div className="card-header">
-          <div className="fw-semibold">List</div>
+          <div className="fw-semibold">{tt('admin.deliveryOptions.list.title', 'List')}</div>
         </div>
         <div className="card-body">
           {loading ? (
-            <div>Loading...</div>
+            <div>{tt('admin.deliveryOptions.loading', 'Loading...')}</div>
           ) : list.length === 0 ? (
-            <div className="text-muted">No records.</div>
+            <div className="text-muted">{tt('admin.deliveryOptions.empty', 'No records.')}</div>
           ) : (
             <div className="table-responsive">
               <table className="table align-middle">
                 <thead>
                   <tr>
-                    <th style={{ width: 220 }}>Title</th>
-                    <th>Description</th>
-                    <th style={{ width: 120 }}>Price</th>
-                    <th style={{ width: 80 }}>Active</th>
-                    <th style={{ width: 100 }}>Order</th>
+                    <th style={{ width: 220 }}>{tt('admin.deliveryOptions.field.title', 'Title')}</th>
+                    <th>{tt('admin.deliveryOptions.field.description', 'Description')}</th>
+                    <th style={{ width: 120 }}>{tt('admin.deliveryOptions.field.price', 'Price')}</th>
+                    <th style={{ width: 80 }}>{tt('admin.deliveryOptions.field.active', 'Active')}</th>
+                    <th style={{ width: 100 }}>{tt('admin.deliveryOptions.field.order', 'Order')}</th>
                     <th style={{ width: 180 }} className="text-end">
-                      Actions
+                      {tt('admin.deliveryOptions.table.actions', 'Actions')}
                     </th>
                   </tr>
                 </thead>
@@ -267,10 +287,10 @@ export default function AdminDeliveryOptionsPage() {
                       </td>
                       <td className="text-end">
                         <button className="btn btn-sm btn-outline-primary me-2" onClick={() => onUpdate(it)}>
-                          Save
+                          {tt('admin.deliveryOptions.btn.save', 'Save')}
                         </button>
                         <button className="btn btn-sm btn-outline-danger" onClick={() => onDelete(it.id)}>
-                          Delete
+                          {tt('admin.deliveryOptions.btn.delete', 'Delete')}
                         </button>
                       </td>
                     </tr>

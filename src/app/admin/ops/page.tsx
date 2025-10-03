@@ -1,19 +1,16 @@
 'use client';
-
 import { useEffect, useMemo, useState } from 'react';
-import {
-  getFirestore,
-  collection,
-  onSnapshot,
-  orderBy,
-  query,
-} from 'firebase/firestore';
+import { getFirestore, collection, onSnapshot, orderBy, query, } from 'firebase/firestore';
 import Protected from '@/components/Protected';
 import AdminOnly from '@/components/AdminOnly';
-
 import OrderCardOps, { type OpsOrder } from '@/components/admin/ops/OrderCardOps';
 import { isActive, isCancelled, isClosed, statusLabel } from '@/lib/orders/status';
 import { getActiveTaxProfile, type TaxProfile } from '@/lib/tax/profile';
+
+// 🔤 i18n: igual que Kitchen
+import React from 'react';
+import { t as translate } from '@/lib/i18n/t';
+import { useTenantSettings } from '@/lib/settings/hooks';
 
 type FilterKey = 'all' | 'active' | 'closed' | 'cancelled';
 
@@ -43,7 +40,8 @@ function useOrdersForOps(
           (data?.payment?.provider === 'paypal' && okPayStatus(data?.payment?.status)) ||
           (Array.isArray(data?.payments) &&
             data.payments.some((p: any) => p?.provider === 'paypal' && okPayStatus(p?.status))) ||
-          (String(data?.paymentProvider || '').toLowerCase() === 'paypal' && okPayStatus(data?.paymentStatus));
+          (String(data?.paymentProvider || '').toLowerCase() === 'paypal' &&
+            okPayStatus(data?.paymentStatus));
 
         // 👇 Resolución robusta de currency
         const currency: string =
@@ -92,17 +90,13 @@ function useOrdersForOps(
           status: data?.status,
           items: Array.isArray(data?.items) ? data.items : [],
           orderTotal: Number(
-            data?.orderTotal ??
-              data?.totals?.grandTotalWithTax ??
-              0
+            data?.orderTotal ?? data?.totals?.grandTotalWithTax ?? 0
           ), // legado (decimal)
           orderInfo: data?.orderInfo,
           createdAt: data?.createdAt,
           updatedAt: data?.updatedAt,
-
           currency,
           totalsCents,
-
           paidByPaypal,
         } as OpsOrder;
       });
@@ -118,6 +112,22 @@ function useOrdersForOps(
 
 export default function AdminOpsPage() {
   const db = getFirestore();
+
+  // 🔤 idioma (mismo patrón que Kitchen)
+  const { settings } = useTenantSettings();
+  const lang = React.useMemo(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const ls = localStorage.getItem('tenant.language');
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language;
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
 
   // 👇 Traemos el perfil activo para usar su currency como fallback
   const [activeProfile, setActiveProfile] = useState<TaxProfile | null>(null);
@@ -140,7 +150,6 @@ export default function AdminOpsPage() {
 
   const filtered = useMemo(() => {
     let list = orders;
-
     if (filter === 'active') list = orders.filter((o) => isActive(o.status || ''));
     if (filter === 'closed') list = orders.filter((o) => isClosed(o.status || ''));
     if (filter === 'cancelled') list = orders.filter((o) => isCancelled(o.status || ''));
@@ -154,11 +163,15 @@ export default function AdminOpsPage() {
       const s = search.trim().toLowerCase();
       list = list.filter((o) => {
         const num =
-          o.number !== undefined && o.number !== null ? String(o.number) : o.id.slice(0, 6);
+          o.number !== undefined && o.number !== null
+            ? String(o.number)
+            : o.id.slice(0, 6);
+
         const hayInfo = JSON.stringify(o.orderInfo || {}).toLowerCase();
         const hayItems = (o.items || []).some((ln) =>
           String(ln.menuItemName || '').toLowerCase().includes(s)
         );
+
         return (
           num.toLowerCase().includes(s) ||
           (o.status && statusLabel(o.status).toLowerCase().includes(s)) ||
@@ -176,39 +189,38 @@ export default function AdminOpsPage() {
       <AdminOnly>
         <div className="container py-4">
           <div className="d-flex flex-wrap align-items-center justify-content-between mb-3 gap-2">
-            <h1 className="h4 m-0">Ops — Orders</h1>
-
+            <h1 className="h4 m-0">{tt('ops.title', 'Ops — Orders')}</h1>
             <div className="d-flex gap-2">
-              <div className="btn-group" role="group" aria-label="Filters">
+              <div className="btn-group" role="group" aria-label={tt('ops.filters.aria', 'Filters')}>
                 <button
                   className={`btn btn-sm ${filter === 'all' ? 'btn-primary' : 'btn-outline-primary'}`}
                   onClick={() => setFilter('all')}
                 >
-                  All
+                  {tt('ops.filters.all', 'All')}
                 </button>
                 <button
                   className={`btn btn-sm ${filter === 'active' ? 'btn-primary' : 'btn-outline-primary'}`}
                   onClick={() => setFilter('active')}
                 >
-                  Active
+                  {tt('ops.filters.active', 'Active')}
                 </button>
                 <button
                   className={`btn btn-sm ${filter === 'closed' ? 'btn-primary' : 'btn-outline-primary'}`}
                   onClick={() => setFilter('closed')}
                 >
-                  Closed
+                  {tt('ops.filters.closed', 'Closed')}
                 </button>
                 <button
                   className={`btn btn-sm ${filter === 'cancelled' ? 'btn-primary' : 'btn-outline-primary'}`}
                   onClick={() => setFilter('cancelled')}
                 >
-                  Cancelled
+                  {tt('ops.filters.cancelled', 'Cancelled')}
                 </button>
               </div>
 
               <input
                 className="form-control form-control-sm"
-                placeholder="Search (number, status, table, address, dish...)"
+                placeholder={tt('ops.searchPlaceholder', 'Search (number, status, table, address, dish...)')}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 style={{ minWidth: 260 }}
@@ -217,7 +229,7 @@ export default function AdminOpsPage() {
           </div>
 
           {filtered.length === 0 ? (
-            <div className="alert alert-light border">No orders to show.</div>
+            <div className="alert alert-light border">{tt('ops.empty', 'No orders to show.')}</div>
           ) : (
             <div className="row g-3">
               {filtered.map((ord) => (
@@ -228,7 +240,7 @@ export default function AdminOpsPage() {
                         className="badge bg-info text-dark position-absolute"
                         style={{ right: 8, top: 8, zIndex: 2 }}
                       >
-                        PayPal
+                        {tt('ops.badge.paypal', 'PayPal')}
                       </span>
                     )}
                     <OrderCardOps db={db} order={ord} />
