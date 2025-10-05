@@ -18,6 +18,10 @@ import Link from "next/link";
 import { useNewCart } from "@/lib/newcart/context"; // carrito NUEVO
 import { useFmtQ } from "@/lib/settings/money"; // CurrencyUpdate: usar el formateador global basado en SettingsProvider
 
+/* 🔤 i18n */
+import { t as translate } from "@/lib/i18n/t";
+import { useTenantSettings } from "@/lib/settings/hooks";
+
 type Category = { id: string; name: string; slug?: string };
 type Subcategory = { id: string; name: string; slug?: string; categoryId: string };
 
@@ -65,12 +69,35 @@ function toCents(x: any): number {
   return Math.round(n * 100);
 }
 
+/* --------------------------------------------
+   🔤 Helper i18n
+--------------------------------------------- */
+function useLangTT() {
+  const { settings } = useTenantSettings();
+  const lang = useMemo(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const ls = localStorage.getItem("tenant.language");
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language;
+  }, [settings]);
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
+  return { lang, tt } as const;
+}
+
 export default function SubcategoryClient({ catId, subId }: { catId: string; subId: string }) {
   const db = useMemo(() => getFirestore(), []);
   const [category, setCategory] = useState<Category | null>(null);
   const [subcategory, setSubcategory] = useState<Subcategory | null>(null);
   const [items, setItems] = useState<MenuItem[]>([]);
   const [addingId, setAddingId] = useState<string | null>(null);
+
+  const { tt } = useLangTT();
 
   // 👇 Mensaje pequeño “Agregado”
   const [flash, setFlash] = useState<{ id: string; name: string } | null>(null);
@@ -400,12 +427,14 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
     <div className="container py-4">
       <div className="d-flex align-items-center justify-content-between mb-3">
         <div>
-          <div className="text-muted small">Menú / {category?.name ?? "Categoría"}</div>
-          <h1 className="h4 m-0">{subcategory?.name ?? "Subcategoría"}</h1>
+          <div className="text-muted small">
+            {tt("menu.subcat.breadcrumbPrefix", "Menu /")} {category?.name ?? tt("menu.subcat.categoryFallback", "Category")}
+          </div>
+          <h1 className="h4 m-0">{subcategory?.name ?? tt("menu.subcat.subcategoryFallback", "Subcategory")}</h1>
         </div>
         <div className="d-flex gap-2">
-          <Link href={`/menu/${catId}`} className="btn btn-sm btn-outline-secondary">← Subcategories</Link>
-          <Link href="/menu" className="btn btn-sm btn-outline-secondary">Home menu</Link>
+          <Link href={`/menu/${catId}`} className="btn btn-sm btn-outline-secondary">← {tt("menu.subcat.backSubcats", "Subcategories")}</Link>
+          <Link href="/menu" className="btn btn-sm btn-outline-secondary">{tt("menu.subcat.homeMenu", "Home menu")}</Link>
         </div>
       </div>
 
@@ -423,7 +452,7 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
                   role="button"
                   tabIndex={0}
                   onClick={() => onToggleOptions(it)}
-                  title="Open options"
+                  title={tt("menu.subcat.openOptions", "Open options")}
                   style={{ cursor: "pointer" }}
                 >
                   {it.imageUrl ? (
@@ -436,7 +465,7 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
                     />
                   ) : (
                     <div className="d-flex align-items-center justify-content-center bg-light text-muted">
-                      No image
+                      {tt("common.noImage", "No image")}
                     </div>
                   )}
                 </div>
@@ -453,7 +482,7 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
                   )}
 
                   {isDisabled(it) && (
-                    <div className="badge text-bg-warning mb-2 align-self-start">Not available</div>
+                    <div className="badge text-bg-warning mb-2 align-self-start">{tt("common.notAvailable", "Not available")}</div>
                   )}
 
                   <div className="d-flex gap-2 mt-auto">
@@ -462,7 +491,7 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
                       className="btn btn-outline-primary"
                       onClick={() => onToggleOptions(it)}
                     >
-                      {expanded ? "Hide options" : "Options"}
+                      {expanded ? tt("menu.subcat.hideOptions", "Hide options") : tt("menu.subcat.options", "Options")}
                     </button>
                   </div>
 
@@ -470,7 +499,7 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
                     <div className="mt-3 border-top pt-3">
                       {!!(it.addons?.length) && (
                         <>
-                          <div className="fw-semibold mb-2">Addons</div>
+                          <div className="fw-semibold mb-2">{tt("menu.subcat.addons", "Addons")}</div>
                           <div className="d-flex flex-column gap-1 mb-2">
                             {it.addons!.map((ad, idx) => {
                               const checked = !!(selectedAddons[it.id]?.[ad.name]);
@@ -495,7 +524,7 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
 
                       {Array.isArray(it.optionGroupIds) && it.optionGroupIds.length > 0 && (
                         <>
-                          <div className="fw-semibold mb-2">Opciones</div>
+                          <div className="fw-semibold mb-2">{tt("menu.subcat.options", "Options")}</div>
                           <div className="d-flex flex-column gap-3">
                             {(itemGroups[it.id] || [])
                               .filter((g) => g.active !== false)
@@ -510,14 +539,14 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
                                       <div>
                                         <div className="fw-semibold">{g.name}</div>
                                         <div className="text-muted small">
-                                          {g.type === "single" ? "One option" : "Multiple options"}
-                                          {g.required ? " · required" : ""}
-                                          {typeof g.min === "number" ? ` · min ${g.min}` : ""}
-                                          {typeof g.max === "number" ? ` · max ${g.max}` : ""}
+                                          {g.type === "single" ? tt("menu.subcat.meta.one", "One option") : tt("menu.subcat.meta.multi", "Multiple options")}
+                                          {g.required ? ` · ${tt("menu.subcat.meta.required", "required")}` : ""}
+                                          {typeof g.min === "number" ? ` · ${tt("menu.subcat.meta.min", "min {n}", { n: g.min })}` : ""}
+                                          {typeof g.max === "number" ? ` · ${tt("menu.subcat.meta.max", "max {n}", { n: g.max })}` : ""}
                                         </div>
                                       </div>
                                       {g.type === "multi" && (
-                                        <div className="text-muted small">Selected: {count}</div>
+                                        <div className="text-muted small">{tt("menu.subcat.meta.selected", "Selected: {count}", { count })}</div>
                                       )}
                                     </div>
 
@@ -570,7 +599,7 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
 
                                     {invalid && (
                                       <div className="text-danger small mt-2">
-                                        Invalid selection for this group.
+                                        {tt("menu.subcat.invalidGroup", "Invalid selection for this group.")}
                                       </div>
                                     )}
                                   </div>
@@ -581,14 +610,14 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
                       )}
 
                       <div className="d-flex align-items-center justify-content-between mt-3">
-                        <div className="fw-semibold">Total: {fmtQ(computeTotal(it))}</div>
+                        <div className="fw-semibold">{tt("menu.subcat.total", "Total")}: {fmtQ(computeTotal(it))}</div>
                         <button
                           type="button"
                           className="btn btn-primary"
                           disabled={isDisabled(it) || addingId === it.id || (itemGroups[it.id] || []).some(g => groupIsInvalid(it, g))}
                           onClick={() => onAddToCart(it)}
                         >
-                          {addingId === it.id ? "Adding…" : "Add to cart"}
+                          {addingId === it.id ? tt("menu.subcat.adding", "Adding…") : tt("menu.subcat.addToCart", "Add to cart")}
                         </button>
                       </div>
                     </div>
@@ -601,7 +630,7 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
 
         {items.length === 0 && (
           <div className="col-12">
-            <div className="alert alert-light border">There are no items in this subcategory yet.</div>
+            <div className="alert alert-light border">{tt("menu.subcat.empty", "There are no items in this subcategory yet.")}</div>
           </div>
         )}
       </div>
@@ -615,7 +644,7 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
       >
         <div className="alert alert-success py-2 px-3 shadow-sm border-0 d-flex align-items-center gap-2">
           <span role="img" aria-label="check">✅</span>
-          <span>Added</span>
+          <span>{tt("menu.subcat.toastAdded", "Added")}</span>
         </div>
       </div>
     </div>

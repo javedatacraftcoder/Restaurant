@@ -1892,7 +1892,32 @@ export const MESSAGES: Record<string, Record<string, string>> = {
     "client.nav.cart": "Carrito",
     "client.nav.orders": "Órdenes",
     "client.nav.tracking": "Rastreo",
-    "client.nav.logout": "Cerrar sesión"
+    "client.nav.logout": "Cerrar sesión",
+
+    //Subcategories
+    "menu.subcat.breadcrumbPrefix": "Menú /",
+    "menu.subcat.categoryFallback": "Categoría",
+    "menu.subcat.subcategoryFallback": "Subcategoría",
+    "menu.subcat.backSubcats": "Subcategorías",
+    "menu.subcat.homeMenu": "Inicio del menú",
+    "menu.subcat.openOptions": "Abrir opciones",
+    "common.noImage": "Sin imagen",
+    "common.notAvailable": "No disponible",
+    "menu.subcat.hideOptions": "Ocultar opciones",
+    "menu.subcat.options": "Opciones",
+    "menu.subcat.addons": "Extras",
+    "menu.subcat.meta.one": "Una opción",
+    "menu.subcat.meta.multi": "Múltiples opciones",
+    "menu.subcat.meta.required": "requerido",
+    "menu.subcat.meta.min": "mín {n}",
+    "menu.subcat.meta.max": "máx {n}",
+    "menu.subcat.meta.selected": "Seleccionadas: {count}",
+    "menu.subcat.invalidGroup": "Selección inválida para este grupo.",
+    "menu.subcat.total": "Total",
+    "menu.subcat.adding": "Agregando…",
+    "menu.subcat.addToCart": "Agregar al carrito",
+    "menu.subcat.empty": "Cargando menu, porfavor espere.",
+    "menu.subcat.toastAdded": "Agregado"
 
   
   },
@@ -3805,7 +3830,32 @@ export const MESSAGES: Record<string, Record<string, string>> = {
   "client.nav.cart": "Cart",
   "client.nav.orders": "Orders",
   "client.nav.tracking": "Tracking",
-  "client.nav.logout": "Logout"
+  "client.nav.logout": "Logout",
+
+  //subcategories
+  "menu.subcat.breadcrumbPrefix": "Menu /",
+  "menu.subcat.categoryFallback": "Category",
+  "menu.subcat.subcategoryFallback": "Subcategory",
+  "menu.subcat.backSubcats": "Subcategories",
+  "menu.subcat.homeMenu": "Home menu",
+  "menu.subcat.openOptions": "Open options",
+  "common.noImage": "No image",
+  "common.notAvailable": "Not available",
+  "menu.subcat.hideOptions": "Hide options",
+  "menu.subcat.options": "Options",
+  "menu.subcat.addons": "Addons",
+  "menu.subcat.meta.one": "One option",
+  "menu.subcat.meta.multi": "Multiple options",
+  "menu.subcat.meta.required": "required",
+  "menu.subcat.meta.min": "min {n}",
+  "menu.subcat.meta.max": "max {n}",
+  "menu.subcat.meta.selected": "Selected: {count}",
+  "menu.subcat.invalidGroup": "Invalid selection for this group.",
+  "menu.subcat.total": "Total",
+  "menu.subcat.adding": "Adding…",
+  "menu.subcat.addToCart": "Add to cart",
+  "menu.subcat.empty": "Loading menu, please wait.",
+  "menu.subcat.toastAdded": "Added"
 
 
 

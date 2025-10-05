@@ -60,6 +60,8 @@ type OrderDoc = {
   currency?: string;
   tableNumber?: string | null;
   notes?: string | null;
+  /** 🆕 nota de modificación (cuando se eliminan items en Ops) */
+  modifiedNote?: string | null;
   createdAt?: FirestoreTimestamp;
   updatedAt?: FirestoreTimestamp;
   createdBy?: { uid?: string; email?: string | null } | null;
@@ -417,6 +419,12 @@ function AdminOrdersPageInner() {
                     {o.notes ? (
                       <div className="small text-muted text-wrap" style={{ maxWidth: 420 }}>
                         {tt("admin.orders.note", "Note")}: {o.notes}
+                      </div>
+                    ) : null}
+                    {/* 🆕 Mostrar modifiedNote si existe */}
+                    {o.modifiedNote ? (
+                      <div className="small text-muted text-wrap" style={{ maxWidth: 420 }}>
+                        {tt("admin.orders.modifiedNote", "Modified note")}: {o.modifiedNote}
                       </div>
                     ) : null}
                     <a

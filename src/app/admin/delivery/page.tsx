@@ -686,9 +686,6 @@ function printDeliveryTicket(o: OrderDoc, tt: (k: string) => string) {
     <button onclick="window.print()">${escapeHtml(tt('delivery.print.printBtn'))}</button>
     <button onclick="window.close()">${escapeHtml(tt('delivery.print.closeBtn'))}</button>
   </div>
-  <script>
-    setTimeout(function(){ window.print(); setTimeout(function(){ window.close(); }, 300); }, 200);
-  </script>
 </body>
 </html>`;
 

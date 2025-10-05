@@ -491,9 +491,6 @@ function ReceiptPage_Inner() {
         fetchCustomerBillingForOrder(o)
           .then((b) => { if (!alive) return; setBillingName(b?.name); setBillingTaxId(b?.taxId); })
           .catch(() => {});
-
-        // imprimir
-        setTimeout(() => { try { window.print(); } catch {} }, 150);
       } catch (e: any) {
         if (!alive) return;
         setError(e?.message || tt('admin.receipt.err.load', 'The order could not be loaded.'));
@@ -517,6 +514,15 @@ function ReceiptPage_Inner() {
   const notes   = order?.orderInfo?.notes || order?.notes || null;
 
   const customerName = order?.orderInfo?.customerName || null;
+
+  // 👇 NUEVO: nombre del cliente para mostrar en el ticket (fallbacks)
+  const displayClientName =
+    order?.customer?.name ??
+    order?.customer?.names ??
+    order?.orderInfo?.customerName ??
+    billingName ??
+    null;
+
   const fullAddress  = fullAddressFrom(order);
 
   const deliveryFeeShown = useMemo(() => {
@@ -588,11 +594,26 @@ function ReceiptPage_Inner() {
             )}
 
             <div className="muted">#{order.orderNumber || order.id} · {toDate(order.createdAt ?? new Date()).toLocaleString()}</div>
-            {table ? <div className="muted">{tt('common.table', 'Table')}: {table}</div> : null}
 
             {(order as any)?.invoiceNumber && (
               <div className="muted">{tt('admin.receipt.invoice', 'Invoice')}: {(order as any).invoiceNumber}</div>
             )}
+            {/* 👇 NUEVO: SIEMPRE mostrar debajo del número de factura el nombre y NIT (si existen), para cualquier tipo */}
+            {(order?.customer?.name ?? order?.customer?.names ?? billingName)
+              ? <div className="muted">{tt('admin.receipt.invoiceTo', 'Invoice to')}: {order?.customer?.name ?? order?.customer?.names ?? billingName}</div>
+              : null}
+            {(order?.customer?.taxId ?? billingTaxId)
+              ? <div className="muted">{tt('admin.receipt.nit', 'NIT')}: {order?.customer?.taxId ?? billingTaxId}</div>
+              : null}
+
+            {/* 👇 NUEVO: mostrar el nombre del cliente (displayClientName) justo debajo del invoice/NIT */}
+            {displayClientName ? (
+              <div className="muted">
+                {tt('admin.receipt.client', 'Client')}: {displayClientName}
+              </div>
+            ) : null}
+
+            {table ? <div className="muted">{tt('common.table', 'Table')}: {table}</div> : null}
 
             {customerName ? <div className="muted">{tt('admin.receipt.client', 'Client')}: {customerName}</div> : null}
             {fullAddress ? (
@@ -600,13 +621,7 @@ function ReceiptPage_Inner() {
             ) : (address ? <div className="muted">{tt('admin.receipt.deliveryAddr', 'Delivery')}: {address}</div> : null)}
             {phone ? <div className="muted">{tt('admin.cashier.phone', 'Phone')}: {phone}</div> : null}
 
-            {(billingName || billingTaxId) && <div className="hr"></div>}
-            {(order?.customer?.name ?? order?.customer?.names ?? billingName)
-              ? <div className="muted">{tt('admin.receipt.invoiceTo', 'Invoice to')}: {order?.customer?.name ?? order?.customer?.names ?? billingName}</div>
-              : null}
-            {(order?.customer?.taxId ?? billingTaxId)
-              ? <div className="muted">{tt('admin.receipt.nit', 'NIT')}: {order?.customer?.taxId ?? billingTaxId}</div>
-              : null}
+            {/* (El bloque anterior de factura a / NIT aquí reemplaza al que estaba más abajo) */}
 
             {notes ? <div className="muted">{tt('admin.cashier.note', 'Note')}: {notes}</div> : null}
 

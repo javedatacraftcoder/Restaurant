@@ -14,15 +14,22 @@
     "jsx": "preserve",
     "jsxImportSource": "react",
     "incremental": true,
+    "baseUrl": ".",                 // ← añadido para estabilidad de paths
     "plugins": [
-      {
-        "name": "next"
-      }
+      { "name": "next" }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],           // ya lo tenías
+      "@/lib/*": ["./src/lib/*"],   // ← añadido (explícito)
+      "@/components/*": ["./src/components/*"], // ← añadido (explícito)
+      "@/app/*": ["./src/app/*"]    // ← opcional, útil si importas desde app
     }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts"
+  ],
   "exclude": ["node_modules"]
 }

@@ -16,7 +16,7 @@ export default function AboutUs({
   if (!title && !text && !imageUrl) return null;
 
   return (
-    <section
+    <section id="aboutus"
       className="position-relative py-5 py-md-6 overflow-hidden"
       aria-labelledby="about-heading"
       style={{

@@ -77,6 +77,37 @@ export default function OrderCardOps({
 
   const info = order.orderInfo || ({} as OrderInfo);
 
+  // 🆕 Eliminar ítem con nota (actualiza items + modifiedNote)
+  async function handleRemoveItem(index: number) {
+    try {
+      const note = window.prompt('Escribe una nota sobre esta modificación (requerida):', '');
+      if (note == null) return; // usuario canceló
+      const finalNote = String(note).trim();
+      if (!finalNote) {
+        alert('La nota es requerida.');
+        return;
+      }
+
+      const currentItems = Array.isArray(order.items) ? order.items : [];
+      if (index < 0 || index >= currentItems.length) return;
+
+      const newItems = currentItems.filter((_, i) => i !== index);
+
+      setSaving(true);
+      await updateDoc(doc(db, 'orders', order.id), {
+        items: newItems,
+        modifiedNote: finalNote,
+        updatedAt: serverTimestamp(),
+      });
+      // no cambiamos nada más; el onSnapshot del padre refresca la UI
+    } catch (e: any) {
+      console.error(e);
+      alert(e?.message || 'No se pudo eliminar el ítem.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   // Render de items con precios (en UNIDADES → fmtQ)
   const itemsWithPricing = (
     <div className="d-flex flex-column gap-2">
@@ -92,11 +123,25 @@ export default function OrderCardOps({
 
         return (
           <div className="border rounded p-2" key={`${ln.menuItemId}-${idx}`}>
-            <div className="d-flex justify-content-between">
+            <div className="d-flex justify-content-between align-items-start gap-2">
               <div className="fw-semibold">
                 {ln.menuItemName} <span className="text-muted">× {ln.quantity}</span>
               </div>
-              <div className="fw-semibold">{fmtQ(lineTotal)}</div>
+              <div className="d-flex align-items-center gap-2">
+                {/* 🆕 Botón eliminar (–) */}
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-danger"
+                  aria-label="Eliminar ítem"
+                  title="Eliminar ítem"
+                  onClick={() => handleRemoveItem(idx)}
+                  disabled={saving}
+                  style={{ lineHeight: 1, padding: '0.15rem 0.45rem' }}
+                >
+                  &ndash;
+                </button>
+                <div className="fw-semibold">{fmtQ(lineTotal)}</div>
+              </div>
             </div>
 
             {(ln.addons?.length || ln.optionGroups?.some(g => g.items?.length)) && (

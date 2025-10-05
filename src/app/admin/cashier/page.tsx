@@ -915,16 +915,39 @@ function CashierPage_Inner() {
       setSavingTax(true);
       setSaveErr(null);
       await ensureFirebaseApp();
-      const { getFirestore, doc, updateDoc } = await import('firebase/firestore');
+      const { getFirestore, doc, updateDoc, getDoc } = await import('firebase/firestore');
       const db = getFirestore();
 
-      // 🆕 Override minimal-invasivo en el doc de la orden
-      await updateDoc(doc(db, 'orders', editOrderId), {
-        'customer.name': editBillingName?.trim() || null,
-        'customer.taxId': editTaxId?.trim() || null,
-        // Mantener consistencia con snapshots fiscales ya guardados
-        'taxSnapshot.customer.taxId': editTaxId?.trim() || null,
-      });
+      // Lee doc actual para comparar y evitar escrituras innecesarias
+      const snap = await getDoc(doc(db, 'orders', editOrderId));
+      const cur = (snap.exists() ? snap.data() : {}) as any;
+
+      const curName  = cur?.customer?.name ?? cur?.customer?.names ?? '';
+      const curTaxId = cur?.customer?.taxId ?? cur?.taxSnapshot?.customer?.taxId ?? '';
+
+      const newName  = (editBillingName ?? '').trim();
+      const newTaxId = (editTaxId ?? '').trim();
+
+      // Si no hay cambios reales, cierra sin escribir
+      if (newName === curName && newTaxId === curTaxId) {
+        setShowEdit(false);
+        setEditOrderId(null);
+        return;
+      }
+
+      // Construye el update solo con campos que cambiaron
+      const updates: Record<string, any> = {};
+      if (newName !== curName) {
+        updates['customer.name'] = newName || null;
+      }
+      if (newTaxId !== curTaxId) {
+        updates['customer.taxId'] = newTaxId || null;
+        updates['taxSnapshot.customer.taxId'] = newTaxId || null; // mantener consistencia del snapshot
+      }
+
+      if (Object.keys(updates).length > 0) {
+        await updateDoc(doc(db, 'orders', editOrderId), updates);
+      }
 
       setShowEdit(false);
       setEditOrderId(null);

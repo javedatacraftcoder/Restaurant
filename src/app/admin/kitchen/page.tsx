@@ -193,6 +193,9 @@ type OrderDoc = {
   reopenedAt?: any;
   currentAppendBatchId?: string | null;
   itemsCountBeforeAppend?: number | null;
+
+  /* ✅ NUEVO: nota de modificación desde Ops */
+  modifiedNote?: string | null;
 };
 
 /* --------------------------------------------
@@ -648,6 +651,13 @@ function OrderCard({
         {notesVal ? (
           <div className="mb-2">
             <em>{tt('admin.kitchen.note', 'Note')}: {notesVal}</em>
+          </div>
+        ) : null}
+
+        {/* ✅ NUEVO: mostrar nota de modificación si existe */}
+        {o.modifiedNote ? (
+          <div className="mb-2">
+            <em className="text-danger">{tt('admin.kitchen.modifiedNote', 'Modified note')}: {o.modifiedNote}</em>
           </div>
         ) : null}
 
